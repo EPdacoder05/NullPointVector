@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"  # Streamlit
+      - "8000:8000"  # API
+    volumes:
+      - .:/app
+      - ./Phishy_Bizz:/app/Phishy_Bizz
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/phishguard
+      - REDIS_URL=redis://redis:6379/0
+      - ML_MODEL_PATH=/app/models
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=phishguard
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  vector_db:
+    image: qdrant/qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data: 
