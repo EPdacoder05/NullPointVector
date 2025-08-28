@@ -1,0 +1,131 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "EPdacoder05"
+    assignees:
+      - "EPdacoder05"
+    commit-message:
+      prefix: "pip"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    ignore:
+      # Ignore major version updates for critical dependencies
+      - dependency-name: "torch"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sentence-transformers"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "psycopg2-binary"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "streamlit"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "EPdacoder05"
+    assignees:
+      - "EPdacoder05"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "11:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "EPdacoder05"
+    assignees:
+      - "EPdacoder05"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Security updates (run daily)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "EPdacoder05"
+    assignees:
+      - "EPdacoder05"
+    commit-message:
+      prefix: "security"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "security"
+      - "high-priority"
+    # Only security updates
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+    # Allow security updates
+    allow:
+      - dependency-type: "direct"
+        update-type: "security"
+      - dependency-type: "indirect"
+        update-type: "security"
+
+  # Development dependencies (separate schedule)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "first-monday"
+      time: "14:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "EPdacoder05"
+    assignees:
+      - "EPdacoder05"
+    commit-message:
+      prefix: "dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "development"
+    # Only development dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types: ["security"]
+    # Allow non-security updates
+    allow:
+      - dependency-type: "direct"
+        update-type: "version-update:semver-minor"
+      - dependency-type: "direct"
+        update-type: "version-update:semver-major"
