@@ -28,12 +28,9 @@ sys.path.append(str(project_root))
 # Import guards
 from PhishGuard.providers.email_fetcher.registry import EmailFetcherRegistry
 from PhishGuard.providers.email_analyzer import EmailAnalyzer
-from PhishGuard.phish_mlm.phishing_detector import detect_phishing
-from SmishGuard.providers.sms_fetcher.twilio_doggy import fetch_sms
-from SmishGuard.providers.sms_fetcher.iphone_doggy import fetch_sms_iphone
-from SmishGuard.smish_mlm.smishing_detector import detect_smishing
-from VishGuard.voice_fetch.twilio_doggy import fetch_voice
-from VishGuard.vish_mlm.vishing_detector import detect_vishing
+from PhishGuard.phish_mlm.phishing_detector import PhishingDetector
+from SmishGuard.sms_fetch.iphone_fetcher import IPhoneSMSFetcher
+from SmishGuard.smish_mlm.smishing_detector import SmishingDetector
 
 def parse_args():
     """Parse command line arguments."""
@@ -102,15 +99,11 @@ def main():
     email_providers = args.email_providers or EmailFetcherRegistry.get_available_providers()
     for provider in email_providers:
         fetcher = EmailFetcherRegistry.get_fetcher(provider)
-        guards.append((f"PhishGuard-{provider}", fetcher.fetch_emails, detect_phishing, threat_analyzer))
+        detector = PhishingDetector()
+        guards.append((f"PhishGuard-{provider}", fetcher.fetch_emails, detector.detect_threats, threat_analyzer))
     
-    # Add SMS guard if not skipped
-    if not args.skip_sms:
-        guards.append(("SmishGuard", fetch_sms, detect_smishing, None))
-    
-    # Add voice guard if not skipped
-    if not args.skip_voice:
-        guards.append(("VishGuard", fetch_voice, detect_vishing, None))
+    # SMS/Voice guards disabled - need iOS CallKit implementation
+    # TODO: Implement iOS CallKit for real-time SMS/Voice monitoring
 
     # Run guards in parallel
     with ThreadPoolExecutor(max_workers=len(guards)) as executor:

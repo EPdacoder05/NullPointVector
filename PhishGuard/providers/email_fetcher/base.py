@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple, Union
 import logging
 from datetime import datetime
-import email
+import email.message
 from email.header import decode_header
 import os
 from dotenv import load_dotenv

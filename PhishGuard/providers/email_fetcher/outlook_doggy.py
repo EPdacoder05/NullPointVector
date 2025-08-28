@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-class OutlookFetcher:
+class OutlookDoggy:
     def __init__(self):
         load_dotenv()
         self.email = os.getenv('OUTLOOK_EMAIL')

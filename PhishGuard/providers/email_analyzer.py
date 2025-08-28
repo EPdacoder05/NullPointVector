@@ -11,7 +11,7 @@ import sys
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from intel_analytics.threat_intel import ThreatIntelligence
+from utils.threat_intelligence import ThreatIntelligence
 
 logger = logging.getLogger(__name__)
 

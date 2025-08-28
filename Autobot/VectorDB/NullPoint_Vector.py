@@ -47,8 +47,9 @@ def connect_db():
         conn = psycopg2.connect(**DB_CONFIG)
         return conn
     except psycopg2.Error as e:
-        logging.error(f"Error connecting to database: {e}")
-        raise
+        logging.warning(f"Database connection failed: {e}")
+        logging.info("Continuing without database connection - some features will be limited")
+        return None
 
 # Initialize encryption
 def get_encryption_key():
