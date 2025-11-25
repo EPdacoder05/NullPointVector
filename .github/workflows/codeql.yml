@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 4 * * 2'  # Weekly on Tuesdays at 4 AM
+    - cron: '0 4 * * 2'  # Weekly on Tuesdays at 4 AM (1 hour after Trivy)
 
 jobs:
   analyze:

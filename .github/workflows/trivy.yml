@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    - cron: '0 3 * * 1'  # Weekly on Mondays at 3 AM
+    - cron: '0 3 * * 2'  # Weekly on Tuesdays at 3 AM (synchronized with CodeQL)
 
 jobs:
   trivy-scan:

@@ -54,12 +54,51 @@
 5. ✅ Marks as processed in database
 6. ✅ Updates button: "✅ Blocked & Reported!" (disabled)
 
-### 5. **Dashboard Security Tab** (`ui/dash_app.py`)
+### 5. **CI/CD Security Automation** (`.github/workflows/`)
+**Implemented:** Production-ready GitHub Actions workflows with automated security scanning
+
+**Active Scanners:**
+- ✅ **Pylint** - Python code quality analysis (runs on every push/PR)
+  - Generates JSON reports for review
+  - Set to continue-on-error (informational, not blocking)
+  - Checks PEP 8 compliance, code smells, potential bugs
+
+- ✅ **Trivy** - Filesystem & container vulnerability scanning
+  - Weekly scans (Tuesdays 3 AM)
+  - SARIF upload to GitHub Security tab
+  - Filters CRITICAL and HIGH severity only
+  - Scans dependencies, configs, IaC files
+
+- ✅ **Snyk** - Dependency vulnerability detection
+  - High severity threshold
+  - Requires SNYK_TOKEN secret (optional)
+  - SARIF integration for GitHub Security
+  - Skips unresolved packages gracefully
+
+- ✅ **CodeQL** - GitHub Advanced Security (SAST)
+  - Weekly scans (Tuesdays 4 AM, 1 hour after Trivy)
+  - Python-specific security-and-quality queries
+  - Detects: SQL injection, XSS, code execution, log injection
+  - Results visible in Security tab
+
+- ✅ **Dependabot** - Automated dependency updates
+  - Creates PRs for outdated packages
+  - Security vulnerability alerts
+  - Keeps dependencies current
+
+**Security Posture:**
+- 🔒 All workflows use continue-on-error (development-friendly)
+- 📊 SARIF reports uploaded to GitHub Security tab
+- ⏰ Weekly scans synchronized (Tuesdays) for efficiency
+- 🔄 Every push/PR triggers Pylint and Snyk
+- 🛡️ 5 layers of automated security validation
+
+### 6. **Dashboard Security Tab** (`ui/dash_app.py`)
 - ✅ 5-tab structure: Monitor → **Scanner** → Geo → Raw Data → **Security Score**
 - ✅ Security Score tab added (displays SECURITY_SCORECARD.md analysis)
 - ✅ Tab order optimized per user preference
 
-### 6. **Enhanced Email Scanner** (`ui/dash_app.py`) ⭐ NEW
+### 7. **Enhanced Email Scanner** (`ui/dash_app.py`) ⭐ NEW
 **COMPLETE OVERHAUL - Now includes:**
 
 **Live Email Ingestion Section:**

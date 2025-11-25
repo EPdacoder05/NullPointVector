@@ -7,6 +7,9 @@
 ![Status](https://img.shields.io/badge/status-production--ready-success.svg)
 ![Security](https://img.shields.io/badge/security-98.5%2F100-green.svg)
 ![ML](https://img.shields.io/badge/ML-PyTorch%20%7C%20Transformers-orange.svg)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue.svg)
+![Code Quality](https://img.shields.io/badge/Pylint-Automated-brightgreen.svg)
+![Security Scan](https://img.shields.io/badge/Trivy%20%7C%20Snyk%20%7C%20CodeQL-Active-green.svg)
 
 **From Yahoo_Phish to NullPointVector: Enterprise-grade phishing detection with real-time threat intelligence, ML-powered analysis, and autonomous triage**
 
@@ -34,6 +37,7 @@ Unlike consumer tools like Cloaked or SpamTitan, **NullPointVector** is built fo
 | **🔒 Fortress-Grade Security** | 98.5/100 score, 14 SQL injection patterns, XSS sanitization, zero-trust URL analysis | Minimal validation |
 | **📈 Performance Metrics** | 200+ emails/min with ThreadPoolExecutor, <200ms ML inference, <50ms DB queries | No observability |
 | **🎯 Zero-Trust URL Analysis** | 10 phishing checks (typosquatting, shorteners, redirects), NEVER executes JavaScript | Basic URL filtering |
+| **🔄 CI/CD Automation** | 5 security scanners (Pylint, Trivy, Snyk, CodeQL, Dependabot), weekly scans, SARIF reports | Manual security audits |
 
 ---
 
@@ -191,6 +195,71 @@ python ui/dash_app.py
 - ✅ Risk level variation (HIGH/MEDIUM/LOW)
 - ✅ ML confidence scores (0.0-1.0)
 - ✅ Authentic-looking senders and subjects
+
+---
+
+## 🔄 CI/CD & Security Automation
+
+**Automated Security Scanning:** Every push triggers multiple security checks via GitHub Actions.
+
+### Active Workflows
+
+| Scanner | Purpose | Frequency | Reports |
+|---------|---------|-----------|---------|
+| **Pylint** | Code quality analysis | Every push/PR | JSON artifacts |
+| **Trivy** | Vulnerability scanning (filesystem, containers, configs) | Weekly (Tuesdays 3 AM) | SARIF → Security tab |
+| **Snyk** | Dependency vulnerability detection | Every push/PR | SARIF → Security tab |
+| **CodeQL** | GitHub Advanced Security (SAST) | Weekly (Tuesdays 4 AM) | Security tab |
+| **Dependabot** | Automated dependency updates | Daily | Auto-PRs |
+
+### Security Dashboard
+
+View automated security findings at:
+```
+https://github.com/EPdacoder05/NullPointVector/security
+```
+
+**Features:**
+- 🛡️ SARIF integration for Trivy, Snyk, CodeQL results
+- 📊 Vulnerability trends and severity breakdowns
+- 🔔 Automated alerts for HIGH/CRITICAL findings
+- 📈 Dependency graph with security advisories
+
+### Configure Snyk (Optional)
+
+Snyk provides advanced dependency vulnerability detection. To enable:
+
+**1. Get Snyk API Token:**
+```bash
+# Sign up at https://snyk.io (free tier available)
+# Navigate to: Account Settings → General → Auth Token
+# Copy your API token
+```
+
+**2. Add to GitHub Secrets:**
+```bash
+# Go to: https://github.com/EPdacoder05/NullPointVector/settings/secrets/actions
+# Click: "New repository secret"
+# Name: SNYK_TOKEN
+# Value: [paste your Snyk API token]
+# Click: "Add secret"
+```
+
+**3. Verify Workflow:**
+```bash
+# Snyk workflow will run on next push
+# Check status: https://github.com/EPdacoder05/NullPointVector/actions
+```
+
+**Without Snyk token:** Workflow will skip gracefully (won't block development).
+
+### Workflow Configuration
+
+All scanners are set to `continue-on-error: true` for development-friendly operation:
+- ✅ Security findings are **informational** (won't block PRs)
+- ✅ Review findings in Security tab at your convenience
+- ✅ Weekly scans synchronized on Tuesdays for efficiency
+- ✅ SARIF reports provide actionable remediation guidance
 
 ---
 
