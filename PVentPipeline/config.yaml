@@ -1,5 +1,0 @@
-actions:
-  - quarantine
-  - notify
-  - block
-  - escalate

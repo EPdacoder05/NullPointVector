@@ -1,0 +1,24 @@
+{
+  "cached_at": "2025-11-24T02:44:47.529797",
+  "result": {
+    "url": "https://paypa1.com/login",
+    "risk_score": 55,
+    "flags": [
+      "TYPOSQUATTING:paypal.com",
+      "SUSPICIOUS_PATH:login"
+    ],
+    "analyzed_at": "2025-11-24T02:44:24.025603",
+    "domain": "paypa1.com",
+    "path": "/login",
+    "scheme": "https",
+    "tld": ".com",
+    "is_shortener": false,
+    "is_typosquatting": true,
+    "typo_target": "paypal.com",
+    "is_suspicious_tld": false,
+    "redirect_chain": [
+      "https://paypa1.com/login"
+    ],
+    "threat_level": "MEDIUM"
+  }
+}

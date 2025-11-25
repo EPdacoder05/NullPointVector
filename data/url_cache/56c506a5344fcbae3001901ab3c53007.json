@@ -1,0 +1,23 @@
+{
+  "cached_at": "2025-11-24T02:45:05.899573",
+  "result": {
+    "url": "http://192.168.1.1/admin",
+    "risk_score": 60,
+    "flags": [
+      "IP_ADDRESS_URL",
+      "MANY_SUBDOMAINS:4"
+    ],
+    "analyzed_at": "2025-11-24T02:44:49.885419",
+    "domain": "192.168.1.1",
+    "path": "/admin",
+    "scheme": "http",
+    "tld": ".1",
+    "is_shortener": false,
+    "is_typosquatting": false,
+    "is_suspicious_tld": false,
+    "redirect_chain": [
+      "http://192.168.1.1/admin"
+    ],
+    "threat_level": "MEDIUM"
+  }
+}

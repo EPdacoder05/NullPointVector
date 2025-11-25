@@ -1,0 +1,24 @@
+{
+  "cached_at": "2025-11-24T02:44:49.246057",
+  "result": {
+    "url": "https://secure-login.paypal.verify-account.ru/confirm",
+    "risk_score": 50,
+    "flags": [
+      "SUSPICIOUS_TLD:.ru",
+      "SUSPICIOUS_PATH:confirm",
+      "MANY_SUBDOMAINS:4"
+    ],
+    "analyzed_at": "2025-11-24T02:44:47.841096",
+    "domain": "secure-login.paypal.verify-account.ru",
+    "path": "/confirm",
+    "scheme": "https",
+    "tld": ".ru",
+    "is_shortener": false,
+    "is_typosquatting": false,
+    "is_suspicious_tld": true,
+    "redirect_chain": [
+      "https://secure-login.paypal.verify-account.ru/confirm"
+    ],
+    "threat_level": "MEDIUM"
+  }
+}

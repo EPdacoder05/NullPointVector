@@ -7,8 +7,8 @@ import logging
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
-# Update the import to use a relative import
-from .base import EmailFetcher
+# Update the import to use base_fetcher (has IP extraction)
+from .base_fetcher import EmailFetcher
 
 logger = logging.getLogger(__name__)
 

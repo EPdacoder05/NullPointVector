@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple, Union
 import logging
 from datetime import datetime
-import email
+import email.message
 from email.header import decode_header
 import os
 from dotenv import load_dotenv
@@ -65,6 +65,7 @@ class EmailFetcher(ABC):
                 'body': email_data.get('body'),
                 'date': email_data.get('date', datetime.now().isoformat()),
                 'attachments': email_data.get('attachments', []),
+                'headers': email_data.get('headers', {}),  # PRESERVE HEADERS
                 'metadata': {
                     'provider': self.__class__.__name__,
                     'folder': email_data.get('folder', 'INBOX'),
