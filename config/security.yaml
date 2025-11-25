@@ -1,0 +1,25 @@
+access_control:
+  allowed_ips: []
+  blocked_ips: []
+  enabled: true
+  require_auth: true
+audit_logging:
+  backup_count: 10
+  enabled: true
+  log_file: logs/security.log
+  mask_pii: true
+  max_log_size_mb: 100
+encryption:
+  algorithm: AES-256-GCM
+  enabled: true
+  key_rotation_days: 90
+input_validation:
+  allowed_characters: strict_alphanumeric_plus_punctuation
+  enabled: true
+  max_message_length: 10000
+  sanitize_html: true
+rate_limiting:
+  burst_limit: 10
+  enabled: true
+  requests_per_minute: 60
+  strategy: fixed_window

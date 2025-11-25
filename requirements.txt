@@ -25,15 +25,19 @@ bleach>=6.0
 passlib>=1.7
 bcrypt>=4.0
 
-# Web interface (optional)
-flask>=2.3
-streamlit>=1.28
+# Web interface (Dash/Plotly)
+dash>=2.14
 plotly>=5.0
+dash-bootstrap-components>=1.5
+requests>=2.31.0
+
+# API framework
+fastapi>=0.100
+uvicorn[standard]>=0.23
+pydantic>=2.0
 
 # CLI interface
 rich>=13.0
-
-
 
 # Testing
 pytest>=7.4

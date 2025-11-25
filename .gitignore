@@ -155,6 +155,30 @@ yarn-error.log*
 
 # Application specific
 backup/
-data/
+data/ingestion/
 reports/
-uploads/ 
+uploads/
+
+# Private documentation (eyes only)
+PRESENTATION_GUIDE.md
+QUICK_REFERENCE.md
+PRESENTATION_READY.md
+INTERVIEW_PREP.md
+ACCOMPLISHMENTS.md
+DEPLOYMENT_GUIDE.md
+README_PROFESSIONAL.md
+
+# Private test files
+test_geo_ingestion.py
+test_geo_quick.py
+test_endtoend.py
+test_triage.py
+test_vector_storage.py
+
+# Data files (sensitive)
+data/blocked_senders.json
+data/geo_cache.json
+data/sender_profiles.json
+data/threat_actions.json
+data/warned_senders.json
+data/reports/

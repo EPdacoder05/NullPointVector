@@ -65,6 +65,7 @@ class EmailFetcher(ABC):
                 'body': email_data.get('body'),
                 'date': email_data.get('date', datetime.now().isoformat()),
                 'attachments': email_data.get('attachments', []),
+                'headers': email_data.get('headers', {}),  # PRESERVE HEADERS
                 'metadata': {
                     'provider': self.__class__.__name__,
                     'folder': email_data.get('folder', 'INBOX'),

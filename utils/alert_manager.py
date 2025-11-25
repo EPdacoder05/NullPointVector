@@ -1,18 +1,30 @@
 import logging
 import json
+import subprocess
+import smtplib
+import os
+import requests
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import requests
 from dotenv import load_dotenv
-import os
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AlertManager:
+    """
+    Unified Alert System.
+    Supports:
+    1. Local Desktop Notifications (macOS Native)
+    2. Email Alerts (SMTP)
+    3. Webhooks (Slack/Discord/API)
+    4. JSON History Log
+    """
+    
     def __init__(self):
         load_dotenv()
         self.alert_levels = {
@@ -21,18 +33,25 @@ class AlertManager:
             'medium': 1,
             'low': 0
         }
-        self.alert_history_file = Path('intel_analytics/alert_history.json')
-        self.alert_history_file.parent.mkdir(exist_ok=True)
+        
+        # Persistence
+        self.alert_history_file = Path('data/intel_analytics/alert_history.json')
+        self.alert_history_file.parent.mkdir(parents=True, exist_ok=True)
         self._load_alert_history()
         
-        # Email configuration
+        # Configuration
+        self.enable_local = os.getenv('ALERT_ENABLE_LOCAL', 'true').lower() == 'true'
+        self.enable_email = os.getenv('ALERT_ENABLE_EMAIL', 'false').lower() == 'true'
+        self.enable_webhook = os.getenv('ALERT_ENABLE_WEBHOOK', 'false').lower() == 'true'
+
+        # Email Config
         self.smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
         self.smtp_port = int(os.getenv('SMTP_PORT', '587'))
         self.smtp_username = os.getenv('SMTP_USERNAME')
         self.smtp_password = os.getenv('SMTP_PASSWORD')
         self.alert_recipients = os.getenv('ALERT_RECIPIENTS', '').split(',')
         
-        # Webhook configuration
+        # Webhook Config
         self.webhook_url = os.getenv('ALERT_WEBHOOK_URL')
     
     def _load_alert_history(self):
@@ -48,8 +67,11 @@ class AlertManager:
     
     def _save_alert_history(self):
         """Save alert history to file."""
-        with open(self.alert_history_file, 'w') as f:
-            json.dump(self.alert_history, f, indent=2)
+        try:
+            with open(self.alert_history_file, 'w') as f:
+                json.dump(self.alert_history, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save alert history: {e}")
     
     def create_alert(self, 
                     level: str,
@@ -57,9 +79,9 @@ class AlertManager:
                     message: str,
                     details: Dict[str, Any],
                     timestamp: Optional[str] = None) -> Dict[str, Any]:
-        """Create a new alert."""
+        """Create and dispatch a new alert."""
         if level not in self.alert_levels:
-            raise ValueError(f"Invalid alert level: {level}")
+            level = 'medium' # Fallback
         
         alert = {
             'id': len(self.alert_history) + 1,
@@ -71,24 +93,53 @@ class AlertManager:
             'status': 'new'
         }
         
+        # 1. Save to History
         self.alert_history.append(alert)
         self._save_alert_history()
         
-        # Send notifications
-        self._send_notifications(alert)
+        # 2. Dispatch Notifications
+        self._dispatch_notifications(alert)
         
         return alert
     
-    def _send_notifications(self, alert: Dict[str, Any]):
-        """Send notifications for the alert."""
-        # Send email if configured
-        if self.smtp_username and self.smtp_password and self.alert_recipients:
+    def _dispatch_notifications(self, alert: Dict[str, Any]):
+        """Route alert to enabled channels."""
+        
+        # Always log to console
+        logger.info(f"🚨 ALERT [{alert['level'].upper()}]: {alert['message']}")
+
+        # Channel 1: Local Desktop (macOS)
+        if self.enable_local:
+            self._send_local_notification(alert)
+
+        # Channel 2: Email
+        if self.enable_email and self.smtp_username:
             self._send_email_alert(alert)
         
-        # Send webhook if configured
-        if self.webhook_url:
+        # Channel 3: Webhook
+        if self.enable_webhook and self.webhook_url:
             self._send_webhook_alert(alert)
-    
+
+    def _send_local_notification(self, alert: Dict[str, Any]):
+        """Send native macOS desktop notification."""
+        try:
+            # Escape quotes for AppleScript
+            title = f"[{alert['level'].upper()}] {alert['source']}"
+            msg = alert['message'].replace('"', '\\"')
+            title = title.replace('"', '\\"')
+            
+            # Determine sound based on severity
+            sound = "Ping"
+            if alert['level'] == 'critical': sound = "Sosumi"
+            elif alert['level'] == 'high': sound = "Glass"
+
+            # Execute AppleScript via osascript
+            script = f'display notification "{msg}" with title "{title}" sound name "{sound}"'
+            subprocess.run(["osascript", "-e", script], check=False)
+            
+        except Exception as e:
+            logger.error(f"Error sending local notification: {e}")
+
     def _send_email_alert(self, alert: Dict[str, Any]):
         """Send alert via email."""
         try:
@@ -108,7 +159,6 @@ class AlertManager:
             Details:
             {json.dumps(alert['details'], indent=2)}
             """
-            
             msg.attach(MIMEText(body, 'plain'))
             
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
@@ -116,8 +166,7 @@ class AlertManager:
                 server.login(self.smtp_username, self.smtp_password)
                 server.send_message(msg)
                 
-            logger.info(f"Email alert sent for alert ID {alert['id']}")
-            
+            logger.info(f"Email alert sent for ID {alert['id']}")
         except Exception as e:
             logger.error(f"Error sending email alert: {e}")
     
@@ -127,57 +176,26 @@ class AlertManager:
             response = requests.post(
                 self.webhook_url,
                 json=alert,
-                headers={'Content-Type': 'application/json'}
+                headers={'Content-Type': 'application/json'},
+                timeout=5
             )
             response.raise_for_status()
-            logger.info(f"Webhook alert sent for alert ID {alert['id']}")
-            
         except Exception as e:
             logger.error(f"Error sending webhook alert: {e}")
+
+    # --- Analytics Helpers ---
+
+    def get_alerts(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent alerts."""
+        return sorted(self.alert_history, key=lambda x: x['timestamp'], reverse=True)[:limit]
     
-    def get_alerts(self, 
-                  level: Optional[str] = None,
-                  source: Optional[str] = None,
-                  status: Optional[str] = None,
-                  limit: int = 100) -> List[Dict[str, Any]]:
-        """Get filtered alerts."""
-        alerts = self.alert_history
-        
-        if level:
-            alerts = [a for a in alerts if a['level'] == level]
-        if source:
-            alerts = [a for a in alerts if a['source'] == source]
-        if status:
-            alerts = [a for a in alerts if a['status'] == status]
-        
-        return sorted(alerts, key=lambda x: x['timestamp'], reverse=True)[:limit]
-    
-    def update_alert_status(self, alert_id: int, status: str):
-        """Update alert status."""
-        for alert in self.alert_history:
-            if alert['id'] == alert_id:
-                alert['status'] = status
-                self._save_alert_history()
-                return True
-        return False
-    
-    def get_alert_stats(self) -> Dict[str, Any]:
-        """Get alert statistics."""
-        stats = {
+    def get_stats(self) -> Dict[str, Any]:
+        """Get simple alert statistics."""
+        return {
             'total': len(self.alert_history),
-            'by_level': {},
-            'by_source': {},
-            'by_status': {}
+            'critical': sum(1 for a in self.alert_history if a['level'] == 'critical'),
+            'high': sum(1 for a in self.alert_history if a['level'] == 'high')
         }
-        
-        for alert in self.alert_history:
-            # Count by level
-            stats['by_level'][alert['level']] = stats['by_level'].get(alert['level'], 0) + 1
-            
-            # Count by source
-            stats['by_source'][alert['source']] = stats['by_source'].get(alert['source'], 0) + 1
-            
-            # Count by status
-            stats['by_status'][alert['status']] = stats['by_status'].get(alert['status'], 0) + 1
-        
-        return stats 
+
+# Singleton instance
+alert_manager = AlertManager()

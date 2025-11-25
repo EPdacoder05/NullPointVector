@@ -1,0 +1,24 @@
+{
+  "cached_at": "2025-11-24T02:44:47.839929",
+  "result": {
+    "url": "http://bit.ly/3xYz123",
+    "risk_score": 30,
+    "flags": [
+      "URL_SHORTENER",
+      "EXPANDS_TO:http://bit.ly/3xYz123"
+    ],
+    "analyzed_at": "2025-11-24T02:44:47.531344",
+    "domain": "bit.ly",
+    "path": "/3xYz123",
+    "scheme": "http",
+    "tld": ".ly",
+    "is_shortener": true,
+    "expanded_url": "http://bit.ly/3xYz123",
+    "is_typosquatting": false,
+    "is_suspicious_tld": false,
+    "redirect_chain": [
+      "http://bit.ly/3xYz123"
+    ],
+    "threat_level": "LOW"
+  }
+}

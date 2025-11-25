@@ -1,0 +1,21 @@
+{
+  "cached_at": "2025-11-24T02:44:49.884854",
+  "result": {
+    "url": "https://linkedin.com/in/john",
+    "risk_score": 0,
+    "flags": [],
+    "analyzed_at": "2025-11-24T02:44:49.247224",
+    "domain": "linkedin.com",
+    "path": "/in/john",
+    "scheme": "https",
+    "tld": ".com",
+    "is_shortener": false,
+    "is_typosquatting": false,
+    "is_suspicious_tld": false,
+    "redirect_chain": [
+      "https://linkedin.com/in/john",
+      "https://www.linkedin.com/in/john"
+    ],
+    "threat_level": "LOW"
+  }
+}

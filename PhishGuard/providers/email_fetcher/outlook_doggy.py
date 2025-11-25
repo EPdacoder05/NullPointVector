@@ -101,7 +101,7 @@ class OutlookDoggy:
 
 if __name__ == "__main__":
     # Test the fetcher
-    fetcher = OutlookFetcher()
+    fetcher = OutlookDoggy()
     emails = fetcher.fetch_emails(limit=5)
     for email in emails:
         print(f"From: {email['from']}")

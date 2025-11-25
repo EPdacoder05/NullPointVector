@@ -13,7 +13,7 @@ sys.path.append(str(project_root))
 
 # Import security modules
 from SmishGuard.providers.sms_fetcher.iphone_doggy import IPhoneSMSFetcher
-from VishGuard.voice_fetch.twilio_doggy import fetch_voice
+from VishGuard.voice_fetch.iphone_doggy import IPhoneVoiceFetcher
 from PhishGuard.providers.email_fetcher.registry import EmailFetcherRegistry
 from utils.threat_intelligence import check_sender, check_url
 
@@ -51,13 +51,20 @@ def test_sms_security():
         logger.warning("Skipping iPhone tests due to access restrictions")
 
 def test_voice_security():
-    """Test voice call security with real Twilio data."""
-    logger.info("Testing voice call security...")
+    """Test voice call security with iPhone CallKit data."""
+    logger.info("Testing voice call security with iPhone...")
     try:
-        fetch_voice()
+        from VishGuard.voice_fetch.iphone_doggy import IPhoneVoiceFetcher
+        voice_fetcher = IPhoneVoiceFetcher()
+        calls = voice_fetcher.fetch_recent_calls(limit=10)
+        logger.info(f"Fetched {len(calls)} voice calls from iPhone")
+        # Analyze calls for suspicious patterns
+        for call in calls:
+            logger.info(f"Call from {call.get('number')}: {call.get('duration')}s")
         logger.info("Voice security test completed")
     except Exception as e:
         logger.error(f"Voice security test failed: {e}")
+        logger.warning("Ensure iPhone is connected and backup accessible")
 
 def test_email_security(provider):
     """Test email security for a specific provider."""

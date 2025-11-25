@@ -7,8 +7,8 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple, Union
 from dotenv import load_dotenv
 
-# Import from base.py
-from .base import EmailFetcher
+# Import from base_fetcher.py (has IP extraction and security features)
+from .base_fetcher import EmailFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,18 @@ class YahooDoggy(EmailFetcher):
             except Exception as e:
                 logger.error(f"Error disconnecting from Yahoo: {e}")
     
+    def move_to_junk(self, email_id: str) -> bool:
+        """Move an email to Spam folder."""
+        try:
+            # Move to "Bulk Mail" (Yahoo's spam folder)
+            self.connection.copy(email_id, '"Bulk Mail"')
+            self.connection.store(email_id, '+FLAGS', '\\Deleted')
+            self.connection.expunge()
+            return True
+        except Exception as e:
+            logger.error(f"Error moving email to Spam: {e}")
+            return False
+    
     def fetch_emails(self, folder: str = 'INBOX', limit: int = 100) -> List[Dict[str, Any]]:
         """Fetch emails from Yahoo."""
         if not self.connection:
@@ -66,7 +78,7 @@ class YahooDoggy(EmailFetcher):
                 email_body = msg_data[0][1]
                 email_message = email.message_from_bytes(email_body)
                 
-                # Process the email
+                # Process the email with enhanced metadata
                 processed_email = self.process_email({
                     'id': email_id.decode(),
                     'from': self._decode_header(email_message['From']),
@@ -74,7 +86,19 @@ class YahooDoggy(EmailFetcher):
                     'subject': self._decode_header(email_message['Subject']),
                     'body': self._extract_body(email_message),
                     'date': email_message['Date'],
-                    'folder': folder
+                    'folder': folder,
+                    # Enhanced metadata for threat intelligence
+                    'headers': {
+                        'received': email_message.get_all('Received', []),
+                        'return_path': email_message.get('Return-Path'),
+                        'message_id': email_message.get('Message-ID'),
+                        'x_originating_ip': email_message.get('X-Originating-IP'),
+                        'x_mailer': email_message.get('X-Mailer'),
+                        'authentication_results': email_message.get('Authentication-Results'),
+                        'received_spf': email_message.get('Received-SPF'),
+                        'dkim_signature': email_message.get('DKIM-Signature'),
+                    },
+                    'raw_headers': str(email_message),  # Full headers for forensics
                 })
                 emails.append(processed_email)
             

@@ -1,48 +1,31 @@
-version: '3.8'
-
 services:
   app:
     build: .
     ports:
-      - "8501:8501"  # Streamlit
-      - "8000:8000"  # API
+      - "127.0.0.1:8050:8050"  # <--- Dash UI: Only accessible from YOUR Mac
+      - "127.0.0.1:8000:8000"  # <--- API: Only accessible from YOUR Mac
     volumes:
+      # DEV MODE: Keep this line to edit code without rebuilding
       - .:/app
-      - ./Phishy_Bizz:/app/Phishy_Bizz
+      # - ./Phishy_Bizz:/app/Phishy_Bizz  <-- Comment out for now if folder missing
     environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/phishguard
-      - REDIS_URL=redis://redis:6379/0
-      - ML_MODEL_PATH=/app/models
+      - DB_HOST=db 
+      - DB_PORT=5432
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - ML_MODEL_PATH=${ML_MODEL_PATH}
     depends_on:
       - db
-      - redis
 
   db:
-    image: postgres:15
+    image: pgvector/pgvector:pg15
     environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=pass
-      - POSTGRES_DB=phishguard
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-  vector_db:
-    image: qdrant/qdrant
-    ports:
-      - "6333:6333"
-    volumes:
-      - qdrant_data:/qdrant/storage
+      - "5433:5432" # Exposes DB to your Mac so local scripts work
 
 volumes:
   postgres_data:
-  redis_data:
-  qdrant_data: 
