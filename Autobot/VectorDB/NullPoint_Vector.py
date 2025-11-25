@@ -274,10 +274,26 @@ def create_tables(conn):
 def insert_message(conn, message_type, sender, raw_content, preprocessed_text, 
                    subject=None, recipient=None, timestamp=None, 
                    is_threat=0, confidence=0.0, metadata=None, label=None):
-    """Insert a message with all its components into the database."""
+    """Insert a message with all its components into the database.
+    
+    SECURITY: Encrypts sensitive fields at rest:
+    - raw_content: Full email body (BYTEA encrypted)
+    - subject: Email subject line (TEXT encrypted)
+    - preprocessed_text: Sanitized content for ML (TEXT encrypted)
+    
+    Unencrypted fields (for querying/analysis):
+    - sender, recipient: Needed for threat intelligence lookups
+    - timestamp: Needed for time-series analysis
+    - embedding: ML vector (not sensitive)
+    - metadata: Already sanitized by input_validator
+    """
     try:
         embedding = generate_embedding(preprocessed_text)
+        
+        # SECURITY: Encrypt all sensitive content fields
         encrypted_raw_content = encrypt_data(raw_content)
+        encrypted_subject = encrypt_data(subject) if subject else None
+        encrypted_preprocessed = encrypt_data(preprocessed_text)
         
         with conn.cursor() as cursor:
             cursor.execute('''
@@ -289,8 +305,8 @@ def insert_message(conn, message_type, sender, raw_content, preprocessed_text,
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
             ''', (
-                message_type, sender, recipient, timestamp, subject,
-                encrypted_raw_content, preprocessed_text, embedding,
+                message_type, sender, recipient, timestamp, encrypted_subject,
+                encrypted_raw_content, encrypted_preprocessed, embedding,
                 is_threat, confidence, json.dumps(metadata) if metadata else None, label
             ))
             message_id = cursor.fetchone()[0]
@@ -327,9 +343,14 @@ def find_similar_messages(conn, query_text, message_type=None, limit=5):
             results = cursor.fetchall()
             decrypted_results = []
             for row in results:
-                id, msg_type, subject, sender, encrypted_raw_content, is_threat, distance, preprocessed_text, metadata = row
+                id, msg_type, encrypted_subject, sender, encrypted_raw_content, is_threat, distance, encrypted_preprocessed, metadata = row
+                
+                # SECURITY: Decrypt all encrypted fields for application use
                 decrypted_raw_content = decrypt_data(encrypted_raw_content) if encrypted_raw_content else None
-                decrypted_results.append((id, msg_type, subject, sender, decrypted_raw_content, is_threat, distance, preprocessed_text, metadata))
+                decrypted_subject = decrypt_data(encrypted_subject) if encrypted_subject else None
+                decrypted_preprocessed = decrypt_data(encrypted_preprocessed) if encrypted_preprocessed else None
+                
+                decrypted_results.append((id, msg_type, decrypted_subject, sender, decrypted_raw_content, is_threat, distance, decrypted_preprocessed, metadata))
             return decrypted_results
     except psycopg2.Error as e:
         logger.error(f"Error searching similar messages: {e}")
@@ -460,9 +481,12 @@ def get_threat_by_id(threat_id: str):
             if not row:
                 return None
             
-            id, msg_type, sender, recipient, timestamp, subject, encrypted_raw, preprocessed, is_threat, confidence, metadata = row
+            id, msg_type, sender, recipient, timestamp, encrypted_subject, encrypted_raw, encrypted_preprocessed, is_threat, confidence, metadata = row
             
+            # SECURITY: Decrypt all encrypted fields
             decrypted_content = decrypt_data(encrypted_raw) if encrypted_raw else None
+            decrypted_subject = decrypt_data(encrypted_subject) if encrypted_subject else None
+            decrypted_preprocessed = decrypt_data(encrypted_preprocessed) if encrypted_preprocessed else None
             
             return {
                 "id": id,
@@ -470,9 +494,9 @@ def get_threat_by_id(threat_id: str):
                 "sender": sender,
                 "recipient": recipient,
                 "timestamp": timestamp.isoformat() if timestamp else None,
-                "subject": subject,
+                "subject": decrypted_subject,
                 "content": decrypted_content,
-                "preprocessed_text": preprocessed,
+                "preprocessed_text": decrypted_preprocessed,
                 "is_threat": bool(is_threat),
                 "confidence": confidence,
                 "metadata": metadata or {}
@@ -523,13 +547,17 @@ def get_all_threats(threat_type: str = None, limit: int = 100):
             threats = []
             
             for row in results:
-                id, msg_type, sender, timestamp, subject, is_threat, confidence, metadata = row
+                id, msg_type, sender, timestamp, encrypted_subject, is_threat, confidence, metadata = row
+                
+                # SECURITY: Decrypt subject field
+                decrypted_subject = decrypt_data(encrypted_subject) if encrypted_subject else None
+                
                 threats.append({
                     "id": id,
                     "threat_type": msg_type,
                     "sender": sender,
                     "timestamp": timestamp.isoformat() if timestamp else None,
-                    "subject": subject,
+                    "subject": decrypted_subject,
                     "is_threat": bool(is_threat),
                     "confidence": confidence,
                     "metadata": metadata or {}
