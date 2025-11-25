@@ -10,6 +10,10 @@ jobs:
   snyk:
     name: Snyk Vulnerability Scan
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     
     steps:
     - name: Checkout code
@@ -34,7 +38,7 @@ jobs:
         args: --severity-threshold=high --skip-unresolved
 
     - name: Upload Snyk report
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       if: always()
       with:
         sarif_file: snyk.sarif

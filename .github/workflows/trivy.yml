@@ -12,6 +12,10 @@ jobs:
   trivy-scan:
     name: Trivy Vulnerability Scanner
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     
     steps:
     - name: Checkout code
@@ -28,7 +32,7 @@ jobs:
         exit-code: '0'  # Don't fail on vulnerabilities
 
     - name: Upload Trivy results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
