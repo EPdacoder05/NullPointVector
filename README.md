@@ -763,15 +763,6 @@ kubectl port-forward svc/dashboard 8050:8050
 
 ---
 
-## 📖 Documentation
-
-### Essential Reading
-
-1. **PRESENTATION_GUIDE.md** - 5-minute LinkedIn showcase script
-2. **QUICK_REFERENCE.md** - Cheat sheet for presentations
-3. **SECURITY_AUDIT_FINAL.md** - 98.5/100 security audit report
-4. **CAREER_NARRATIVE.md** - Career journey for recruiters
-5. **ACCOMPLISHMENTS.md** - 115 features completed checklist
 
 ### Technical Deep-Dive
 
