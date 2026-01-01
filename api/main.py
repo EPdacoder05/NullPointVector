@@ -23,6 +23,9 @@ from PhishGuard.phish_mlm.phishing_detector import PhishingDetector
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Singleton detector instance (loaded once for the API workers)
+detector = PhishingDetector()
+
 # Initialize FastAPI
 app = FastAPI(
     title="Yahoo_Phish IDPS API",
@@ -190,7 +193,7 @@ async def analyze_content(
     """
     try:
         start_time = datetime.now()
-        # Heuristic first
+        # 1) Heuristic + similarity
         h_score = heuristic_score(request.content, request.sender)
         similar_threats = search_similar_threats(
             content=request.content,
@@ -199,15 +202,31 @@ async def analyze_content(
         )
         similarity_score = 0.0
         if similar_threats:
-            # If we find very similar known threats, flag as threat
             max_similarity = max(t.get('similarity', 0) for t in similar_threats)
             similarity_score = max_similarity
-            is_threat = max_similarity > 0.75  # 75% similarity threshold
-        else:
-            is_threat = h_score > 0.6  # Heuristic fallback
         
-        # Combined scoring (weighted average)
-        combined_score = (h_score * 0.4) + (similarity_score * 0.6)
+        # 2) ML ensemble prediction
+        ml_confidence = 0.0
+        ml_label = 0
+        ml_debug = {}
+        try:
+            ml_label, ml_confidence, ml_debug = detector.predict({
+                "subject": request.metadata.get("subject") if request.metadata else "",
+                "body": request.content,
+                "from": request.sender or ""
+            })
+        except Exception as e:
+            logger.error(f"ML prediction failed: {e}")
+
+        # 3) Decision logic (favor ML but include heuristics/similarity)
+        signals = max(h_score, similarity_score)
+        combined_score = (ml_confidence * 0.6) + (signals * 0.4)
+        is_threat = (
+            (ml_confidence >= 0.55) or
+            (combined_score >= 0.6) or
+            (similarity_score >= 0.75) or
+            (h_score >= 0.65)
+        )
         
         # Generate threat ID
         threat_id = f"{request.threat_type}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -217,7 +236,14 @@ async def analyze_content(
                 content=request.content,
                 threat_type=request.threat_type,
                 sender=request.sender or "unknown",
-                metadata={"heuristic": h_score, "similarity": similarity_score, "label": 1, **(request.metadata or {})}
+                metadata={
+                    "heuristic": h_score,
+                    "similarity": similarity_score,
+                    "ml_confidence": ml_confidence,
+                    "ml_debug": ml_debug,
+                    "label": 1,
+                    **(request.metadata or {})
+                }
             )
         else:
             # Optionally store for corpus building (unlabeled)
@@ -227,22 +253,30 @@ async def analyze_content(
                     content=request.content,
                     threat_type=request.threat_type,
                     sender=request.sender or "unknown",
-                    metadata={"heuristic": h_score, "similarity": similarity_score, "label": 0, "unlabeled": True, **(request.metadata or {})}
+                    metadata={
+                        "heuristic": h_score,
+                        "similarity": similarity_score,
+                        "ml_confidence": ml_confidence,
+                        "ml_debug": ml_debug,
+                        "label": 0,
+                        "unlabeled": True,
+                        **(request.metadata or {})
+                    }
                 )
         recommendations = []
         if is_threat:
             recommendations.extend([
-                "🚨 This content matches threat patterns",
-                "⚠️ Do NOT interact with links or provide info",
-                f"🧪 Heuristic score: {h_score:.2f} | Similarity: {similarity_score:.2f}",
+                "[ALERT] This content matches threat patterns",
+                "[WARNING] Do NOT interact with links or provide info",
+                f"[SCORES] Heuristic: {h_score:.2f} | Similarity: {similarity_score:.2f} | ML: {ml_confidence:.2f}",
             ])
             if request.sender:
-                recommendations.append(f"🚫 Block sender: {request.sender}")
+                recommendations.append(f"[ACTION] Block sender: {request.sender}")
         else:
             recommendations.extend([
-                "✅ No immediate threat detected",
-                f"ℹ️ Heuristic score: {h_score:.2f} | Similarity: {similarity_score:.2f}",
-                "⚠️ Stay cautious with unsolicited messages"
+                "[OK] No immediate threat detected",
+                f"[SCORES] Heuristic: {h_score:.2f} | Similarity: {similarity_score:.2f} | ML: {ml_confidence:.2f}",
+                "[CAUTION] Stay cautious with unsolicited messages"
             ])
         analysis_time = (datetime.now() - start_time).total_seconds()
         return ThreatAnalysisResponse(
@@ -327,17 +361,19 @@ async def report_threat(
 
 @app.post("/api/v1/seed", response_model=SeedResponse)
 async def seed_threats():
+    """Seed database with template threats (FOR TESTING ONLY - use real data in production)."""
     from Autobot.VectorDB.NullPoint_Vector import get_all_threats
     existing = get_all_threats(limit=5_000)
     existing_contents = {t["id"] for t in existing}
     inserted = 0
     for sample in SEED_THREATS:
         try:
-            store_threat(**sample)
+            result = store_threat(**sample)
             inserted += 1
         except Exception:
             continue
     total_after = len(get_all_threats(limit=5_000))
+    logger.warning(f"[SEED] Inserted {inserted} template threats. Use real data in production.")
     return SeedResponse(inserted=inserted, already_present=len(existing_contents), total_after=total_after)
 
 @app.post("/api/v1/retrain", response_model=RetrainResponse)

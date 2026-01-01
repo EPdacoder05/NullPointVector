@@ -174,9 +174,9 @@ def render_monitor_tab():
                 dbc.Card([
                     dbc.CardHeader("🌍 Threat Origins (Last 24h)"),
                     dbc.CardBody([
-                        dcc.Graph(id="threat-map", style={"height": "300px"})
-                    ])
-                ])
+                        dcc.Graph(id="threat-map", style={"height": "250px", "overflow": "hidden"})
+                    ], style={"padding": "0.5rem", "overflow": "hidden"})
+                ], style={"overflow": "hidden"})
             ], width=6),
         ], className="mb-4"),
         
@@ -609,12 +609,21 @@ def update_threat_map(n):
                         })
         
         if not threat_locations:
-            # Empty map
-            fig = go.Figure()
+            # FIX: Use Scattergeo() to force geographic projection
+            fig = go.Figure(go.Scattergeo())
             fig.update_layout(
                 title="No threats with geolocation in last 24 hours",
                 template="plotly_dark",
-                height=500
+                height=240,
+                margin=dict(l=0, r=0, t=30, b=0),
+                geo=dict(
+                    showland=True,
+                    landcolor='#1a1a1a',
+                    showcountries=True,
+                    countrycolor='#333',
+                    bgcolor='rgba(0,0,0,0)',
+                    projection_type='natural earth'
+                )
             )
             return fig
         
@@ -638,7 +647,8 @@ def update_threat_map(n):
         
         fig.update_layout(
             template="plotly_dark",
-            height=600,
+            height=240,
+            margin=dict(l=0, r=0, t=30, b=0),
             geo=dict(
                 showland=True,
                 landcolor='#1a1a1a',
@@ -650,10 +660,12 @@ def update_threat_map(n):
         return fig
     except Exception as e:
         logger.error(f"Error updating threat map: {e}")
-        fig = go.Figure()
+        fig = go.Figure(go.Scattergeo())
         fig.update_layout(
             title=f"Error loading threat map: {str(e)}",
-            template="plotly_dark"
+            template="plotly_dark",
+            height=240,
+            margin=dict(l=0, r=0, t=30, b=0)
         )
         return fig
 
@@ -685,39 +697,70 @@ def update_threat_list(n, selected_threat):
     # Create threat cards
     threat_cards = []
     for threat_id, sender, subject, confidence, metadata, timestamp in threats:
-        # Get geolocation from stored metadata
-        geo_text = "🔍 No Geo Data"
+        # Defensive defaults to avoid NoneType errors
+        subject_text = (subject or "(no subject)").strip()
+        sender_text = (sender or "unknown").strip()
+        confidence_val = float(confidence or 0.0)
+        ts_display = timestamp.strftime('%Y-%m-%d %H:%M') if hasattr(timestamp, 'strftime') else str(timestamp)
+        
+        # Get geolocation and analysis from stored metadata
+        geo_text = "No Geo Data"
+        analysis_bits = []
+        
         if metadata and isinstance(metadata, dict):
             geo = metadata.get('geo', {})
             if geo and isinstance(geo, dict):
                 country = geo.get('country', 'Unknown')
                 city = geo.get('city', '')
+                ip_addr = geo.get('ip', '')
                 risk = geo.get('risk_score', 'UNKNOWN')
-                risk_emoji = {'LOW': '🟢', 'MEDIUM': '🟡', 'HIGH': '🔴', 'UNKNOWN': '⚪'}
-                location = f"{city}, {country}" if city else country
-                geo_text = f"{location} {risk_emoji.get(risk, '⚪')} {risk}"
+                location_parts = []
+                if city:
+                    location_parts.append(city)
+                location_parts.append(country)
+                if ip_addr:
+                    location_parts.append(f"[{ip_addr}]")
+                location = " / ".join(location_parts)
+                risk_label = f"{risk}" if risk != 'UNKNOWN' else "??"
+                geo_text = f"{location} ({risk_label})"
+            
+            # Build analysis breakdown
+            heuristic_val = metadata.get('heuristic')
+            similarity_val = metadata.get('similarity')
+            ml_conf_val = metadata.get('ml_confidence')
+            
+            if heuristic_val is not None:
+                analysis_bits.append(f"Heuristic={heuristic_val:.2f}")
+            if similarity_val is not None:
+                analysis_bits.append(f"Similarity={similarity_val:.2f}")
+            if ml_conf_val is not None:
+                analysis_bits.append(f"ML={ml_conf_val:.2f}")
+        
+        analysis_text = " | ".join(analysis_bits) if analysis_bits else "No analysis data"
         
         # Handle confidence (0.00 means not yet scored by ML)
-        confidence_text = f"{confidence:.1%}" if confidence > 0 else "Not Scored"
-        confidence_color = "text-danger" if confidence > 0.8 else "text-warning" if confidence > 0.5 else "text-muted"
+        confidence_text = f"{confidence_val:.1%}" if confidence_val > 0 else "Not Scored"
+        confidence_color = "text-danger" if confidence_val > 0.8 else "text-warning" if confidence_val > 0.5 else "text-muted"
         
         # Create card
         card = dbc.Card([
             dbc.CardBody([
                 dbc.Row([
                     dbc.Col([
-                        html.H5(f"🚨 {subject[:60]}...", className="text-danger"),
+                        html.H5(f"[THREAT] {subject_text[:55]}", className="text-danger"),
                         html.P([
                             html.Strong("From: "),
-                            html.Span(sender, className="text-info"),
+                            html.Span(sender_text, className="text-info"),
                             html.Br(),
                             html.Strong("Location: "),
-                            html.Span(geo_text),
+                            html.Span(geo_text, className="text-muted"),
                             html.Br(),
                             html.Strong("Confidence: "),
                             html.Span(confidence_text, className=confidence_color),
                             html.Br(),
-                            html.Small(f"Detected: {timestamp.strftime('%Y-%m-%d %H:%M')}", className="text-muted")
+                            html.Small(f"Analysis: {analysis_text}", className="text-muted"),
+                            html.Br(),
+                            html.Small(f"Detected: {ts_display}", className="text-muted")
                         ])
                     ], width=8),
                     
@@ -963,7 +1006,7 @@ def update_raw_data_table(n_clicks, n_intervals, filter_val, limit):
     prevent_initial_call=False
 )
 def update_raw_file_view(reload_clicks, selected_file, n_intervals):
-    """Populate and display raw ingestion JSON files."""
+    """Populate and display raw ingestion JSON files with robust parsing."""
     ingestion_dir = Path('data/ingestion')
     files = sorted(ingestion_dir.glob('*.json'))[-25:]
     options = [{"label": f.name, "value": str(f)} for f in files]
@@ -973,14 +1016,31 @@ def update_raw_file_view(reload_clicks, selected_file, n_intervals):
     meta_div = ""
     if selected_file and Path(selected_file).exists():
         try:
-            raw_text = Path(selected_file).read_text()[:500000]  # safety cap
-            raw = json.loads(raw_text)
-            preview = raw[:50] if isinstance(raw, list) else raw
-            pretty = json.dumps(preview, indent=2, ensure_ascii=False)
-            content_div = html.Pre(pretty, style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"})
-            meta_div = f"Showing {'list[' + str(len(preview)) + ']' if isinstance(preview, list) else 'object'} | File size: {Path(selected_file).stat().st_size} bytes"
+            raw_text = Path(selected_file).read_text()
+            file_size = len(raw_text.encode())
+            # Try parsing full file first
+            try:
+                raw = json.loads(raw_text)
+            except json.JSONDecodeError:
+                # If full parse fails, try truncating and repairing
+                truncated = raw_text[:250000]
+                last_brace = truncated.rfind('}')
+                if truncated.startswith('['):
+                    last_brace = max(last_brace, truncated.rfind(']'))
+                if last_brace > 0:
+                    truncated = truncated[:last_brace + 1]
+                    if truncated.startswith('['):
+                        truncated += ']'
+                raw = json.loads(truncated)
+            
+            preview = raw[:20] if isinstance(raw, list) else raw
+            pretty = json.dumps(preview, indent=2, ensure_ascii=False)[:10000]
+            content_div = html.Pre(pretty, style={"whiteSpace": "pre-wrap", "wordBreak": "break-word", "fontSize": "11px"})
+            item_count = len(raw) if isinstance(raw, list) else 1
+            meta_div = f"Records: {item_count} | File size: {file_size / 1024:.1f} KB (showing first 20)"
         except Exception as e:
-            content_div = html.Div(f"Failed to read file: {e}", style={"color": "#f85149"})
+            meta_div = f"Parsing failed: {str(e)[:60]}... (file may be corrupted)"
+            content_div = html.Div(f"Unable to parse file: {str(e)[:100]}", style={"color": "#f85149", "fontSize": "12px"})
     return options, selected_file, content_div, meta_div
 
 
@@ -1021,13 +1081,14 @@ def handle_email_ingestion(n_clicks, provider, user_email, batch_size):
         add_realtime_log('info', f'📧 Receiver: {user_email}')
         add_realtime_log('info', f'🔌 Connecting to {provider.upper()}...')
         
-        # Configure ingestion
+        # Configure ingestion - REAL-TIME email-by-email processing (default)
         config = IngestionConfig(
             batch_size=int(batch_size),
             max_emails_per_provider=int(batch_size),
             parallel_providers=False,
             enable_intelligence=True,
-            enable_ml_analysis=True
+            enable_ml_analysis=True,
+            stream_delay=0.03      # 30ms between emails for fast real-time streaming
         )
         
         # Run ingestion in background thread (non-blocking for real-time updates)
@@ -1042,7 +1103,7 @@ def handle_email_ingestion(n_clicks, provider, user_email, batch_size):
         threading.Thread(target=_run_ingestion, daemon=True).start()
 
         return dbc.Alert([
-            html.H4("🚀 Ingestion Started", className="alert-heading"),
+            html.H4("🚀 Real-Time Streaming Started", className="alert-heading"),
             html.Hr(),
             html.P([
                 html.Strong("Provider: "), f"{provider.upper()}", html.Br(),
@@ -1394,6 +1455,6 @@ if __name__ == "__main__":
     print("   🌍 Geo Intelligence - IP tracking & profiling")
     print("="*70)
     
-    # Bind to 127.0.0.1 (localhost only) for security
-    # Change to '0.0.0.0' if you need LAN access
-    app.run(debug=True, host='127.0.0.1', port=8050)
+    # Bind to 0.0.0.0 for Docker container access
+    # Use 127.0.0.1 for local-only security
+    app.run(debug=True, host='0.0.0.0', port=8050)
