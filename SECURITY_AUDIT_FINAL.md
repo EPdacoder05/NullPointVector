@@ -43,7 +43,7 @@
 | Hardcoded Secrets | ✅ **ZERO found** (all from .env) |
 | URL Analysis | ✅ **Zero-trust** (NEVER renders HTML or executes JS) |
 | Database Security | ✅ **100/100** (parameterized queries, connection pooling) |
-| Input Validation | ✅ **100/100** (14 SQL patterns, XSS, command injection blocked) |
+| Input Validation | ✅ **100/100** (26 SQL patterns, 10 XSS patterns, command injection blocked) |
 | API Security | ⚠️ **85/100** (needs JWT auth for production) |
 | Model Security | ⚠️ **90/100** (pickle risk accepted, local file only) |
 
@@ -91,8 +91,8 @@
 ### **1. Code Injection Attacks**
 | Attack Type | Prevention Mechanism | Status |
 |-------------|---------------------|--------|
-| SQL Injection | Parameterized queries + InputValidator (14 patterns) | ✅ BLOCKED |
-| XSS (Cross-Site Scripting) | HTML sanitization + Dash escaping | ✅ BLOCKED |
+| SQL Injection | Parameterized queries + InputValidator (26 patterns) | ✅ BLOCKED |
+| XSS (Cross-Site Scripting) | HTML sanitization + Dash escaping + InputValidator (10 patterns) | ✅ BLOCKED |
 | Command Injection | Shell metacharacter blocking + no subprocess | ✅ BLOCKED |
 | LDAP Injection | No LDAP integration | ✅ N/A |
 | XML Injection | No XML parsing (JSON only) | ✅ N/A |
@@ -204,8 +204,8 @@ grep -r "eval|exec|compile|__import__|os.system" .        # Code execution check
 ```
 
 #### Findings:
-✅ **SQL Injection Prevention**: 14 regex patterns blocked  
-✅ **XSS Prevention**: Bleach HTML sanitizer, only allows `<b>, <i>, <em>, <strong>`  
+✅ **SQL Injection Prevention**: 26 regex patterns blocked (comprehensive coverage)  
+✅ **XSS Prevention**: 10 explicit patterns + Bleach HTML sanitizer, only allows `<b>, <i>, <em>, <strong>`  
 ✅ **Command Injection**: 8 shell metacharacter patterns blocked  
 ✅ **Path Traversal**: 6 directory navigation patterns blocked  
 ✅ **XXE/XML Injection**: 4 entity detection patterns  
@@ -226,7 +226,7 @@ SQL_INJECTION_PATTERNS = [
     r"(union\s+select)",
     r"(exec\s*\()",
     r"(eval\s*\()",
-    # ... 14 total patterns
+    # ... 26 total patterns covering all SQL injection categories
 ]
 
 # All inputs sanitized before DB insertion
