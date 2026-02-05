@@ -14,7 +14,7 @@ from utils.security.input_validator import InputValidator
 
 
 def test_sql_pattern_count():
-    """Test that SQL_INJECTION_PATTERNS has 20 patterns"""
+    """Test that SQL_INJECTION_PATTERNS has 26 patterns"""
     validator = InputValidator()
     assert len(validator.SQL_INJECTION_PATTERNS) == 26, \
         f"Expected 26 SQL patterns, found {len(validator.SQL_INJECTION_PATTERNS)}"

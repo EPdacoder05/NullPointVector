@@ -22,7 +22,7 @@ SQL_INJECTION_PATTERNS = [
     r"(eval\s*\()",              # Eval function injection
     r"(expression\s*\()",        # CSS expression injection
     r"(union\s+all\s+select)",   # UNION ALL variant
-    r"(cast\s*\(.+\s+as)",       # CAST-based UNION injection
+    r"(cast\s*\([^)]+\s+as)",    # CAST-based UNION injection
     r"(like\s+['\"]%)",          # LIKE-based boolean blind injection
     r"(waitfor\s+delay)",        # Time-based blind (T-SQL)
     r"(sleep\s*\()",             # Time-based blind (MySQL)
