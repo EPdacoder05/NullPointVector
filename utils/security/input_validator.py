@@ -4,8 +4,8 @@ MAX SECURITY Input Validator - Defense in Depth
 Prevents: SQL injection, XSS, command injection, path traversal, SSRF, XXE, DoS
 
 SECURITY CONTROLS:
-✅ SQL Injection Prevention - Parameterized queries + pattern detection
-✅ XSS Prevention - HTML sanitization with bleach + CSP headers
+✅ SQL Injection Prevention - 26 comprehensive patterns (20 SQL + 6 XSS overlaps for defense in depth)
+✅ XSS Prevention - 10 explicit patterns + bleach HTML sanitization
 ✅ Command Injection - Shell metacharacter blocking
 ✅ Path Traversal - Directory navigation prevention
 ✅ SSRF Prevention - Localhost/private IP blocking
@@ -42,20 +42,46 @@ class InputValidator:
     
     # Dangerous patterns (injection attempts)
     SQL_INJECTION_PATTERNS = [
-        r"('\s*(or|and)\s*')",
-        r"(--\s*$)",
-        r"(;\s*drop\s+table)",
-        r"(;\s*delete\s+from)",
-        r"(union\s+select)",
-        r"(exec\s*\()",
-        r"(insert\s+into)",
-        r"(update\s+.+\s+set)",
-        r"(<script)",
-        r"(javascript:)",
-        r"(onerror\s*=)",
-        r"(onload\s*=)",
-        r"(eval\s*\()",
-        r"(expression\s*\()",
+        r"('\s*(or|and)\s*')",      # Boolean-based blind injection
+        r"(--\s*$)",                 # Comment evasion
+        r"(;\s*drop\s+table)",       # Stacked query - DROP
+        r"(;\s*delete\s+from)",      # Stacked query - DELETE
+        r"(union\s+select)",         # UNION-based injection
+        r"(exec\s*\()",              # Execution vector - EXEC function
+        r"(insert\s+into)",          # Stacked query - INSERT
+        r"(update\s+.+\s+set)",      # Stacked query - UPDATE
+        r"(<script)",                # XSS/Script injection
+        r"(javascript:)",            # JavaScript protocol
+        r"(onerror\s*=)",            # Event handler injection
+        r"(onload\s*=)",             # Event handler injection
+        r"(eval\s*\()",              # Eval function injection
+        r"(expression\s*\()",        # CSS expression injection
+        r"(union\s+all\s+select)",   # UNION ALL variant
+        r"(cast\s*\(.+\s+as)",       # CAST-based UNION injection
+        r"(like\s+['\"]%)",          # LIKE-based boolean blind injection
+        r"(waitfor\s+delay)",        # Time-based blind (T-SQL)
+        r"(sleep\s*\()",             # Time-based blind (MySQL)
+        r"(benchmark\s*\()",         # Time-based blind (MySQL)
+        r"(pg_sleep\s*\()",          # Time-based blind (PostgreSQL)
+        r"(version\s*\()",           # Database fingerprinting
+        r"(@@version)",              # Database fingerprinting (T-SQL)
+        r"(information_schema)",     # Schema enumeration
+        r"(xp_cmdshell)",            # OS command execution (T-SQL)
+        r"(;\s*exec\s+)",            # Stacked query execution
+    ]
+    
+    # XSS Prevention Patterns
+    XSS_PATTERNS = [
+        r"(<script[\s\S]*?>)",        # Script tags
+        r"(javascript:)",              # JavaScript protocol
+        r"(onerror\s*=)",              # onerror event
+        r"(onload\s*=)",               # onload event
+        r"(onclick\s*=)",              # onclick event
+        r"(onmouseover\s*=)",          # onmouseover event
+        r"(eval\s*\()",                # eval function
+        r"(expression\s*\()",          # CSS expression
+        r"(vbscript:)",                # VBScript protocol
+        r"(data:text/html)",           # Data URI XSS
     ]
     
     # Command injection patterns
@@ -92,6 +118,7 @@ class InputValidator:
         """Initialize validator with compiled regex patterns."""
         # Compile all regex patterns for performance
         self.sql_regex = [re.compile(p, re.IGNORECASE) for p in self.SQL_INJECTION_PATTERNS]
+        self.xss_patterns = [re.compile(p, re.IGNORECASE) for p in self.XSS_PATTERNS]
         self.cmd_regex = [re.compile(p, re.IGNORECASE) for p in self.COMMAND_INJECTION_PATTERNS]
         self.path_regex = [re.compile(p, re.IGNORECASE) for p in self.PATH_TRAVERSAL_PATTERNS]
         self.xxe_regex = [re.compile(p, re.IGNORECASE) for p in self.XXE_PATTERNS]
@@ -224,6 +251,12 @@ class InputValidator:
                 if self._check_xxe(body):
                     logger.error("🚨 SECURITY THREAT: XXE injection attempt detected")
                     raise ValueError("Malicious XML detected")
+        
+        # Check for XSS patterns
+        for pattern in self.xss_patterns:
+            if pattern.search(body.lower()):
+                logger.error(f"🚨 SECURITY THREAT: XSS pattern detected: {pattern.pattern}")
+                raise ValueError("Malicious XSS content detected")
         
         # Check for script injection
         if self._check_injection(body):
