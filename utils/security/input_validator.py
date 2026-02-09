@@ -64,7 +64,7 @@ class InputValidator:
         # UNION-based injection
         r"(union\s+select)",
         r"(union\s+all\s+select)",
-        r"(cast\s*\([^)]+\s+as)",  # ReDoS-safe: [^)]+ instead of .+
+        r"(cast\s*\([^)]+\s+as)",  # ReDoS-mitigated: [^)]+ is greedy but bounded by )
         
         # Time-based blind injection
         r"(waitfor\s+delay)",      # T-SQL
@@ -469,7 +469,13 @@ class InputValidator:
         return False
     
     def _regex_with_timeout(self, func, text: str, timeout: int = 1):
-        """Execute regex with timeout protection against ReDoS."""
+        """
+        Execute regex with timeout protection against ReDoS.
+        
+        Note: Signal-based timeout only works on Unix/Linux. On Windows,
+        regex operations run without timeout protection. For production
+        Windows deployments, consider implementing thread-based timeouts.
+        """
         def timeout_handler(signum, frame):
             raise TimeoutError("Regex execution timeout")
         
@@ -547,14 +553,21 @@ class InputValidator:
             if match:
                 matched_text = match.group(0)
                 
-                # Reduce false positives: Check if it's actually suspicious
-                # Allow common patterns in job titles/emails
-                if '|' in matched_text and not ('|' in matched_text and ('bash' in command.lower() or 'sh' in command.lower())):
-                    continue
+                # Reduce false positives: Allow common patterns in legitimate text
+                # Allow pipe in normal text (e.g., "Job Title | Company") if no shell commands
+                if '|' in matched_text:
+                    # Check if suspicious shell commands are present
+                    suspicious_cmds = ['bash', 'sh', 'cat', 'grep', 'awk', 'sed', 'ls', 'pwd', 
+                                      'rm', 'sudo', 'chmod', 'wget', 'curl', 'nc', 'netcat']
+                    if not any(cmd in command.lower() for cmd in suspicious_cmds):
+                        continue
                 
-                # Allow semicolons in normal text (not followed by commands)
-                if ';' in matched_text and not any(cmd in command.lower() for cmd in ['rm ', 'sudo', 'chmod', 'wget', 'curl']):
-                    continue
+                # Allow semicolons in normal text (not followed by dangerous commands)
+                if ';' in matched_text:
+                    dangerous_cmds = ['rm', 'sudo', 'chmod', 'wget', 'curl', 'nc', 'kill', 
+                                     'bash', 'sh', 'exec', 'eval']
+                    if not any(cmd in command.lower() for cmd in dangerous_cmds):
+                        continue
                 
                 logger.error(f"🚨 SECURITY THREAT: Command injection pattern detected: {pattern.pattern}")
                 raise ValueError("Malicious command input detected")

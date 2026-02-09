@@ -289,7 +289,7 @@ class EgressFilter:
     BLOCKED_IP_RANGES = [
         "127.0.0.0/8",      # Loopback
         "10.0.0.0/8",       # Private class A
-        "172.16.0.0/12",    # Private class B
+        "172.16.0.0/12",    # Private class B (172.16-31.x)
         "192.168.0.0/16",   # Private class C
         "169.254.0.0/16",   # Link-local
         "::1/128",          # IPv6 loopback
@@ -330,9 +330,15 @@ class EgressFilter:
             logger.error(f"🚨 SECURITY THREAT: Blocked egress to {hostname}")
             return False
         
-        # Check if hostname starts with blocked IP ranges
-        for blocked_range in ["127.", "10.", "172.16.", "192.168.", "169.254."]:
-            if hostname.startswith(blocked_range):
+        # Check if hostname starts with blocked IP ranges (IPv4)
+        # 172.16.0.0/12 means 172.16-31.x.x
+        private_prefixes = ["127.", "10."]
+        private_172_prefixes = [f"172.{i}." for i in range(16, 32)]  # 172.16-31
+        private_prefixes.extend(private_172_prefixes)
+        private_prefixes.extend(["192.168.", "169.254."])
+        
+        for blocked_prefix in private_prefixes:
+            if hostname.startswith(blocked_prefix):
                 logger.error(f"🚨 SECURITY THREAT: Blocked egress to private IP {hostname}")
                 return False
         
