@@ -575,8 +575,8 @@ class TestSupplyChainValidator:
         """Test that SupplyChainValidator can verify file hashes."""
         validator = SupplyChainValidator()
         # Verify the validator exists and has expected methods
-        assert hasattr(validator, 'verify_requirements_hash')
-        assert hasattr(validator, 'check_dependency_integrity')
+        assert hasattr(validator, 'verify_hash')
+        assert hasattr(validator, 'check_requirements_hash')
 
 
 if __name__ == "__main__":
