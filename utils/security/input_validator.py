@@ -479,6 +479,7 @@ class InputValidator:
         def timeout_handler(signum, frame):
             raise TimeoutError("Regex execution timeout")
         
+        old_handler = None  # Initialize before conditional to avoid uninitialized variable
         # Set up signal handler for timeout (Unix/Linux only)
         if os.name != 'nt':  # Not Windows
             old_handler = signal.signal(signal.SIGALRM, timeout_handler)
@@ -492,7 +493,7 @@ class InputValidator:
         except TimeoutError:
             raise
         finally:
-            if os.name != 'nt':
+            if old_handler is not None:  # Check handler not OS to avoid using uninitialized variable
                 signal.signal(signal.SIGALRM, old_handler)
     
     def validate_ldap(self, ldap_input: str) -> str:

@@ -20,7 +20,7 @@ import secrets
 import hashlib
 import logging
 import unicodedata
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 from passlib.hash import bcrypt, argon2
 import re
 

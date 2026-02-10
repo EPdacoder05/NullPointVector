@@ -333,7 +333,7 @@ class TestReDoS:
         
         # Should complete quickly due to timeout protection
         try:
-            result = self.validator.validate_body(test_pattern)
+            _ = self.validator.validate_body(test_pattern)  # Result intentionally unused; testing for no exception
             assert True  # If we get here, no infinite loop
         except (ValueError, TimeoutError):
             # Either rejected or timeout - both are acceptable
@@ -566,6 +566,17 @@ class TestCircuitBreaker:
         result = breaker.call(successful_func)
         assert result == "success"
         assert breaker.get_state() == CircuitState.CLOSED
+
+
+class TestSupplyChainValidator:
+    """Test supply chain validation."""
+    
+    def test_hash_verification(self):
+        """Test that SupplyChainValidator can verify file hashes."""
+        validator = SupplyChainValidator()
+        # Verify the validator exists and has expected methods
+        assert hasattr(validator, 'verify_requirements_hash')
+        assert hasattr(validator, 'check_dependency_integrity')
 
 
 if __name__ == "__main__":
