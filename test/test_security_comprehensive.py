@@ -333,7 +333,7 @@ class TestReDoS:
         
         # Should complete quickly due to timeout protection
         try:
-            _ = self.validator.validate_body(test_pattern)  # Result intentionally unused; testing for no exception
+            _ = self.validator.validate_body(test_pattern)  # Testing that validation completes without raising an exception or timeout
             assert True  # If we get here, no infinite loop
         except (ValueError, TimeoutError):
             # Either rejected or timeout - both are acceptable

@@ -479,7 +479,7 @@ class InputValidator:
         def timeout_handler(signum, frame):
             raise TimeoutError("Regex execution timeout")
         
-        old_handler = None  # Initialize before conditional to avoid uninitialized variable
+        old_handler = None  # Initialize to avoid UnboundLocalError in finally block
         # Set up signal handler for timeout (Unix/Linux only)
         if os.name != 'nt':  # Not Windows
             old_handler = signal.signal(signal.SIGALRM, timeout_handler)
