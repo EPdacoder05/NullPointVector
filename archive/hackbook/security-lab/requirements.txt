@@ -1,11 +1,11 @@
 # Security testing
-requests==2.31.0
+requests==2.32.4
 beautifulsoup4==4.12.2
 selenium==4.15.2
-paramiko==3.3.1
-cryptography==41.0.5
+paramiko==3.4.0
+cryptography==46.0.5
 python-nmap==0.7.1
-scapy==2.5.0
+scapy==2.7.0rc1
 impacket==0.11.0
 python-whois==0.8.0
 dnspython==2.6.1
@@ -24,5 +24,5 @@ grafana-api-client==2.0.0
 # Utilities
 python-dotenv==1.0.0
 pyyaml==6.0.1
-tqdm==4.66.1
+tqdm==4.66.3
 colorama==0.4.6 
