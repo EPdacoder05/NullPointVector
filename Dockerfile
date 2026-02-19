@@ -41,7 +41,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import sys; sys.exit(0)" || exit 1
+  CMD curl -f http://localhost:8000/docs || curl -f http://localhost:8050/ || exit 1
 
 # Expose ports
 EXPOSE 8050 8000

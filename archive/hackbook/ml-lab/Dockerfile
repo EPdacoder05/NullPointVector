@@ -40,7 +40,7 @@ ENV GPU_ENABLED=true
 
 # Add healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python3 -c "import sys; sys.exit(0)" || exit 1
+  CMD python3 -c "import os, sys; script = '/app/training/pipeline.py'; import torch; (os.path.exists(script) and torch.__version__) or sys.exit(1)" || exit 1
 
 # Run training pipeline
 CMD ["python3", "training/pipeline.py"] 
