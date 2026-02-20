@@ -1,0 +1,49 @@
+name: Docker Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  scan-main:
+    name: Scan Main Dockerfile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build main image
+        run: docker build -t nullpointvector:main .
+
+      - name: Scan main image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: nullpointvector:main
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+  scan-hackbook:
+    name: Scan Hackbook ${{ matrix.lab }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      matrix:
+        lab: [ci-lab, ml-lab, security-lab]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.lab }} image
+        run: docker build -t hackbook-${{ matrix.lab }}:test archive/hackbook/${{ matrix.lab }}
+
+      - name: Scan ${{ matrix.lab }} image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: hackbook-${{ matrix.lab }}:test
+          severity: HIGH,CRITICAL
+          exit-code: 1

@@ -128,7 +128,6 @@ config.local.py
 settings.local.py
 
 # Docker
-.dockerignore
 
 # Node.js (if any frontend components)
 node_modules/

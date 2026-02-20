@@ -1,46 +1,66 @@
-# Use Python 3.11 slim image
+# Stage 1: Builder
+FROM python:3.11-slim AS builder
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a virtual environment and install Python dependencies
+RUN python -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir fastapi uvicorn dash plotly dash-bootstrap-components
+
+# Stage 2: Runtime
 FROM python:3.11-slim
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
+# Install runtime system dependencies only
 RUN apt-get update && apt-get install -y \
-    build-essential \
     curl \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first
-COPY requirements.txt .
+# SECURITY: Create a non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -u 1001 appuser
 
-# Install Python dependencies (including API server and Dash)
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install fastapi uvicorn dash plotly dash-bootstrap-components
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
 
 # Copy the rest of the application
-COPY . .
+COPY --chown=appuser:appuser . .
 
 # Create necessary directories
-RUN mkdir -p Phishy_Bizz logs data/ingestion
+RUN mkdir -p Phishy_Bizz logs data/ingestion && chown -R appuser:appuser /app
 
 # Setup startup script
-COPY start.sh .
 RUN chmod +x start.sh
 
-# SECURITY: Create a non-root user
-RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH=/opt/venv/bin:$PATH
 
 # Expose ports
 EXPOSE 8050 8000
+
+# Healthcheck — verify both API and UI services are responsive
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/docs || curl -f http://localhost:8050/ || exit 1
 
 # Run the startup script (Runs both API and UI)
 CMD ["./start.sh"]
