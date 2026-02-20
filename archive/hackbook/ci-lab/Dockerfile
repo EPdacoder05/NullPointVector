@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim-bookworm
 
 # SECURITY: Create a non-root user
 RUN groupadd -r labuser && useradd -r -g labuser -u 1001 labuser

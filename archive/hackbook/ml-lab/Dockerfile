@@ -1,11 +1,11 @@
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.2.0-cudnn8-runtime-ubuntu22.04
 
 # SECURITY: Create a non-root user
 RUN groupadd -r mluser && useradd -r -g mluser -u 1001 mluser
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3 \
+    python3.11 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,8 +36,9 @@ ENV GPU_ENABLED=true
 
 USER mluser
 
-# Healthcheck
-HEALTHCHECK CMD python3 -c "import sys; sys.exit(0)"
+# Healthcheck — verify torch is importable and training script is present
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+  CMD python3 -c "import sys, os, torch; sys.exit(0 if os.path.exists('/ml/training/pipeline.py') else 1)"
 
 # Run training pipeline
 CMD ["python3", "training/pipeline.py"] 

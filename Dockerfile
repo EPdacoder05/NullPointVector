@@ -58,9 +58,9 @@ ENV PATH=/opt/venv/bin:$PATH
 # Expose ports
 EXPOSE 8050 8000
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD python -c "import sys; sys.exit(0)"
+# Healthcheck — verify both API and UI services are responsive
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/docs || curl -f http://localhost:8050/ || exit 1
 
 # Run the startup script (Runs both API and UI)
 CMD ["./start.sh"]

@@ -34,7 +34,7 @@ jobs:
       security-events: write
     strategy:
       matrix:
-        lab: [ci-lab, ml-lab]
+        lab: [ci-lab, ml-lab, security-lab]
     steps:
       - uses: actions/checkout@v4
 
