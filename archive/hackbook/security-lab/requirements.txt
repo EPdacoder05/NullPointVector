@@ -5,7 +5,7 @@ selenium==4.15.2
 paramiko==3.4.0
 cryptography==46.0.5
 python-nmap==0.7.1
-scapy==2.7.0rc1
+scapy==2.7.0
 impacket==0.11.0
 python-whois==0.8.0
 dnspython==2.6.1

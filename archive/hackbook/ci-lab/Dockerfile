@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.12-slim-bookworm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -29,10 +29,18 @@ COPY pipelines/ /app/pipelines/
 # Set up artifacts directory
 RUN mkdir -p /artifacts
 
+# SECURITY: Create a non-root user
+RUN useradd -m ciuser && chown -R ciuser:ciuser /app /artifacts
+USER ciuser
+
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV ENVIRONMENT=hackbook
 ENV CI_MODE=testing
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "import importlib; importlib.import_module('pipelines.runner')" || exit 1
 
 # Run pipeline runner
 CMD ["python", "pipelines/runner.py"] 
