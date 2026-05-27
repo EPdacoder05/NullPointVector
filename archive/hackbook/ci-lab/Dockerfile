@@ -40,4 +40,4 @@ USER labuser
 HEALTHCHECK CMD python -c "import sys; sys.exit(0)"
 
 # Run pipeline runner
-CMD ["python", "pipelines/runner.py"] 
+CMD ["python", "pipelines/runner.py"]
