@@ -18,6 +18,7 @@ ENV PATH=/opt/venv/bin:$PATH
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir fastapi uvicorn dash plotly dash-bootstrap-components
+RUN pip install --no-cache-dir "wheel>=0.46.2" "jaraco.context>=6.1.0"
 
 # Stage 2: Runtime
 FROM python:3.11-slim

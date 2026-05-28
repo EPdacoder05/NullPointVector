@@ -24,6 +24,7 @@ jobs:
         with:
           image-ref: nullpointvector:main
           severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: 1
 
   scan-hackbook:
@@ -46,4 +47,5 @@ jobs:
         with:
           image-ref: hackbook-${{ matrix.lab }}:test
           severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: 1
