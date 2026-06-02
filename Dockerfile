@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y \
 # SECURITY: Create a non-root user
 RUN groupadd -r appuser && useradd -r -g appuser -u 1001 appuser
 
+# Upgrade vulnerable Python packages in system Python
+RUN pip install --no-cache-dir "wheel>=0.46.2" "jaraco.context>=6.1.0"
+
 WORKDIR /app
 
 # Copy virtual environment from builder
@@ -56,16 +59,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH=/opt/venv/bin:$PATH
 
-# Add healthcheck
+# Healthcheck — verify both API and UI services are responsive
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/docs || curl -f http://localhost:8050/ || exit 1
 
 # Expose ports
 EXPOSE 8050 8000
-
-# Healthcheck — verify both API and UI services are responsive
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/docs || curl -f http://localhost:8050/ || exit 1
 
 # Run the startup script (Runs both API and UI)
 CMD ["./start.sh"]
