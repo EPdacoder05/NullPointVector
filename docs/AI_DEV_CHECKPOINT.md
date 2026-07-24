@@ -131,9 +131,10 @@ These were decided in external chats that are gone. They are LOCKED unless the u
    transcript_source, grade_by/grade_reason, model_version, campaign_cluster,
    review_status. Materialized "latest effective risk by number" for fast
    directory-sync export.
-10. **UI themes (2026-07-24)**: three appearances, switcher in sidebar foot,
+10. **UI themes (2026-07-24)**: four appearances, switcher in sidebar foot,
    persisted in localStorage (`np_theme`): **Deck** (default gold+green Signal
-   Deck), **Terminal** (green-phosphor console), **Blackout** (pure black).
+   Deck), **Standard** (legacy NullPointVector light/blue console palette),
+   **Terminal** (green-phosphor console), **Blackout** (pure black).
    Implemented as CSS-variable overrides on `body[data-theme]` in `app.css` —
    new themes = new variable block, never a parallel stylesheet.
    NOTE: the legacy Dash console still serves on :8050 (blue UI) — do not

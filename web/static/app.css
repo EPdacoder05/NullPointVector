@@ -29,9 +29,37 @@
 
 /* ------------------------------------------------------------------ themes
    Default (no attribute) = Signal Deck: forest ink + brass + signal green.
+   data-theme="standard"  = legacy NullPointVector console: light surface,
+                            blue command accents, red/gold/green stat colors.
    data-theme="terminal"  = green-phosphor console (the "green terminal" look).
    data-theme="blackout"  = pure black, minimal chrome.
    Switcher lives in the sidebar foot; choice persists in localStorage. */
+body[data-theme="standard"] {
+  --ink: #eef2f7;
+  --field: #f7f9fc;
+  --panel: #ffffff;
+  --panel-2: #f2f6fa;
+  --rail: #e3eaf2;
+  --line: #d5deea;
+  --line-strong: #b3c3d6;
+  --text: #16233a;
+  --muted: #5d6b80;
+  --faint: #8a97a8;
+  --brass: #1668e3;
+  --brass-dim: #0d4fb8;
+  --signal: #1f9d55;
+  --signal-dim: #157a41;
+  --danger: #e02020;
+  --warn: #f0a500;
+  --safe: #1f9d55;
+  background-image:
+    radial-gradient(900px 480px at 12% -8%, rgba(22,104,227,.08), transparent 55%),
+    radial-gradient(700px 420px at 92% 8%, rgba(31,157,85,.06), transparent 50%);
+  background-size: auto, auto;
+}
+body[data-theme="standard"] ::selection { background: rgba(22,104,227,.25); color: #16233a; }
+body[data-theme="standard"] .btn { color: #ffffff; }
+
 body[data-theme="terminal"] {
   --ink: #030804;
   --field: #041008;
