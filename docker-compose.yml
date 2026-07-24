@@ -2,19 +2,65 @@ services:
   app:
     build: .
     ports:
-      - "127.0.0.1:8050:8050"  # <--- Dash UI: Only accessible from YOUR Mac
-      - "127.0.0.1:8000:8000"  # <--- API: Only accessible from YOUR Mac
+      - "8050:8050"
+      - "8000:8000"
     volumes:
-      # DEV MODE: Keep this line to edit code without rebuilding
+      # DEV MODE: live-edit code without rebuilding. REMOVE this line for a
+      # production deploy so the container runs the baked, immutable image.
       - .:/app
+      # Persist runtime-generated state on named volumes so it survives
+      # container recreation even when the dev bind mount above is removed.
+      # These dirs start empty (no seeded content to shadow), so this is safe.
+      - app_logs:/app/logs
+      - app_ingestion:/app/data/ingestion
+      # Durable dead-letter fallback: confirmed threats buffered here when the DB
+      # is down survive container recreation, so the drainer can replay them.
+      - app_dlq:/app/data/dlq
       # - ./Phishy_Bizz:/app/Phishy_Bizz  <-- Comment out for now if folder missing
+    # Self-heal: restart the API on crash/OOM. Combined with the /health probe and
+    # the (optional) autoheal sidecar, a downed app comes back on its own.
+    restart: unless-stopped
+    labels:
+      - "autoheal=true"
+    env_file:
+      - .env
     environment:
-      - DB_HOST=db 
+      # App talks to PgBouncer (transaction pooler), NOT Postgres directly.
+      # PgBouncer multiplexes thousands of client conns onto a small server pool.
+      - DB_HOST=db
       - DB_PORT=5432
       - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       - ML_MODEL_PATH=${ML_MODEL_PATH}
+      - REDIS_URL=redis://redis:6379/0
+      - USE_GUNICORN=${USE_GUNICORN:-true}
+      - API_WORKERS=${API_WORKERS:-2}
     depends_on:
-      - db
+      pgbouncer:
+        condition: service_started   # app's start.sh retries DB init on its own
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    # Persist the DLQ/rate-limit/idempotency keyspace so a Redis restart does not
+    # drop buffered dead-letters. AOF = append-only durability.
+    # volatile-lru evicts ONLY keys with a TTL (rate-limit/idempotency) under
+    # memory pressure; the DLQ list is stored WITHOUT a TTL so it is never
+    # evicted. AOF persists the keyspace across a Redis restart.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru",
+              "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    labels:
+      - "autoheal=true"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   db:
     image: pgvector/pgvector:pg15
@@ -22,10 +68,136 @@ services:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
+      # Negotiate SCRAM-SHA-256 (not md5) for password auth on fresh volumes.
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Bind to loopback only: the DB is reached via PgBouncer on the private
+    # network; this host port is for local debugging, not public exposure.
     ports:
-      - "5433:5432" # Exposes DB to your Mac so local scripts work
+      - "127.0.0.1:5433:5432"
+    env_file:
+      - .env
+    # Self-heal: Postgres restarts on crash; the app's connection pool + DLQ
+    # cover the brief window so no confirmed threat is lost while it comes back.
+    restart: unless-stopped
+    labels:
+      - "autoheal=true"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DB_USER} -d $${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------- PgBouncer
+  # Connection pooler between the app and Postgres. Transaction pooling lets a
+  # small number of server connections serve a very large number of clients,
+  # which is what makes the stack survive concurrency spikes.
+  #
+  # Security posture:
+  #   - auth_type = scram-sha-256 (password never crosses the wire in clear)
+  #   - reached only over the private compose network (no public host port)
+  #   - upstream Postgres is loopback-bound; PgBouncer is the single DB door
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - POOL_MODE=transaction
+      - AUTH_TYPE=scram-sha-256
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=20
+      - MIN_POOL_SIZE=5
+      - RESERVE_POOL_SIZE=5
+      - RESERVE_POOL_TIMEOUT=3
+      - SERVER_IDLE_TIMEOUT=600
+      - SERVER_LIFETIME=3600
+      - QUERY_WAIT_TIMEOUT=30
+      - ADMIN_USERS=${DB_USER}
+      - STATS_USERS=${DB_USER}
+      # libpq sends extra_float_digits on connect; transaction pooling rejects
+      # unknown startup params unless explicitly ignored.
+      - IGNORE_STARTUP_PARAMETERS=extra_float_digits
+    # Loopback-bound host port for local psql/debugging only.
+    ports:
+      - "127.0.0.1:6432:6432"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    labels:
+      - "autoheal=true"
+    healthcheck:
+      # PgBouncer doesn't answer pg_isready on its own listener and busybox `nc`
+      # lacks -z, so probe the operationally-meaningful condition instead:
+      # PgBouncer can reach its upstream Postgres. If `db` is down, this fails.
+      test: ["CMD-SHELL", "pg_isready -h db -p 5432 -U $$DB_USER -d $$DB_NAME"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # Single-ingress reverse proxy: ONE public port in front of UI + API.
+  # Browse the whole stack at http://localhost:8088  (and http://<LAN-IP>:8088).
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "8088:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    labels:
+      - "autoheal=true"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Optional public tunnel for demos. Off by default; start with:
+  #   NGROK_AUTHTOKEN=xxxx docker compose --profile tunnel up -d
+  # It tunnels the PROXY (not the app directly), so the same single ingress is
+  # exposed. Inspector UI: http://localhost:4040
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles: ["tunnel"]
+    command: ["http", "proxy:80", "--log=stdout"]
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - proxy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- autoheal
+  # `restart: unless-stopped` already revives a container that CRASHES. autoheal
+  # covers the rarer "alive but wedged" case: it watches Docker healthchecks and
+  # restarts any container labelled autoheal=true that goes `unhealthy`.
+  #
+  # SECURITY TRADEOFF: it needs the Docker socket (root-equivalent on the host),
+  # which is why it is OPT-IN behind a profile rather than always-on. Enable with:
+  #   docker compose --profile heal up -d
+  # In real orchestration (k8s/ECS) use liveness probes instead of this sidecar.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    profiles: ["heal"]
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=15
+      - AUTOHEAL_START_PERIOD=30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  app_logs:
+  app_ingestion:
+  app_dlq:
+  redis_data:

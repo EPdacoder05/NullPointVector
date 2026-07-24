@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Connectors — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Connectors</h1>
+    <div class="desc">Link mail for live IDPS ingest. OAuth for Gmail/Microsoft; Yahoo uses your .env app password for pilot.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/inbox">Inbox stream</a>
+  </div>
+</div>
+
+{% if request.query_params.get('ok') %}
+<div class="connect-note"><strong>Connected.</strong> Mail connector saved for this process — restart-safe store lands with encrypted DB next.</div>
+{% endif %}
+{% if request.query_params.get('err') %}
+<div class="auth-error" style="margin-bottom:16px;">Connector error: {{ request.query_params.get('err') }}</div>
+{% endif %}
+
+<div class="identity-grid">
+  {% for c in connectors %}
+  <section class="card">
+    <div class="hd"><h2>{{ c.provider }}</h2>
+      <span class="badge tone-{{ 'safe' if c.connected else 'warn' }}">{{ 'connected' if c.connected else 'not linked' }}</span>
+    </div>
+    <div class="bd stack">
+      <div class="inbox-sub">{{ c.note }}</div>
+      {% if c.account %}<div class="kbd">{{ c.account }}</div>{% endif %}
+      <div class="inbox-actions">
+        {% if c.mode == 'oauth2' and c.ready %}
+        <a class="btn" href="/app/connectors/oauth/{{ c.provider }}">Connect OAuth</a>
+        {% endif %}
+        {% if c.ready %}
+        <button type="button" class="btn secondary conn-env" data-provider="{{ c.provider }}">Use .env credentials</button>
+        {% else %}
+        <span class="hint">Add OAuth client IDs or app passwords to .env</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+
+<div class="connect-note" style="margin-top:18px;">
+  <strong>CallKit reality:</strong> Apple does not give third-party apps a full inbound call history feed.
+  Pilot path = Call Directory block/label sync + <code>POST /api/v1/vish/screen</code> from the app when you have a caller ID / voicemail transcript.
+  Use <a href="/app/calls">Call log</a> to revise ML accuracy from every screen.
+</div>
+{% endblock %}

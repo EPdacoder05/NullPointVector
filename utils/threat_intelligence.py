@@ -3,10 +3,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import json
+import os
 from pathlib import Path
 
 # Import your Vector DB connector
-from Autobot.VectorDB.NullPoint_Vector import connect_db, insert_message, find_similar_messages
+from Autobot.VectorDB.NullPoint_Vector import get_conn, release_conn, insert_message, find_similar_messages
+from common.redis_client import get_redis
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,8 +25,46 @@ class ThreatIntelligence:
         """Initialize threat intelligence module."""
         self.cache_file = Path('data/threat_cache.json')
         self.cache = self._load_cache()
-        self.db = connect_db()
+        self.redis = get_redis()
+        self.cache_ttl_seconds = int(os.getenv('THREAT_CACHE_TTL_SECONDS', '86400'))
         self.profiles = {}  # Sender behavioral profiles
+
+    def _cache_bucket(self, threat_type: str) -> str:
+        return 'urls' if threat_type == 'url' else 'senders'
+
+    def _cache_get(self, bucket: str, key: str) -> Optional[bool]:
+        entry = self.cache.get(bucket, {}).get(key)
+        if entry:
+            age = datetime.now() - datetime.fromisoformat(entry.get('timestamp', '2000-01-01T00:00:00'))
+            if age.total_seconds() <= self.cache_ttl_seconds:
+                return bool(entry.get('is_threat'))
+
+        if self.redis is not None:
+            raw = self.redis.get(f"threat:{bucket}:{key}")
+            if raw:
+                try:
+                    data = json.loads(raw)
+                    return bool(data.get('is_threat'))
+                except Exception:
+                    return None
+        return None
+
+    def _cache_set(self, bucket: str, key: str, is_threat: bool):
+        payload = {
+            'is_threat': bool(is_threat),
+            'timestamp': datetime.now().isoformat(),
+        }
+        self.cache.setdefault(bucket, {})[key] = payload
+        self._save_cache()
+        if self.redis is not None:
+            try:
+                self.redis.setex(
+                    f"threat:{bucket}:{key}",
+                    self.cache_ttl_seconds,
+                    json.dumps(payload),
+                )
+            except Exception as e:
+                logger.debug(f"Redis cache write failed: {e}")
         
     def _load_cache(self) -> Dict[str, Any]:
         """Load threat cache from file."""
@@ -47,35 +87,43 @@ class ThreatIntelligence:
 
     def check_url(self, url: str) -> bool:
         """
-        Check if URL is malicious using Vector DB similarity.
+        Check if URL is malicious using external feeds + Vector DB similarity.
         """
         # 1. Check Cache
-        if url in self.cache['urls']:
-            return self.cache['urls'][url]['is_threat']
+        cached = self._cache_get('urls', url)
+        if cached is not None:
+            return cached
 
-        # 2. Check Vector DB (Semantic Search)
+        # 2. External feeds (URLhaus + IPQS) — fail-open
+        is_threat = False
+        try:
+            from common.reputation.intel import scan_url_external
+            hit = scan_url_external(url)
+            if hit and hit.get("risk", 0) >= 0.5:
+                is_threat = True
+                self._cache_set('urls', url, is_threat)
+                return is_threat
+        except Exception as e:
+            logger.debug(f"External URL intel skipped: {e}")
+
+        # 3. Check Vector DB (Semantic Search)
         # We treat the URL string as the "message" to embed
         is_threat = False
         try:
-            similar_urls = find_similar_messages(self.db, url, limit=1)
-            if similar_urls:
-                # similar_urls returns tuples, index 5 is 'is_threat' (0 or 1)
-                # Assuming schema: (id, type, sender, ..., is_threat, ...)
-                # We need to ensure find_similar_messages returns the right column index
-                # For now, let's assume if we find a VERY similar match that was a threat, this is too.
-                top_match = similar_urls[0]
-                # If similarity score (usually last item or separate) is high enough?
-                # For now, let's trust the label of the nearest neighbor if it's a threat
-                is_threat = bool(top_match[5]) # Adjust index based on your DB schema
+            conn = get_conn()
+            if conn is not None:
+                try:
+                    similar_urls = find_similar_messages(conn, url, limit=1)
+                    if similar_urls:
+                        top_match = similar_urls[0]
+                        is_threat = bool(top_match[5])
+                finally:
+                    release_conn(conn)
         except Exception as e:
             logger.error(f"Vector DB lookup failed: {e}")
 
         # 3. Update Cache
-        self.cache['urls'][url] = {
-            'is_threat': is_threat,
-            'timestamp': datetime.now().isoformat()
-        }
-        self._save_cache()
+        self._cache_set('urls', url, is_threat)
         
         return is_threat
         
@@ -84,24 +132,26 @@ class ThreatIntelligence:
         Check if sender is malicious using Vector DB similarity.
         """
         # 1. Check Cache
-        if sender in self.cache['senders']:
-            return self.cache['senders'][sender]['is_threat']
+        cached = self._cache_get('senders', sender)
+        if cached is not None:
+            return cached
 
         # 2. Check Vector DB
         is_threat = False
         try:
-            similar_senders = find_similar_messages(self.db, sender, limit=1)
-            if similar_senders:
-                is_threat = bool(similar_senders[0][5]) # Adjust index based on schema
+            conn = get_conn()
+            if conn is not None:
+                try:
+                    similar_senders = find_similar_messages(conn, sender, limit=1)
+                    if similar_senders:
+                        is_threat = bool(similar_senders[0][5])
+                finally:
+                    release_conn(conn)
         except Exception as e:
             logger.error(f"Vector DB lookup failed: {e}")
 
         # 3. Update Cache
-        self.cache['senders'][sender] = {
-            'is_threat': is_threat,
-            'timestamp': datetime.now().isoformat()
-        }
-        self._save_cache()
+        self._cache_set('senders', sender, is_threat)
         
         return is_threat
         
@@ -109,9 +159,13 @@ class ThreatIntelligence:
         """
         Add a confirmed threat to the Vector DB (Training/Memory).
         """
+        conn = None
         try:
+            conn = get_conn()
+            if conn is None:
+                raise RuntimeError("Unable to acquire pooled DB connection")
             insert_message(
-                self.db,
+                conn,
                 message_type=threat_type, # 'url' or 'sender'
                 sender=identifier if threat_type == 'sender' else None,
                 raw_content=identifier, # The URL or Sender string is the content
@@ -123,16 +177,12 @@ class ThreatIntelligence:
             logger.info(f"Added new threat to Vector DB: {threat_type} - {identifier}")
             
             # Also update cache immediately
-            cache_key = 'urls' if threat_type == 'url' else 'senders'
-            if cache_key in self.cache:
-                self.cache[cache_key][identifier] = {
-                    'is_threat': True,
-                    'timestamp': datetime.now().isoformat()
-                }
-                self._save_cache()
+            self._cache_set(self._cache_bucket(threat_type), identifier, True)
                 
         except Exception as e:
             logger.error(f"Error adding threat: {e}")
+        finally:
+            release_conn(conn)
             
     def load_threats(self, file_path: str):
         """Load bulk threats from a JSON file."""

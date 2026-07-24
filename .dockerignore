@@ -1,9 +1,53 @@
+# --- VCS / editor / OS ---
 .git
 .gitignore
-*.md
-.env
-__pycache__
-*.pyc
+.github
 .vscode
 .idea
+.DS_Store
+*.swp
+
+# --- docs / local notes ---
+*.md
+docs/
+
+# --- secrets / local env ---
+.env
+.env.*
+swap_env.sh
+
+# --- python caches / build junk ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# --- virtualenvs ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- RUNTIME DATA (provided by volumes at runtime; NOT baked) ---
+# data/ingestion alone was 4.2GB of raw emails. Caches regenerate; dlq/ingestion
+# are named volumes in docker-compose. Keep these out of the build context.
+data/
+logs/
+*.log
+
+# --- training corpus (model artifacts are pre-trained & committed under */models) ---
 archive/
+Phishy_Bizz/
+
+# --- misc ---
+terminals/
+*.tar
+*.tar.gz
+*.zip

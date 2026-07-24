@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="desc">Live IDPS observability — stream ingest, threat pressure, origin field.</div>
+  </div>
+  <div class="topbar-actions">
+    <span class="kbd" id="dash-clock">—</span>
+    <a class="btn secondary" href="/app/inbox">Open inbox</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi panel">
+    <div class="kpi-k">Processed</div>
+    <div class="kpi-v" id="kpi-total">{{ stats.total }}</div>
+  </div>
+  <div class="kpi panel">
+    <div class="kpi-k">Threats</div>
+    <div class="kpi-v tone-danger" id="kpi-threats">{{ stats.threats }}</div>
+  </div>
+  <a class="kpi panel kpi-link" href="/app/quarantine" title="Open quarantine review">
+    <div class="kpi-k">Quarantined — review</div>
+    <div class="kpi-v tone-warn" id="kpi-blocked">{{ stats.quarantined }}</div>
+  </a>
+  <div class="kpi panel">
+    <div class="kpi-k">Stream rate</div>
+    <div class="kpi-v tone-safe" id="kpi-rate">{{ stats.rate }}</div>
+  </div>
+</div>
+
+<div class="dash-grid">
+  <section class="card">
+    <div class="hd"><h2>Live ingest</h2><span class="kbd">stream</span></div>
+    <div class="bd terminal-log" id="live-log">
+      {% for row in live %}
+      <div class="log-line {{ 'threat' if row.threat else 'ok' }}">
+        <span class="log-ts">{{ row.ts }}</span>
+        <span class="log-mark">{% if row.threat %}THR{% else %}OK{% endif %}</span>
+        <span class="log-from">{{ row.sender }}</span>
+        <span class="log-meta">{{ row.channel }} · {{ row.score }}</span>
+        <span class="log-geo">{{ row.geo }}</span>
+      </div>
+      {% else %}
+      <div class="feed-empty">No stream events yet — analyze a sample or wait for ingest.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd"><h2>Threat field</h2><span class="kbd">24h</span></div>
+    <div class="bd">
+      <div class="geo-field" id="geo-field" aria-label="Threat origin field">
+        <div class="geo-grid"></div>
+        {% for p in geo %}
+        <span class="geo-ping {{ p.level }}" style="left:{{ p.x }}%;top:{{ p.y }}%;" title="{{ p.label }}"></span>
+        {% endfor %}
+        <div class="geo-legend">
+          <span><i class="sev danger"></i> High</span>
+          <span><i class="sev warn"></i> Elevated</span>
+          <span class="kbd">{{ geo|length }} origins</span>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:12px;">Origins derived from threat metadata when present; demo pins until geo enrichment is live.</p>
+    </div>
+  </section>
+</div>
+
+<section class="card" style="margin-top:18px;">
+  <div class="hd feed-hd">
+    <h2>Active threats</h2>
+    <div class="feed-filters">
+      <a class="feed-filter" href="/app/inbox">Triage inbox</a>
+    </div>
+  </div>
+  <div class="bd">
+    {% if active_threats %}
+    <div class="inbox-list">
+      {% for t in active_threats %}
+      <div class="inbox-row" data-mid="{{ t.id }}">
+        <span class="inbox-avatar">{{ (t.sender or '?')[0]|upper }}</span>
+        <div class="inbox-main">
+          <div class="inbox-title">{{ t.sender or 'unknown' }}</div>
+          <div class="inbox-sub">{{ t.channel }} · risk {{ t.score }}</div>
+        </div>
+        <div class="inbox-actions">
+          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
+          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
+          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="feed-empty">Queue clear — no unprocessed threats.</div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,622 @@
+"""
+Premium server-rendered console for the Yahoo_Phish IDPS.
+
+Design choices (matches the agreed direction: small deps, minimal supply chain):
+  * Jinja2 templates rendered by the SAME FastAPI process — no separate Node
+    server, no npm, no axios. The only client JS is a ~60-line vanilla file we
+    own (progressive enhancement); nothing is pulled from a CDN.
+  * Talks directly to the in-process detection pipeline (`process_one`) and the
+    threat store the API already uses — one source of truth, no API round-trip.
+  * Aesthetic: near-black/zinc surface, emerald = safe, red/amber = threat.
+    No purple, no emojis.
+
+Mounted under /app so the legacy Dash dashboard keeps serving "/".
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from common.rate_limit import rate_limit
+
+logger = logging.getLogger("ui")
+
+_BASE = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(_BASE / "templates"))
+router = APIRouter()
+
+# Per-channel presentation metadata (the detection wiring lives in channel_pipeline).
+CHANNELS = {
+    "phishing": {"label": "Phishing", "kind": "Email",
+                 "blurb": "Inbound email phishing and business-email-compromise",
+                 "placeholder": "Paste a suspicious email — subject line and body…"},
+    "smishing": {"label": "Smishing", "kind": "SMS",
+                 "blurb": "SMS and text-message scams, short links, and smishing payloads",
+                 "placeholder": "Paste a suspicious text message…"},
+    "vishing":  {"label": "Vishing", "kind": "Voice",
+                 "blurb": "Paste a voicemail or call transcript — same analyze path as email/SMS",
+                 "placeholder": "IRS warrant — press 1 to resolve…"},
+}
+
+_ACTION_TONE = {"allow": "safe", "flag": "warn", "quarantine": "danger", "block": "danger"}
+
+
+def _current_user(request: Request):
+    """Resolve the signed-in console user from the np_access cookie (or None)."""
+    token = request.cookies.get("np_access")
+    if not token:
+        return None
+    try:
+        from common.auth import verify_token
+        payload = verify_token(token)
+    except Exception:
+        return None
+    if not payload:
+        return None
+    return {"sub": payload.get("sub") or "user", "role": payload.get("role") or "viewer"}
+
+
+def _ctx(request: Request, **kw) -> dict:
+    """Base template context: channels + the signed-in user on every page."""
+    kw.setdefault("channels", CHANNELS)
+    kw["user"] = _current_user(request)
+    return kw
+
+
+import re
+
+_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.I)
+_DOMAIN_RE = re.compile(r"https?://([^/\s:]+)", re.I)
+_PHONE_RE = re.compile(r"(?:\+?\d[\d\-\.\s()]{7,}\d)")
+# Brands commonly impersonated; we flag digit/symbol obfuscation of these.
+_BRANDS = ["microsoft", "paypal", "google", "amazon", "apple", "netflix",
+           "chase", "wellsfargo", "bankofamerica", "fedex", "ups", "usps",
+           "docusign", "coinbase", "irs", "att", "verizon"]
+_BAD_TLDS = (".ru", ".tk", ".top", ".xyz", ".zip", ".mov", ".cn", ".gq",
+             ".ml", ".cf", ".ga", ".work", ".click", ".link")
+_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd",
+               "buff.ly", "rebrand.ly", "cutt.ly")
+_URGENT = ["urgent", "immediately", "expires", "expir", "suspend", "locked",
+           "verify now", "act now", "final notice", "within 24", "deactivat",
+           "right away", "asap", "last warning"]
+_SENSITIVE = ["password", "ssn", "social security", "gift card", "wire transfer",
+              "bank account", "routing number", "one-time", "otp", "verification code",
+              "credentials", "login", "pin number", "card number", "cvv"]
+
+
+def _obfuscated_brand(text: str):
+    """Detect a known brand spelled with digit/symbol substitution (micr0soft, paypa1)."""
+    sub = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "$": "s", "@": "a", "!": "i"})
+    low = text.lower()
+    deob = low.translate(sub)
+    for b in _BRANDS:
+        if b not in low and b in deob:  # only flag if the CLEAN brand wasn't literally present
+            return b
+    return None
+
+
+def _consumer_signals(channel: str, content: str, sender: str) -> list:
+    """Transparent, human-readable investigation cues (the consumer 'why').
+
+    These are heuristic *investigation aids* shown alongside the ML verdict — they
+    use only public, explainable signals (no secret weights/thresholds), so they
+    are safe to show and to open-source.
+    """
+    sig = []
+    text = f"{content} {sender}".strip()
+    low = text.lower()
+    sender_dom = sender.split("@")[-1].lower() if "@" in sender else ""
+
+    urls = _URL_RE.findall(content)
+    link_domains = [d.lower() for d in _DOMAIN_RE.findall(content)]
+
+    # Domain-level obfuscation is high-signal even if the brand is also named
+    # cleanly in the body (the body check stays conservative to avoid FPs).
+    dom_str = " ".join(link_domains + ([sender_dom] if sender_dom else []))
+    brand = _obfuscated_brand(dom_str) or _obfuscated_brand(text)
+    if brand:
+        sig.append({"sev": "danger", "label": "Look-alike brand name",
+                    "detail": f"A web/sender address imitates “{brand}” using altered characters (e.g. 0 for o, 1 for l)."})
+
+    bad = [d for d in (link_domains + ([sender_dom] if sender_dom else []))
+           if any(d.endswith(t) for t in _BAD_TLDS)]
+    if bad:
+        sig.append({"sev": "danger", "label": "High-risk web address",
+                    "detail": f"Uses an uncommon/abused domain ending: {', '.join(sorted(set(bad)))}."})
+
+    if any("xn--" in d for d in link_domains):
+        sig.append({"sev": "danger", "label": "Disguised (punycode) link",
+                    "detail": "A link uses encoded characters that can hide a fake domain."})
+
+    short = [d for d in link_domains if any(s in d for s in _SHORTENERS)]
+    if short:
+        sig.append({"sev": "warn", "label": "Shortened link hides destination",
+                    "detail": f"Link shortener detected: {', '.join(sorted(set(short)))}."})
+
+    if sender_dom and link_domains and all(sender_dom not in d and d not in sender_dom for d in link_domains):
+        sig.append({"sev": "warn", "label": "Link doesn’t match sender",
+                    "detail": f"Sender is “{sender_dom}” but links point elsewhere ({link_domains[0]})."})
+
+    hits = sorted({w for w in _URGENT if w in low})
+    if hits:
+        sig.append({"sev": "warn", "label": "Pressure / urgency tactics",
+                    "detail": f"Language pushing you to act fast: {', '.join(hits[:4])}."})
+
+    asks = sorted({w for w in _SENSITIVE if w in low})
+    if asks:
+        sig.append({"sev": "danger", "label": "Requests sensitive info / payment",
+                    "detail": f"Asks for: {', '.join(asks[:4])}."})
+
+    if channel in ("vishing", "smishing"):
+        phones = _PHONE_RE.findall(content)
+        if phones:
+            sig.append({"sev": "warn", "label": "Call-back number pressure",
+                        "detail": f"Urges contact at a phone number ({phones[0].strip()})."})
+
+    if urls and channel == "smishing":
+        try:
+            from common.reputation.intel import scan_url_external
+            hit = scan_url_external(urls[0])
+            if hit and hit.get("risk", 0) >= 0.5:
+                src = hit.get("source", "threat intel")
+                sig.append({"sev": "danger", "label": "Malicious link detected",
+                            "detail": f"URL flagged by {src} (risk {int(hit['risk']*100)}%)."})
+        except Exception:
+            pass
+
+    return sig
+
+
+def _technical_view(channel: str, v) -> dict:
+    """OS-safe algorithm breakdown for the extended/technical view (no secret weights)."""
+    feat = {"phishing": None, "smishing": None, "vishing": None}
+    stack = None
+    try:  # provenance from the reproducibility manifest, if present
+        import json
+        from pathlib import Path
+        man = json.loads((Path(__file__).resolve().parent.parent / "models" / "REPRO_MANIFEST.json").read_text())
+        ch = man.get("channels", {}).get(channel, {})
+        feat[channel] = ch.get("feature_version")
+        stack = ch.get("stack") or man.get("stack")
+    except Exception:
+        pass
+    return {
+        "pipeline": [
+            "Word TF-IDF (1–3 grams) + Char TF-IDF (3–5 grams) — catches wording and obfuscation (acc0unt)",
+            "Structural features — channel-specific, hard-to-fake numeric signals",
+            "SGDClassifier (log-loss) — linear model, sub-ms inference",
+            "Platt calibration — turns the score into a real probability P(threat)",
+            "Per-channel anomaly (Isolation Forest) — novelty vs that channel’s normal traffic",
+            "Risk engine — fuses calibrated P(threat) + anomaly into action (allow/flag/quarantine)",
+        ],
+        "vals": {
+            "classifier_pred": v.classifier_pred,
+            "classifier_confidence": round(float(v.classifier_conf), 4),
+            "calibrated_risk": round(float(v.risk_score), 4),
+            "anomaly_level": v.anomaly_level,
+            "anomaly_novelty": round(float(v.anomaly_novelty), 4),
+            "decision": getattr(v.action, "value", str(v.action)),
+        },
+        "feature_version": feat.get(channel),
+        "stack": stack,
+    }
+
+
+def _verdict_view(channel: str, content: str, sender: str) -> dict:
+    """Run the pipeline and shape the verdict for the template (never raises)."""
+    from common.streaming.channel_pipeline import process_one
+    record = {"subject": "", "body": content, "transcript": content,
+              "from": sender, "caller_id": sender}
+    try:
+        v = process_one(channel, record)
+        action = getattr(v.action, "value", str(v.action))
+        # Persist moderate+ risk so console analyzes feed the same stream the
+        # engine uses: dashboard, inbox, and the quarantine review queue
+        # (label stays NULL until a human grades it). DLQ-safe, never raises.
+        if float(v.risk_score) >= 0.35:
+            try:
+                from common.streaming.dlq import persist_threat_durable
+                persist_threat_durable(
+                    content=content, threat_type=channel, sender=sender or "unknown",
+                    metadata={"risk_score": float(v.risk_score), "action": action,
+                              "confidence": float(v.risk_score), "channel": channel,
+                              "anomaly_level": v.anomaly_level, "via": "console-analyze"})
+            except Exception as pe:
+                logger.debug("console persist skipped: %s", pe)
+        return {
+            "ok": True,
+            "is_threat": bool(v.is_threat),
+            "action": action,
+            "tone": _ACTION_TONE.get(action, "warn" if v.is_threat else "safe"),
+            "risk_pct": round(float(v.risk_score) * 100),
+            "confidence_pct": round(float(v.classifier_conf) * 100),
+            "anomaly_level": v.anomaly_level,
+            "anomaly_novelty": round(float(v.anomaly_novelty), 3),
+            "reasons": list(v.reasons)[:5],
+            "signals": _consumer_signals(channel, content, sender),
+            "tech": _technical_view(channel, v),
+            "channel": channel,
+        }
+    except Exception as e:  # pipeline hiccup → render a graceful error card
+        logger.error("ui analyze failed [%s]: %s", channel, e)
+        return {"ok": False, "error": "Analysis temporarily unavailable.", "channel": channel}
+
+
+@router.get("/app", response_class=HTMLResponse)
+async def console(request: Request, channel: str = "phishing"):
+    if channel not in CHANNELS:
+        channel = "phishing"
+    return templates.TemplateResponse(
+        request, "index.html", _ctx(request, active=channel))
+
+
+@router.post("/app/analyze", response_class=HTMLResponse)
+async def ui_analyze(request: Request,
+                     channel: str = Form("phishing"),
+                     content: str = Form(..., max_length=50_000),
+                     sender: str = Form("", max_length=256),
+                     _rl: None = Depends(rate_limit())):
+    if channel not in CHANNELS:
+        channel = "phishing"
+    view = _verdict_view(channel, content, sender.strip())
+    return templates.TemplateResponse(request, "_result.html", {"v": view})
+
+
+def _screen_view(caller_id: str, transcript: str, contact_known: bool) -> dict:
+    """Hybrid CallKit screening for the Vish console (reputation + optional transcript)."""
+    from common.vish import screen_call, CallEvent
+    try:
+        r = screen_call(CallEvent(
+            caller_id=caller_id.strip(),
+            transcript=transcript.strip() or None,
+            contact_known=contact_known,
+        ))
+        action = r.action.value
+        tone = {"allow": "safe", "label": "warn", "silence": "warn", "block": "danger"}.get(action, "warn")
+        return {
+            "ok": True,
+            "action": action,
+            "tone": tone,
+            "is_threat": r.is_threat,
+            "risk_pct": round(float(r.risk) * 100),
+            "verdict": r.verdict,
+            "label": r.label,
+            "reasons": list(r.reasons)[:6],
+            "paths": list(r.paths),
+            "reputation": r.reputation,
+            "content": r.content,
+        }
+    except Exception as e:
+        logger.error("ui screen failed: %s", e)
+        return {"ok": False, "error": "Call screening temporarily unavailable."}
+
+
+def _record_screen_result(caller_id: str, view: dict, transcript: str = "") -> None:
+    if not view.get("ok"):
+        return
+    try:
+        from common.call_events import record_screen
+        record_screen({
+            "caller_id": caller_id,
+            "action": view.get("action"),
+            "risk": (view.get("risk_pct") or 0) / 100.0,
+            "verdict": view.get("verdict"),
+            "label": view.get("label"),
+            "paths": view.get("paths"),
+            "is_threat": view.get("is_threat"),
+            "reasons": view.get("reasons"),
+            "transcript": transcript,
+        })
+    except Exception as e:
+        logger.debug("call event log skipped: %s", e)
+
+
+@router.post("/app/screen", response_class=HTMLResponse)
+async def ui_screen(request: Request,
+                    caller_id: str = Form(..., max_length=32),
+                    transcript: str = Form("", max_length=20_000),
+                    contact_known: str = Form(""),
+                    _rl: None = Depends(rate_limit())):
+    known = contact_known.lower() in ("true", "1", "on", "yes")
+    view = _screen_view(caller_id, transcript, known)
+    _record_screen_result(caller_id, view, transcript.strip())
+    return templates.TemplateResponse(request, "_screen.html", {"s": view})
+
+
+@router.get("/app/pricing", response_class=HTMLResponse)
+async def ui_pricing(request: Request):
+    from common.plans import COMPARE_ROWS, list_plans
+    return templates.TemplateResponse(
+        request, "pricing.html",
+        _ctx(request, active="pricing", plans=list_plans(), compare_rows=COMPARE_ROWS))
+
+
+@router.get("/app/login", response_class=HTMLResponse)
+async def ui_login_get(request: Request):
+    if _current_user(request):  # already signed in → straight to the portal
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/app/dashboard", status_code=303)
+    return templates.TemplateResponse(
+        request, "login.html",
+        {"channels": CHANNELS, "active": "login", "error": None, "username": ""})
+
+
+@router.post("/app/login", response_class=HTMLResponse)
+async def ui_login_post(request: Request,
+                        username: str = Form(...),
+                        password: str = Form(...),
+                        _rl: None = Depends(rate_limit())):
+    from fastapi.responses import RedirectResponse
+    from common.auth import authenticate_user, create_access_token
+    user = authenticate_user(username.strip(), password)
+    if not user:
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"channels": CHANNELS, "active": "login",
+             "error": "Invalid credentials", "username": username},
+            status_code=401)
+    from datetime import timedelta
+    token = create_access_token(user, expires=timedelta(hours=8))  # console session
+    resp = RedirectResponse(url="/app/dashboard", status_code=303)
+    resp.set_cookie(
+        "np_access", token, httponly=True, samesite="lax", max_age=60 * 60 * 8, path="/",
+    )
+    return resp
+
+
+@router.get("/app/logout")
+async def ui_logout():
+    from fastapi.responses import RedirectResponse
+    resp = RedirectResponse(url="/app/login", status_code=303)
+    resp.delete_cookie("np_access", path="/")
+    return resp
+
+
+def _dashboard_context() -> dict:
+    from datetime import datetime
+    live, geo, active_threats = [], [], []
+    stats = {"total": 0, "threats": 0, "quarantined": 0, "rate": "—"}
+    try:
+        from Autobot.VectorDB.NullPoint_Vector import get_threats_page, get_review_queue
+        try:
+            _, review_counts = get_review_queue(limit=500)
+            stats["quarantined"] = review_counts.get("total", 0)
+        except Exception:
+            pass
+        rows, _ = get_threats_page(threat_type=None, after_id=None, limit=40)
+        rows = rows or []
+        stats["total"] = len(rows)
+        for i, r in enumerate(rows):
+            conf = float(r.get("confidence") or 0)
+            threat = conf >= 0.5 or bool(r.get("is_threat"))
+            if threat:
+                stats["threats"] += 1
+            ts = (r.get("timestamp") or "")[11:19] or "--:--:--"
+            sender = r.get("sender") or "unknown"
+            ch = r.get("threat_type") or "phishing"
+            live.append({
+                "ts": ts, "threat": threat, "sender": sender[:42],
+                "channel": ch, "score": f"{conf:.2f}",
+                "geo": (r.get("metadata") or {}).get("geo") or "—",
+            })
+            if threat and len(active_threats) < 8:
+                active_threats.append({
+                    "id": r.get("id"), "sender": sender, "channel": ch,
+                    "score": f"{int(conf*100)}%",
+                })
+        # Demo field pins when no geo metadata yet
+        pins = [
+            {"x": 22, "y": 38, "level": "danger", "label": "US-East"},
+            {"x": 48, "y": 32, "level": "warn", "label": "EU"},
+            {"x": 72, "y": 45, "level": "warn", "label": "APAC"},
+        ]
+        geo = pins if stats["threats"] else []
+        stats["rate"] = f"{max(0.1, len(rows)/60):.1f}/m"
+    except Exception as e:
+        logger.warning("dashboard context: %s", e)
+    return {
+        "channels": CHANNELS, "active": "dashboard",
+        "stats": stats, "live": live[:24], "geo": geo,
+        "active_threats": active_threats,
+        "now": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@router.get("/app/dashboard", response_class=HTMLResponse)
+async def ui_dashboard(request: Request):
+    ctx = _dashboard_context()
+    ctx["user"] = _current_user(request)
+    return templates.TemplateResponse(request, "dashboard.html", ctx)
+
+
+@router.get("/app/quarantine", response_class=HTMLResponse)
+async def ui_quarantine(request: Request):
+    """Review queue — the ONE manual touchpoint: grade quarantined/potential/unsure."""
+    rows, counts = [], {"total": 0, "quarantined": 0, "potential": 0, "unsure": 0}
+    try:
+        from Autobot.VectorDB.NullPoint_Vector import get_review_queue
+        rows, counts = get_review_queue(limit=100)
+    except Exception as e:
+        logger.warning("quarantine queue unavailable: %s", e)
+    return templates.TemplateResponse(
+        request, "quarantine.html",
+        _ctx(request, active="quarantine", rows=rows, counts=counts))
+
+
+@router.post("/app/quarantine/grade")
+async def ui_quarantine_grade(request: Request,
+                              mid: int = Form(...),
+                              verdict: str = Form(...),
+                              _rl: None = Depends(rate_limit())):
+    """Persist a human verdict on a message and feed the training loop.
+
+    block  → label 1 + feedback buffer     safe → label 0 + feedback buffer
+    unsure → stays ungraded (label NULL) but marked for the review queue.
+    """
+    from fastapi.responses import JSONResponse
+    if verdict not in ("block", "unsure", "safe"):
+        return JSONResponse({"ok": False, "error": "bad_verdict"}, status_code=400)
+    label = {"block": 1, "safe": 0}.get(verdict)
+    status = {"block": "blocked", "safe": "safe", "unsure": "quarantined"}[verdict]
+    try:
+        from Autobot.VectorDB.NullPoint_Vector import set_message_grade
+        graded = set_message_grade(mid, label=label, status=status)
+    except Exception as e:
+        logger.error("grade failed [%s]: %s", mid, e)
+        graded = None
+    if not graded:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    if verdict in ("block", "safe"):
+        from common.grading import record_grade
+        record_grade(graded["channel"], {
+            "from": graded["sender"], "sender": graded["sender"],
+            "caller_id": graded["sender"], "subject": graded["subject"],
+            "body": graded["text"], "transcript": graded["text"],
+        }, verdict, source="console-grade")
+    return JSONResponse({"ok": True, "verdict": verdict, "id": mid})
+
+
+@router.post("/app/calls/grade")
+async def ui_calls_grade(request: Request,
+                         eid: str = Form(...),
+                         verdict: str = Form(...),
+                         _rl: None = Depends(rate_limit())):
+    """Grade a call-screen event (vishing feedback loop)."""
+    from fastapi.responses import JSONResponse
+    if verdict not in ("block", "unsure", "safe"):
+        return JSONResponse({"ok": False, "error": "bad_verdict"}, status_code=400)
+    from common.call_events import get_screen, mark_graded
+    event = get_screen(eid)
+    if not event:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    mark_graded(eid, verdict)
+    if verdict in ("block", "safe"):
+        from common.grading import record_grade
+        record_grade("vishing", {
+            "caller_id": event.get("caller_id"), "sender": event.get("caller_id"),
+            "transcript": event.get("transcript") or f"[call from {event.get('caller_id')}]",
+            "body": event.get("transcript") or "",
+        }, verdict, source="call-log-grade")
+    return JSONResponse({"ok": True, "verdict": verdict, "id": eid})
+
+
+@router.get("/app/inbox", response_class=HTMLResponse)
+async def ui_inbox(request: Request):
+    rows, counts = [], {"all": 0, "threat": 0, "cleared": 0}
+    try:
+        from Autobot.VectorDB.NullPoint_Vector import get_threats_page
+        raw, _ = get_threats_page(threat_type=None, after_id=None, limit=50)
+        for r in (raw or []):
+            conf = float(r.get("confidence") or 0)
+            threat = conf >= 0.5
+            counts["all"] += 1
+            counts["threat" if threat else "cleared"] += 1
+            ts = r.get("timestamp") or ""
+            rows.append({
+                "id": r.get("id"),
+                "sender": r.get("sender") or "unknown",
+                "channel": r.get("threat_type") or "phishing",
+                "ts": (ts[:16] if ts else "—"),
+                "score": f"{int(conf*100)}%",
+                "threat": threat,
+            })
+    except Exception as e:
+        logger.warning("inbox unavailable: %s", e)
+    return templates.TemplateResponse(
+        request, "inbox.html",
+        _ctx(request, active="inbox", rows=rows, counts=counts))
+
+
+@router.get("/app/identity", response_class=HTMLResponse)
+async def ui_identity(request: Request):
+    import os
+    vendors = {
+        "plaid": bool(os.getenv("PLAID_CLIENT_ID") and os.getenv("PLAID_SECRET")),
+        "credit": bool(os.getenv("ARRAY_API_KEY") or os.getenv("CREDIT_PARTNER_API_KEY")),
+        "osint": bool(os.getenv("IPQS_API_KEY") or os.getenv("SPYCLOUD_API_KEY") or os.getenv("HIBP_API_KEY")),
+    }
+    return templates.TemplateResponse(
+        request, "identity.html",
+        _ctx(request, active="identity", vendors=vendors))
+
+
+@router.post("/app/identity/enrich")
+async def ui_identity_enrich(request: Request,
+                             _rl: None = Depends(rate_limit())):
+    """Console enrich (rate-limited). API clients use POST /api/v1/identity/enrich + JWT."""
+    from fastapi.responses import JSONResponse
+    body = await request.json()
+    subject = str(body.get("subject") or "").strip()
+    consented = bool(body.get("consented"))
+    if not subject or not consented:
+        return JSONResponse({"error": "consent_required", "reports": []}, status_code=400)
+    from common.vendors.identity import enrich_identity_bundle
+    return enrich_identity_bundle(
+        subject=subject,
+        consented=True,
+        plaid_access_token=body.get("plaid_access_token"),
+        credit_user_id=body.get("credit_user_id"),
+    )
+
+
+@router.get("/app/feed", response_class=HTMLResponse)
+async def ui_feed(request: Request, channel: str = ""):
+    """Recent confirmed detections (fails soft to an empty list during an outage)."""
+    rows = []
+    try:
+        from Autobot.VectorDB.NullPoint_Vector import get_threats_page
+        ch = channel if channel in CHANNELS else None
+        rows, _ = get_threats_page(threat_type=ch, after_id=None, limit=12)
+    except Exception as e:
+        logger.warning("ui feed unavailable: %s", e)
+    return templates.TemplateResponse(request, "_feed.html", {"rows": rows or []})
+
+
+@router.get("/app/connectors", response_class=HTMLResponse)
+async def ui_connectors(request: Request):
+    from common.oauth_email import connector_status
+    return templates.TemplateResponse(
+        request, "connectors.html",
+        _ctx(request, active="connectors", connectors=connector_status()))
+
+
+@router.post("/app/connectors/env/{provider}")
+async def ui_connectors_env(provider: str, _rl: None = Depends(rate_limit())):
+    from fastapi.responses import JSONResponse
+    from common.oauth_email import mark_env_connected
+    return JSONResponse(mark_env_connected(provider))
+
+
+@router.get("/app/connectors/oauth/{provider}")
+async def ui_connectors_oauth_start(provider: str):
+    from fastapi.responses import JSONResponse, RedirectResponse
+    from common.oauth_email import start_oauth
+    result = start_oauth(provider)
+    if result.get("authorize_url"):
+        return RedirectResponse(result["authorize_url"])
+    return JSONResponse(result, status_code=400)
+
+
+@router.get("/app/connectors/callback/{provider}")
+async def ui_connectors_oauth_callback(provider: str, code: str = "", state: str = "",
+                                       error: str = ""):
+    from fastapi.responses import RedirectResponse
+    from common.oauth_email import finish_oauth
+    if error or not code:
+        return RedirectResponse(f"/app/connectors?err={error or 'denied'}")
+    result = finish_oauth(provider, code, state)
+    if result.get("ok"):
+        return RedirectResponse("/app/connectors?ok=1")
+    return RedirectResponse(f"/app/connectors?err={result.get('error', 'oauth_failed')}")
+
+
+@router.get("/app/calls", response_class=HTMLResponse)
+async def ui_calls(request: Request):
+    from common.call_events import list_screens
+    return templates.TemplateResponse(
+        request, "calls.html",
+        _ctx(request, active="calls", events=list_screens(80)))

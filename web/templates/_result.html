@@ -1,0 +1,67 @@
+{% if not v.ok %}
+  <div class="verdict empty">{{ v.error }}</div>
+{% else %}
+  <div class="verdict">
+    <div class="verdict-head">
+      <div class="gauge tone-{{ v.tone }}" style="--p: {{ v.risk_pct }}">
+        <span>{{ v.risk_pct }}</span>
+      </div>
+      <div>
+        <span class="badge tone-{{ v.tone }}">
+          {% if v.is_threat %}Threat · {{ v.action }}{% else %}Clear · {{ v.action }}{% endif %}
+        </span>
+        <div class="verdict-meta" style="margin-top:8px;">
+          Risk score <b>{{ v.risk_pct }}%</b> · model confidence <b>{{ v.confidence_pct }}%</b>
+        </div>
+      </div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat"><div class="k">Anomaly</div><div class="v">{{ v.anomaly_level }}</div></div>
+      <div class="stat"><div class="k">Novelty</div><div class="v">{{ v.anomaly_novelty }}</div></div>
+      <div class="stat"><div class="k">Verdict</div><div class="v">{{ 'BLOCK' if v.is_threat else 'PASS' }}</div></div>
+    </div>
+
+    {% if v.signals %}
+    <div>
+      <label class="fld">Why — what to investigate</label>
+      <ul class="signals">
+        {% for s in v.signals %}
+        <li class="sig sig-{{ s.sev }}">
+          <span class="sig-dot"></span>
+          <div><b>{{ s.label }}</b><div class="sig-detail">{{ s.detail }}</div></div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% elif not v.is_threat %}
+    <div class="muted" style="font-size:13px;">No high-risk signals found in this content.</div>
+    {% endif %}
+
+    {% if v.reasons %}
+    <div class="model-says">Model verdict: {{ v.reasons | join('; ') }}</div>
+    {% endif %}
+
+    {% if v.tech %}
+    <details class="tech">
+      <summary>Extended technical view</summary>
+      <div class="tech-bd">
+        <div class="tech-k">Algorithm pipeline</div>
+        <ol class="tech-pipe">
+          {% for step in v.tech.pipeline %}<li>{{ step }}</li>{% endfor %}
+        </ol>
+        <div class="tech-k">Live signal values</div>
+        <table class="tech-tbl">
+          {% for k, val in v.tech.vals.items() %}
+          <tr><td>{{ k.replace('_',' ') }}</td><td class="kbd">{{ val }}</td></tr>
+          {% endfor %}
+        </table>
+        <div class="tech-meta">
+          model feature_version: <span class="kbd">{{ v.tech.feature_version }}</span>
+          {% if v.tech.stack %} · stack <span class="kbd">sklearn {{ v.tech.stack.sklearn }} / numpy {{ v.tech.stack.numpy }}</span>{% endif %}
+        </div>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+{% endif %}

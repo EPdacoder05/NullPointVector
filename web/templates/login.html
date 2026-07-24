@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — NullPoint</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="auth-body">
+  <div class="auth-shell">
+    <div class="auth-brand">
+      <div class="mark">N</div>
+      <h1>NullPoint</h1>
+      <p>Signal Deck access. JWT roles: viewer, customer, analyst, admin, enterprise.</p>
+    </div>
+    <form class="card auth-card" id="login-form" method="post" action="/app/login">
+      <div class="hd"><h2>Sign in</h2></div>
+      <div class="bd stack">
+        {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+        <div class="fld">
+          <label for="username">Username</label>
+          <input id="username" name="username" class="input" required autocomplete="username" value="{{ username or '' }}">
+        </div>
+        <div class="fld">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" class="input" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn">Continue</button>
+        <div class="hint">Dev default: admin / changeme · tokens stay server-side</div>
+        <a class="auth-back" href="/app">Back to console</a>
+      </div>
+    </form>
+  </div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

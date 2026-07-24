@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="NullPoint IDPS — phishing, smishing, and vishing protection" />
+  <title>{% block title %}NullPoint{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body data-channel="{{ active }}">
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">N</div>
+        <div>
+          <div class="name">NullPoint</div>
+          <div class="sub">Signal Deck</div>
+        </div>
+      </div>
+
+      <div class="nav-label">Command</div>
+      <a class="nav-item {{ 'active' if active == 'dashboard' else '' }}" href="/app/dashboard">
+        <span class="dot"></span><span>Dashboard</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'inbox' else '' }}" href="/app/inbox">
+        <span class="dot"></span><span>Inbox stream</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'quarantine' else '' }}" href="/app/quarantine">
+        <span class="dot"></span><span>Quarantine</span>
+      </a>
+
+      <div class="nav-label">Protection</div>
+      {% for key, c in channels.items() %}
+      <a class="nav-item {{ 'active' if key == active else '' }}" href="/app?channel={{ key }}">
+        <span class="dot"></span>
+        <span>{{ c.label }}</span>
+      </a>
+      {% endfor %}
+
+      <div class="nav-label">Identity</div>
+      <a class="nav-item {{ 'active' if active == 'identity' else '' }}" href="/app/identity">
+        <span class="dot"></span><span>Credit &amp; OSINT</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'connectors' else '' }}" href="/app/connectors">
+        <span class="dot"></span><span>Connectors</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'calls' else '' }}" href="/app/calls">
+        <span class="dot"></span><span>Call log</span>
+      </a>
+
+      <div class="nav-label">System</div>
+      <a class="nav-item {{ 'active' if active == 'pricing' else '' }}" href="/app/pricing">
+        <span class="dot"></span><span>Pricing</span>
+      </a>
+      {% if not user %}
+      <a class="nav-item" href="/app/login"><span class="dot"></span><span>Sign in</span></a>
+      {% endif %}
+
+      <div class="foot">
+        <div class="theme-switch" id="theme-switch" title="Console appearance">
+          <button type="button" class="theme-opt" data-theme-opt="">Deck</button>
+          <button type="button" class="theme-opt" data-theme-opt="terminal">Terminal</button>
+          <button type="button" class="theme-opt" data-theme-opt="blackout">Blackout</button>
+        </div>
+        {% if user %}
+        <div class="acct">
+          <div class="acct-name">{{ user.sub }}</div>
+          <div class="acct-meta">{{ user.role }} · <a href="/app/logout">Sign out</a></div>
+        </div>
+        {% endif %}
+        <span class="health-pill" id="health"><span class="led"></span> operational</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

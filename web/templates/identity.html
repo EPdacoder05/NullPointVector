@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Credit &amp; OSINT — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Credit &amp; OSINT</h1>
+    <div class="desc">Consent-gated enrichment via Plaid, Array (or bureau partner), and licensed breach intel — not DIY scrapers.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/pricing">Pro unlocks</a>
+  </div>
+</div>
+
+<div class="identity-grid">
+  <section class="card">
+    <div class="hd"><h2>Lookup</h2></div>
+    <div class="bd">
+      <form id="identity-form" class="stack">
+        <div class="fld">
+          <label for="subject">Email or phone</label>
+          <input id="subject" name="subject" class="input" required placeholder="you@example.com or +16145551212" autocomplete="off">
+        </div>
+        <label class="check-row">
+          <input type="checkbox" name="consented" id="consented" value="true" required>
+          <span>I have consent to check this identifier (FCRA / privacy)</span>
+        </label>
+        <button type="submit" class="btn">Run enrichment</button>
+        <div class="hint">Type your phone (e.g. 6146958215) — IPQS phone + breach + credit partner</div>
+      </form>
+      <div id="identity-result" class="result-slot"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd"><h2>Vendor stack</h2></div>
+    <div class="bd stack">
+      <div class="vendor-row">
+        <div>
+          <div class="inbox-title">Plaid</div>
+          <div class="inbox-sub">KYC / bank identity / optional Check cash-flow</div>
+        </div>
+        <span class="badge tone-{{ 'safe' if vendors.plaid else 'warn' }}">{{ 'keyed' if vendors.plaid else 'sandbox keys' }}</span>
+      </div>
+      <div class="vendor-row">
+        <div>
+          <div class="inbox-title">Array / credit partner</div>
+          <div class="inbox-sub">Soft-pull score &amp; monitoring</div>
+        </div>
+        <span class="badge tone-{{ 'safe' if vendors.credit else 'warn' }}">{{ 'keyed' if vendors.credit else 'set ARRAY_API_KEY' }}</span>
+      </div>
+      <div class="vendor-row">
+        <div>
+          <div class="inbox-title">Breach OSINT</div>
+          <div class="inbox-sub">IPQS now · HIBP Pro · SpyCloud at scale</div>
+        </div>
+        <span class="badge tone-{{ 'safe' if vendors.osint else 'warn' }}">{{ 'keyed' if vendors.osint else 'set IPQS_API_KEY' }}</span>
+      </div>
+      <p class="hint">Insurance-grade dark-web = SpyCloud/Constella quote. We sell licensed exposure intel, not scraped dumps.</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

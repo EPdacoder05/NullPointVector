@@ -1,7 +1,11 @@
 # Core dependencies for IDPS functionality
 python-dotenv>=1.0.0
 PyYAML>=6.0
-cryptography>=41.0
+# Pinned: the latest cryptography wheel SIGILLs (Illegal instruction) on some
+# ARM hosts (Colima/Apple-Silicon VM, Graviton) due to advanced SIMD codegen.
+# 43.0.1 is verified-good across x86_64 and aarch64. Do not loosen without
+# re-verifying `from cryptography.fernet import Fernet` on ARM.
+cryptography==43.0.1
 watchdog>=3.0
 
 # Email processing
@@ -35,6 +39,11 @@ requests>=2.31.0
 fastapi>=0.100
 uvicorn[standard]>=0.23
 pydantic>=2.0
+python-jose[cryptography]>=3.3      # JWT auth
+python-multipart>=0.0.6             # OAuth2 password form parsing
+prometheus-client>=0.19            # /metrics + latency histograms
+redis>=5.0                          # shared rate-limit + idempotency at scale
+gunicorn>=21.0                      # multi-worker API (parallel CPU)
 
 # CLI interface
 rich>=13.0

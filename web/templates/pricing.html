@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Pricing — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Pricing</h1>
+    <div class="desc">Three tiers. Annual billing saves two months. Essential keeps a 7-day history window.</div>
+  </div>
+  <div class="billing-toggle" id="billing-toggle">
+    <button type="button" class="bill-opt" data-period="monthly">Monthly</button>
+    <button type="button" class="bill-opt active" data-period="annual">Annual <span class="bill-badge">2 mo free</span></button>
+  </div>
+</div>
+
+<div class="pricing-grid">
+  {% for p in plans %}
+  <article class="price-card {% if p.featured %}featured{% endif %}">
+    {% if p.featured %}<div class="price-popular">Most popular</div>{% endif %}
+    <h3>{{ p.name }}</h3>
+    <p class="price-desc">{{ p.tagline }}</p>
+    <div class="price-amt">
+      <span class="price-val" data-monthly="{{ '%.2f'|format(p.price_monthly) }}" data-annual="{{ '%.2f'|format(p.price_annual) }}">{{ '%.2f'|format(p.price_annual) }}</span>
+      <span class="price-per">/ <span class="price-period">year</span></span>
+    </div>
+    <ul class="price-feats">
+      {% for f in p.features %}<li>{{ f }}</li>{% endfor %}
+    </ul>
+    <button type="button" class="btn {% if not p.featured %}secondary{% endif %} price-cta" disabled>{{ p.cta }}</button>
+  </article>
+  {% endfor %}
+</div>
+
+<section class="card compare-card">
+  <div class="hd"><h2>Feature comparison</h2></div>
+  <div class="bd compare-wrap">
+    <table class="compare-tbl">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          {% for p in plans %}<th>{{ p.name }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for key, label in compare_rows %}
+        <tr>
+          <td>{{ label }}</td>
+          {% for p in plans %}
+          <td>{{ p.compare.get(key, '—') }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

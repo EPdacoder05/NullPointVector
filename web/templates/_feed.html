@@ -1,0 +1,19 @@
+{% if not rows %}
+  <div class="feed-empty">No detections yet for this channel.</div>
+{% else %}
+  {% for r in rows %}
+  {% set conf = (r.confidence or 0) %}
+  {% set threat = conf >= 0.5 %}
+  <div class="feed-item" data-threat="{{ 1 if threat else 0 }}">
+    <span class="sev {{ 'danger' if conf >= 0.85 else 'warn' }}"></span>
+    <div class="txt">
+      <div class="sn">{{ r.sender or 'unknown sender' }}</div>
+      <div class="mt">
+        {% if r.timestamp %}{{ r.timestamp[:10] }} · {{ r.timestamp[11:16] }}{% else %}—{% endif %}
+        · confidence {{ (conf * 100) | round | int }}%
+      </div>
+    </div>
+    <span class="ch">{{ r.threat_type }}</span>
+  </div>
+  {% endfor %}
+{% endif %}

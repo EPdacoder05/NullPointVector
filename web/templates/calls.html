@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Call log — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Call log</h1>
+    <div class="desc">Every Call screen / Vish screen result — use this to tune ML before TestFlight.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn" href="/app?channel=vishing">Screen a call</a>
+  </div>
+</div>
+
+<section class="card">
+  <div class="hd"><h2>Recent screens</h2><span class="kbd">{{ events|length }}</span></div>
+  <div class="bd">
+    {% if events %}
+    <div class="inbox-list">
+      {% for e in events %}
+      {% set caution = e.action in ('label', 'silence') %}
+      <div class="inbox-row call-row" data-threat="{{ 1 if e.is_threat else 0 }}" data-eid="{{ e.id }}">
+        <span class="inbox-avatar {{ 'threat' if e.is_threat else '' }}">{{ (e.caller_id or '?')[-2:] }}</span>
+        <div class="inbox-main">
+          <div class="inbox-title">{{ e.caller_id or 'unknown' }}
+            {% if e.label %}<span class="kbd"> · {{ e.label }}</span>{% endif %}
+            {% if e.action == 'block' %}
+            <span class="badge tone-danger">Blocked</span><span class="kbd">proactive IDPS</span>
+            {% elif caution %}
+            <span class="badge tone-warn">Potential threat</span>
+            {% else %}
+            <span class="badge tone-safe">Cleared</span>
+            {% endif %}
+            {% if e.graded %}<span class="badge tone-safe">graded: {{ e.graded }}</span>{% endif %}
+          </div>
+          <div class="inbox-sub">{{ e.ts }} · {{ e.verdict }} · risk {{ ((e.risk or 0)*100)|round|int }}%
+            {% if e.paths %} · {{ e.paths|join('+') }}{% endif %}
+          </div>
+          {% if e.reasons %}
+          <div class="hint">{{ e.reasons|join(' · ') }}</div>
+          {% endif %}
+          {% if e.transcript %}
+          <button type="button" class="act-safe js-transcript" style="margin-top:6px;">Show transcription</button>
+          <div class="call-transcript hidden">{{ e.transcript }}</div>
+          {% endif %}
+        </div>
+        <div class="inbox-actions">
+          {% if not e.graded %}
+          <button type="button" class="act-block js-grade" data-kind="call" data-verdict="block">Block &amp; Report</button>
+          {% if caution or not e.is_threat %}
+          <button type="button" class="act-unsure js-grade" data-kind="call" data-verdict="unsure">Needs review</button>
+          {% endif %}
+          <button type="button" class="act-safe js-grade" data-kind="call" data-verdict="safe">Mark as safe</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="feed-empty">No screens yet. Open Vishing → Call screen with a caller ID (try +16146958215).</div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="connect-note">
+  <strong>iPhone pilot:</strong> Call Directory syncs block/label lists from <code>GET /api/v1/vish/directory</code>.
+  Live ring decisions require the iOS app to call <code>/api/v1/vish/screen</code> with the caller ID (and optional transcript).
+  Apple will not expose carrier call logs to your app.
+</div>
+{% endblock %}

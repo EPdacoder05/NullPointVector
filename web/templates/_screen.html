@@ -1,0 +1,56 @@
+{% if not s.ok %}
+  <div class="verdict empty">{{ s.error }}</div>
+{% else %}
+  <div class="verdict screen-verdict">
+    <div class="call-action tone-{{ s.tone }}">
+      <span class="call-action-label">{{ s.action | upper }}</span>
+      {% if s.label %}<span class="call-action-sub">{{ s.label }}</span>{% endif %}
+    </div>
+
+    <div class="verdict-head">
+      <div class="gauge tone-{{ s.tone }} gauge-animated" style="--p: {{ s.risk_pct }}">
+        <span>{{ s.risk_pct }}</span>
+      </div>
+      <div>
+        <span class="badge tone-{{ s.tone }}">
+          {% if s.is_threat %}Threat · {{ s.verdict }}{% else %}Clear · {{ s.verdict }}{% endif %}
+        </span>
+        <div class="verdict-meta" style="margin-top:8px;">
+          Fused risk <b>{{ s.risk_pct }}%</b>
+          {% if s.paths %} · paths: {{ s.paths | join(', ') }}{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if s.reasons %}
+    <div>
+      <label class="fld">Why</label>
+      <ul class="signals">
+        {% for r in s.reasons %}
+        <li class="sig sig-warn"><span class="sig-dot"></span><div>{{ r }}</div></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if s.reputation and s.reputation.get('sources') %}
+    <div class="model-says">
+      Reputation: risk {{ (s.reputation.get('risk', 0) * 100) | round }}%
+      from {{ s.reputation.get('sources') | join(', ') }}
+    </div>
+    {% endif %}
+
+    {% if s.content %}
+    <details class="tech">
+      <summary>Transcript analysis</summary>
+      <div class="tech-bd">
+        <table class="tech-tbl">
+          <tr><td>model action</td><td class="kbd">{{ s.content.get('action', '—') }}</td></tr>
+          <tr><td>confidence</td><td class="kbd">{{ (s.content.get('confidence', 0) * 100) | round }}%</td></tr>
+          <tr><td>anomaly</td><td class="kbd">{{ s.content.get('anomaly_level', '—') }}</td></tr>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+{% endif %}

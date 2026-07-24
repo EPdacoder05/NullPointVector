@@ -1,0 +1,66 @@
+name: NullPointGuard
+options:
+  bundleIdPrefix: com.nullpoint
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  NullPointGuard:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/NullPointGuard
+      - path: Sources/Shared
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard
+      INFOPLIST_KEY_CFBundleDisplayName: NullPoint Guard
+      INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    entitlements:
+      path: Config/NullPointGuard.entitlements
+
+  NullPointDirectory:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Sources/NullPointDirectory
+      - path: Sources/Shared
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard.directory
+      INFOPLIST_KEY_CFBundleDisplayName: NullPoint Directory
+      INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.callkit.call-directory
+    entitlements:
+      path: Config/NullPointDirectory.entitlements
+    dependencies:
+      - target: NullPointGuard
+
+  NullPointSMSFilter:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Sources/NullPointSMSFilter
+      - path: Sources/Shared
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard.smsfilter
+      INFOPLIST_KEY_CFBundleDisplayName: NullPoint SMS Filter
+      INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.identitylookup.message-filter
+    entitlements:
+      path: Config/NullPointSMSFilter.entitlements
+    dependencies:
+      - target: NullPointGuard
+
+schemes:
+  NullPointGuard:
+    build:
+      targets:
+        NullPointGuard: all
+        NullPointDirectory: all
+        NullPointSMSFilter: all
+    run:
+      config: Debug

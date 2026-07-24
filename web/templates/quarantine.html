@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Quarantine — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Quarantine</h1>
+    <div class="desc">The one manual touchpoint. Grade what the engine held back — every verdict feeds the next gated retrain.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/dashboard">Back to dashboard</a>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi panel">
+    <div class="kpi-k">Awaiting review</div>
+    <div class="kpi-v" id="q-total">{{ counts.total }}</div>
+  </div>
+  <div class="kpi panel">
+    <div class="kpi-k">Quarantined</div>
+    <div class="kpi-v tone-danger">{{ counts.quarantined }}</div>
+  </div>
+  <div class="kpi panel">
+    <div class="kpi-k">Potential threats</div>
+    <div class="kpi-v tone-warn">{{ counts.potential }}</div>
+  </div>
+  <div class="kpi panel">
+    <div class="kpi-k">Unsure — model wants a label</div>
+    <div class="kpi-v tone-safe">{{ counts.unsure }}</div>
+  </div>
+</div>
+
+<section class="card">
+  <div class="hd"><h2>Review queue</h2><span class="kbd">{{ rows|length }}</span></div>
+  <div class="bd">
+    {% if rows %}
+    <div class="inbox-list" id="quarantine-list">
+      {% for r in rows %}
+      <div class="inbox-row" data-mid="{{ r.id }}">
+        <span class="inbox-avatar {{ 'threat' if r.band == 'quarantined' else '' }}">{{ (r.sender or '?')[0]|upper }}</span>
+        <div class="inbox-main">
+          <div class="inbox-title">{{ r.sender }}
+            <span class="badge tone-{{ 'danger' if r.band == 'quarantined' else ('warn' if r.band == 'potential' else 'safe') }}">
+              {{ 'Quarantined' if r.band == 'quarantined' else ('Potential threat' if r.band == 'potential' else 'Unsure') }}
+            </span>
+          </div>
+          <div class="inbox-sub">{{ r.channel }} · {{ (r.timestamp or '—')[:16] }} · model confidence {{ (r.confidence * 100)|round|int }}%</div>
+          {% if r.subject %}<div class="hint">{{ r.subject[:160] }}</div>{% endif %}
+        </div>
+        <div class="inbox-actions">
+          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
+          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
+          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="feed-empty">Queue clear — nothing needs a human right now. The engine keeps watching.</div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="connect-note">
+  <strong>How grading works:</strong> Block &amp; Report and Mark as safe write a durable label to the
+  feedback buffer; the trainer folds them into the next retrain, which must pass the golden gate
+  before promotion. A single grade can never silently change the live model.
+</div>
+{% endblock %}

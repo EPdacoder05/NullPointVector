@@ -1,0 +1,72 @@
+name: Docker Hardening
+
+# Closes the container-image gap the other scanners miss:
+#   - Trivy (existing) only scans the filesystem/deps + IaC config, never the
+#     built image. Here we build the image and scan IT.
+#   - Hadolint lints the Dockerfile for best-practice / security smells.
+#   - Dockle lints the built image for CIS-style hardening issues (root user,
+#     missing healthcheck, secrets/credentials baked in, etc).
+#
+# Report-only by default (exit-code 0 / continue-on-error) to match the repo's
+# non-blocking scan posture; flip exit codes to make any of these a hard gate.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "Dockerfile"
+      - "requirements.txt"
+      - ".github/workflows/docker-hardening.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "Dockerfile"
+      - "requirements.txt"
+      - ".github/workflows/docker-hardening.yml"
+  schedule:
+    - cron: '0 5 * * 2'  # Weekly Tue 5 AM (after Trivy/CodeQL)
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  hadolint:
+    name: Hadolint (Dockerfile lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Hadolint
+        run: docker run --rm -i hadolint/hadolint hadolint - < Dockerfile || true
+
+  image-scan:
+    name: Build + Dockle + Trivy image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t yahoo-phish:ci .
+
+      - name: Dockle (CIS image hardening lint)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            goodwithtech/dockle:latest --exit-code 0 --no-color yahoo-phish:ci
+
+      - name: Trivy image vulnerability scan (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'yahoo-phish:ci'
+          format: 'sarif'
+          output: 'trivy-image.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload Trivy image results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-image.sarif'
+          category: 'trivy-image'

@@ -1,352 +1,484 @@
 """
-FastAPI Main Application
-Provides REST API endpoints for Yahoo_Phish IDPS
+FastAPI service for the Yahoo_Phish IDPS.
+
+Production hardening (System-Design-Engineering-Universal-Reference aligned):
+  - AuthN/Z      : JWT bearer + hierarchical RBAC (viewer < analyst < admin)
+  - Rate limiting: O(1) token bucket per caller (429 + Retry-After)
+  - Pagination   : keyset/cursor on /threats (O(log N) deep pages)
+  - Idempotency  : Idempotency-Key header on writes (replay-safe)
+  - Observability: Prometheus /metrics + structured access logs + latency hist
+  - Detection    : unified classifier + anomaly verdict (risk.assess), with
+                   vector similarity as a supplementary signal
+  - Safe retrain : champion/challenger Trainer (gated promotion) in background
 """
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime
 import logging
-from urllib.parse import urlparse
-import re
+import os as _os_sec
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import (BackgroundTasks, Depends, FastAPI, Header, HTTPException,
+                     Request, Response, status)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from Autobot.VectorDB.NullPoint_Vector import (
-    search_similar_threats,
-    store_threat,
-    get_threat_by_id,
-    get_all_threats
+    search_similar_threats, store_threat, get_threat_by_id, get_threats_page,
+    get_vish_directory,
 )
-from PhishGuard.phish_mlm.phishing_detector import PhishingDetector
+from PhishGuard.phish_mlm.phishing_detector import detector
+from common.streaming.channel_pipeline import process_one
+from common.streaming.dlq import persist_threat_durable, start_dlq_drainer, depth as dlq_depth
 
-# Setup logging
+from common.auth import (authenticate_user, create_access_token,
+                         create_refresh_token, refresh_access_token,
+                         get_current_user, require_role)
+from common.rate_limit import rate_limit
+from common.idempotency import build_idempotency_store, idempotent, DuplicateRequestError
+from common.pagination import decode_cursor, page_envelope
+from common.observability import ObservabilityMiddleware, metrics_response
+from common.config import validate_production_config
+
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("api")
 
-# Initialize FastAPI
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Validate config, pre-fit anomaly manifolds off the request hot path.
+
+    Uses the modern lifespan protocol (the deprecated @app.on_event hook is
+    removed) so the startup sequence stays future-proof on current FastAPI.
+    """
+    validate_production_config()
+    import threading
+    from common.streaming.channel_pipeline import warm_anomaly
+    threading.Thread(target=warm_anomaly, name="warm-anomaly", daemon=True).start()
+    # Self-healing: drain any threats that were dead-lettered during a DB outage
+    # back into Postgres once it recovers (no data loss across restarts).
+    start_dlq_drainer("threat", interval=30.0)
+    yield
+
+
 app = FastAPI(
     title="Yahoo_Phish IDPS API",
-    description="Intrusion Detection Prevention System for Phishing/Smishing/Vishing",
-    version="1.0.0"
+    description="Intrusion Detection & Prevention for Phishing/Smishing/Vishing",
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
-# CORS middleware for Dash UI integration
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Baseline OWASP response headers for every route."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+        )
+        if _os_sec.getenv("FORCE_HSTS", "").lower() in ("1", "true"):
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(ObservabilityMiddleware)
+
+# Premium server-rendered console (Jinja + vanilla JS), mounted under /app.
+# Kept optional so a missing template dir / jinja2 never blocks the API boot.
+try:
+    from pathlib import Path as _Path
+    from fastapi.staticfiles import StaticFiles
+    from web.ui import router as _ui_router
+    app.mount("/static", StaticFiles(directory=str(_Path(__file__).resolve().parent.parent / "web" / "static")), name="static")
+    app.include_router(_ui_router)
+    logger.info("UI console mounted at /app")
+except Exception as _ui_err:  # pragma: no cover
+    logger.warning("UI console not mounted: %s", _ui_err)
+
+# Allowed browser origins. Behind the single-ingress reverse proxy the UI and API
+# are same-origin (no CORS hit), but direct API access / cloud subdomains need
+# this. Configure via API_ALLOWED_ORIGINS (comma-separated) for ngrok/cloud.
+import os as _os
+_default_origins = "http://localhost:8050,http://127.0.0.1:8050,http://localhost:8088"
+_allowed_origins = [o.strip() for o in
+                    _os.getenv("API_ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8050", "http://127.0.0.1:8050"],
+    allow_origins=_allowed_origins,
+    allow_origin_regex=_os.getenv("API_ALLOWED_ORIGIN_REGEX") or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Heuristic keywords & suspicious TLDs
-SUSPICIOUS_KEYWORDS = ["urgent", "action required", "verify", "compromised", "password", "account locked", "confirm", "bank", "login", "update"]
-SUSPICIOUS_TLDS = ["ru", "cn", "top", "lol", "zip", "xyz"]
-BRAND_DOMAINS = {"bankofamerica.com", "chase.com", "wellsfargo.com", "paypal.com"}
+# Idempotency store: Redis when REDIS_URL set, else in-memory (single instance).
+_idem = build_idempotency_store()
 
-# Utility: Simple heuristic risk scoring
-def heuristic_score(content: str, sender: Optional[str]) -> float:
-    if not content:
-        return 0.0
-    text = content.lower()
-    score = 0.0
-    # Keyword hits
-    kw_hits = sum(1 for kw in SUSPICIOUS_KEYWORDS if kw in text)
-    if kw_hits:
-        score += min(0.4, 0.1 * kw_hits)
-    # URL extraction
-    urls = re.findall(r'https?://[^\s]+', content)
-    for u in urls:
-        try:
-            parsed = urlparse(u)
-            domain = parsed.hostname or ''
-            # Hyphen spoof (e.g. evil-bank.com)
-            if '-' in domain and any(b.split('.')[0] in domain for b in BRAND_DOMAINS):
-                score += 0.25
-            tld = domain.split('.')[-1]
-            if tld in SUSPICIOUS_TLDS:
-                score += 0.2
-            # Brand mismatch (sender domain vs content domain)
-            if sender and '@' in sender:
-                sender_domain = sender.split('@')[-1].lower()
-                if sender_domain != domain and any(b in domain for b in BRAND_DOMAINS):
-                    score += 0.15
-        except Exception:
-            continue
-    # Cap score
-    return min(score, 0.95)
 
-# Seeding dataset for initial similarity
-SEED_THREATS = [
-    {
-        "content": "URGENT: Your account has been suspended. Verify now: http://secure-login-update.com",
-        "sender": "support@secure-login-update.com",
-        "threat_type": "phishing",
-        "metadata": {"subject": "Account Suspension Notice", "template": True}
-    },
-    {
-        "content": "Action Required: Confirm your banking credentials at https://account-verification-paypal.top",
-        "sender": "service@paypal-security.com",
-        "threat_type": "phishing",
-        "metadata": {"subject": "PayPal Verification", "template": True}
-    },
-    {
-        "content": "We detected unusual activity. Login immediately: http://login-update-secure.xyz",
-        "sender": "alert@security-update.com",
-        "threat_type": "phishing",
-        "metadata": {"subject": "Unusual Activity Detected", "template": True}
-    },
-    {
-        "content": "Your mobile carrier bill is overdue. Pay now to avoid service interruption: http://carrier-pay-now.cn",
-        "sender": "billing@carrier-support.cn",
-        "threat_type": "smishing",
-        "metadata": {"subject": "Overdue Bill", "template": True}
-    }
-]
-
+# ============================================================ models
 class ThreatAnalysisRequest(BaseModel):
-    content: str = Field(..., min_length=1, description="Content to analyze (email/SMS/voice)")
-    sender: Optional[str] = Field(None, description="Sender identifier (email/phone)")
-    threat_type: str = Field(..., pattern="^(phishing|smishing|vishing)$", description="Type of threat")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata")
+    content: str = Field(..., min_length=1, max_length=50_000, description="Content to analyze")
+    sender: Optional[str] = Field(None, max_length=256, description="Sender email/phone")
+    threat_type: str = Field(..., pattern="^(phishing|smishing|vishing)$")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
 
 class ThreatAnalysisResponse(BaseModel):
     threat_id: str
     is_threat: bool
-    confidence_score: float
+    action: str
+    risk_score: float
+    classifier_pred: int
+    classifier_conf: float
+    anomaly_level: str
+    anomaly_novelty: float
     threat_type: str
     similar_threats: List[Dict[str, Any]]
+    reasons: List[str]
     analysis_time: str
-    recommendations: List[str]
 
-class HealthResponse(BaseModel):
-    status: str
-    timestamp: str
-    database: str
-    vector_db: str
 
-class SeedResponse(BaseModel):
-    inserted: int
-    already_present: int
-    total_after: int
+class FeedbackRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=50_000)
+    is_phishing: bool
+    sender: Optional[str] = Field(None, max_length=256)
 
-class RetrainResponse(BaseModel):
-    started: bool
-    timestamp: str
 
-# Health Check Endpoint
-@app.get("/health", response_model=HealthResponse)
+class CallScreenRequest(BaseModel):
+    """CallKit → VishGuard event (the R1 hybrid contract).
+
+    See docs/CALLKIT_DATA_CONTRACT.md. `transcript` is optional: present → the
+    deep content path runs; absent → reputation-only live screening.
+    """
+    caller_id: str = Field(..., min_length=1, max_length=32, description="E.164 or alphanumeric sender id")
+    phase: str = Field("incoming", pattern="^(incoming|voicemail|post_call)$")
+    transcript: Optional[str] = Field(None, max_length=20_000, description="Voicemail/call transcript (deep path)")
+    direction: str = Field("inbound", pattern="^(inbound|outbound)$")
+    contact_known: bool = False
+    carrier_verified: Optional[bool] = Field(None, description="STIR/SHAKEN attestation result")
+    timestamp: Optional[str] = Field(None, max_length=64)
+    device_id: Optional[str] = Field(None, max_length=128)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+
+
+# ============================================================ public routes
+@app.get("/health")
 async def health_check():
-    """
-    Health check endpoint to verify API and database connectivity
-    """
     try:
-        # Test database connection
         from Autobot.VectorDB.NullPoint_Vector import connect_db
         conn = connect_db()
         db_status = "healthy" if conn else "unhealthy"
         if conn:
             conn.close()
-        
-        return HealthResponse(
-            status="healthy",
-            timestamp=datetime.now().isoformat(),
-            database=db_status,
-            vector_db="operational"
-        )
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail=f"Service unavailable: {str(e)}")
+        db_status = f"unhealthy: {e}"
+    # DLQ depth surfaces self-heal backlog: >0 means the DB was down and threats
+    # are buffered durably, waiting for the drainer to replay them.
+    try:
+        pending = dlq_depth("threat")
+    except Exception:
+        pending = -1
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(),
+            "database": db_status, "model_loaded": detector.clf is not None,
+            "dlq_pending_threats": pending}
+
 
 @app.get("/")
 async def root():
-    """
-    Root endpoint with API information
-    """
     return {
-        "message": "Yahoo_Phish IDPS API",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "docs": "/docs",
-            "analyze": "/api/v1/analyze",
-            "threats": "/api/v1/threats",
-            "seed": "/api/v1/seed",
-            "retrain": "/api/v1/retrain"
-        }
+        "service": "Yahoo_Phish IDPS API", "version": "2.0.0",
+        "auth": "POST /api/v1/token (OAuth2 password) → Bearer JWT",
+        "endpoints": ["/health", "/metrics", "/docs", "/api/v1/analyze",
+                      "/api/v1/threats", "/api/v1/feedback", "/api/v1/retrain",
+                      "/api/v1/model"],
     }
 
-# API v1 Endpoints
+
+@app.get("/metrics")
+async def metrics():
+    body, content_type = metrics_response()
+    return Response(content=body, media_type=content_type)
+
+
+# ============================================================ auth routes
+@app.post("/api/v1/token", response_model=TokenResponse)
+async def login(form: OAuth2PasswordRequestForm = Depends(),
+                _rl: None = Depends(rate_limit())):
+    user = authenticate_user(form.username, form.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Incorrect username or password")
+    return TokenResponse(
+        access_token=create_access_token(user),
+        refresh_token=create_refresh_token(user),
+    )
+
+
+@app.post("/api/v1/token/refresh", response_model=TokenResponse)
+async def refresh(refresh_token: str = Header(..., alias="X-Refresh-Token"),
+                  _rl: None = Depends(rate_limit())):
+    new_access = refresh_access_token(refresh_token)
+    if not new_access:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid refresh token")
+    return TokenResponse(access_token=new_access)
+
+
+# ============================================================ detection
+def _run_analysis(req: ThreatAnalysisRequest) -> ThreatAnalysisResponse:
+    start = datetime.now()
+    # Route to the correct per-channel detector (phishing/smishing/vishing).
+    # process_one normalizes the record and applies the channel's anomaly policy.
+    record = {"subject": req.metadata.get("subject", "") if req.metadata else "",
+              "body": req.content, "transcript": req.content,
+              "from": req.sender or "", "caller_id": req.sender or ""}
+
+    verdict = process_one(req.threat_type, record)
+
+    similar = search_similar_threats(content=req.content,
+                                     threat_type=req.threat_type, top_k=5) or []
+
+    threat_id = f"{req.threat_type}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    elapsed = (datetime.now() - start).total_seconds()
+    return ThreatAnalysisResponse(
+        threat_id=threat_id, is_threat=verdict.is_threat, action=verdict.action.value,
+        risk_score=verdict.risk_score, classifier_pred=verdict.classifier_pred,
+        classifier_conf=verdict.classifier_conf, anomaly_level=verdict.anomaly_level,
+        anomaly_novelty=verdict.anomaly_novelty, threat_type=req.threat_type,
+        similar_threats=similar, reasons=verdict.reasons,
+        analysis_time=f"{elapsed:.3f}s",
+    )
+
+
 @app.post("/api/v1/analyze", response_model=ThreatAnalysisResponse)
 async def analyze_content(
     request: ThreatAnalysisRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(require_role("analyst")),
+    _rl: None = Depends(rate_limit()),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
-    """
-    Analyze content for phishing/smishing/vishing threats
-    
-    Uses vector similarity search to find similar known threats
-    and ML models to classify new content.
-    """
-    try:
-        start_time = datetime.now()
-        # Heuristic first
-        h_score = heuristic_score(request.content, request.sender)
-        similar_threats = search_similar_threats(
-            content=request.content,
-            threat_type=request.threat_type,
-            top_k=5
-        )
-        similarity_score = 0.0
-        if similar_threats:
-            # If we find very similar known threats, flag as threat
-            max_similarity = max(t.get('similarity', 0) for t in similar_threats)
-            similarity_score = max_similarity
-            is_threat = max_similarity > 0.75  # 75% similarity threshold
-        else:
-            is_threat = h_score > 0.6  # Heuristic fallback
-        
-        # Combined scoring (weighted average)
-        combined_score = (h_score * 0.4) + (similarity_score * 0.6)
-        
-        # Generate threat ID
-        threat_id = f"{request.threat_type}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        if is_threat:
+    """Unified classifier + anomaly verdict. Idempotent when Idempotency-Key is set."""
+    def _do() -> ThreatAnalysisResponse:
+        resp = _run_analysis(request)
+        if resp.is_threat:
+            # Durable persist: retried, and dead-lettered (never dropped) if the
+            # DB is momentarily down; the drainer replays it when DB is back.
             background_tasks.add_task(
-                store_threat,
-                content=request.content,
-                threat_type=request.threat_type,
-                sender=request.sender or "unknown",
-                metadata={"heuristic": h_score, "similarity": similarity_score, "label": 1, **(request.metadata or {})}
-            )
-        else:
-            # Optionally store for corpus building (unlabeled)
-            if request.metadata.get("store_unlabeled", True) if request.metadata else True:
-                background_tasks.add_task(
-                    store_threat,
-                    content=request.content,
-                    threat_type=request.threat_type,
-                    sender=request.sender or "unknown",
-                    metadata={"heuristic": h_score, "similarity": similarity_score, "label": 0, "unlabeled": True, **(request.metadata or {})}
-                )
-        recommendations = []
-        if is_threat:
-            recommendations.extend([
-                "🚨 This content matches threat patterns",
-                "⚠️ Do NOT interact with links or provide info",
-                f"🧪 Heuristic score: {h_score:.2f} | Similarity: {similarity_score:.2f}",
-            ])
-            if request.sender:
-                recommendations.append(f"🚫 Block sender: {request.sender}")
-        else:
-            recommendations.extend([
-                "✅ No immediate threat detected",
-                f"ℹ️ Heuristic score: {h_score:.2f} | Similarity: {similarity_score:.2f}",
-                "⚠️ Stay cautious with unsolicited messages"
-            ])
-        analysis_time = (datetime.now() - start_time).total_seconds()
-        return ThreatAnalysisResponse(
-            threat_id=threat_id,
-            is_threat=is_threat,
-            confidence_score=combined_score,
-            threat_type=request.threat_type,
-            similar_threats=similar_threats,
-            analysis_time=f"{analysis_time:.3f}s",
-            recommendations=recommendations
-        )
-    except Exception as e:
-        logger.error(f"Analysis failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
+                persist_threat_durable, content=request.content,
+                threat_type=request.threat_type, sender=request.sender or "unknown",
+                metadata={"risk_score": resp.risk_score, "action": resp.action,
+                          "label": 1, **(request.metadata or {})})
+        return resp
 
+    if not idempotency_key:
+        return _do()
+    try:
+        with idempotent(_idem, idempotency_key) as ctx:
+            if ctx.already_completed:
+                return ctx.stored_result
+            ctx.result = _do()
+        return ctx.result
+    except DuplicateRequestError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@app.post("/api/v1/vish/screen")
+async def screen_call_endpoint(
+    request: CallScreenRequest,
+    background_tasks: BackgroundTasks,
+    user: Dict = Depends(require_role("analyst")),
+    _rl: None = Depends(rate_limit()),
+):
+    """Hybrid CallKit screening (R1): reputation (number) + transcription (content).
+
+    Always runs the reputation path on `caller_id`; runs the VishGuard content path
+    when a `transcript` is supplied. Returns one recommended CallKit action
+    (allow/label/silence/block) with consumer-readable reasons. A confirmed threat
+    is persisted durably (DLQ-safe) so the number feeds back into local reputation.
+    """
+    from common.vish import screen_call, CallEvent
+    result = screen_call(CallEvent.from_dict(request.model_dump()))
+    try:
+        from common.call_events import record_screen
+        record_screen(result.to_dict() | {"caller_id": request.caller_id,
+                                          "transcript": request.transcript or ""})
+    except Exception:
+        pass
+    if result.is_threat:
+        background_tasks.add_task(
+            persist_threat_durable,
+            content=request.transcript or f"[call from {request.caller_id}]",
+            threat_type="vishing", sender=request.caller_id or "unknown",
+            metadata={"risk_score": result.risk, "action": result.action.value,
+                      "label": 1, "channel": "vishing", "verdict": result.verdict,
+                      "paths": result.paths, "via": "callkit"})
+    return result.to_dict()
+
+
+@app.get("/api/v1/vish/directory")
+async def vish_directory_endpoint(
+    user: Dict = Depends(require_role("analyst")),
+    _rl: None = Depends(rate_limit()),
+):
+    """Call Directory block/label sync payload for iOS CallKit extension."""
+    updated_at, block, label = get_vish_directory()
+    return {"updatedAt": updated_at, "block": block, "label": label}
+
+
+class IdentityEnrichRequest(BaseModel):
+    subject: str = Field(..., min_length=3, max_length=320)
+    consented: bool = False
+    plaid_access_token: Optional[str] = Field(None, max_length=512)
+    credit_user_id: Optional[str] = Field(None, max_length=128)
+
+
+@app.post("/api/v1/identity/enrich")
+async def identity_enrich(
+    req: IdentityEnrichRequest,
+    user: Dict = Depends(require_role("customer")),
+    _rl: None = Depends(rate_limit()),
+):
+    """Consent-gated Plaid + Array/credit + breach OSINT bundle (fail-open)."""
+    if not req.consented:
+        raise HTTPException(status_code=400, detail="consent_required")
+    from common.vendors.identity import enrich_identity_bundle
+    return enrich_identity_bundle(
+        subject=req.subject.strip(),
+        consented=True,
+        plaid_access_token=req.plaid_access_token,
+        credit_user_id=req.credit_user_id,
+    )
+
+
+@app.post("/api/v1/feedback")
+async def submit_feedback(req: FeedbackRequest,
+                          user: Dict = Depends(require_role("analyst")),
+                          _rl: None = Depends(rate_limit())):
+    """
+    Record a human label. SAFE by design: this only appends to the durable
+    feedback buffer (+ ephemeral in-memory update). The on-disk champion changes
+    only when /retrain runs and the candidate passes the golden gate.
+    """
+    email = {"subject": "", "body": req.content, "from": req.sender or ""}
+    detector.learn_from_feedback(email, req.is_phishing)
+    return {"status": "recorded", "buffered": True,
+            "note": "folded into next gated retrain", "by": user["user_id"]}
+
+
+# ============================================================ threats (read)
 @app.get("/api/v1/threats")
 async def list_threats(
     threat_type: Optional[str] = None,
-    limit: int = 100
+    cursor: Optional[str] = None,
+    limit: int = 50,
+    user: Dict = Depends(get_current_user),
+    _rl: None = Depends(rate_limit()),
 ):
-    """
-    List all detected threats
-    
-    Optionally filter by threat type (phishing/smishing/vishing)
-    """
-    try:
-        threats = get_all_threats(threat_type=threat_type, limit=limit)
-        return {
-            "total": len(threats),
-            "threats": threats,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Failed to list threats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Keyset-paginated threat list. Pass back `next_cursor` for the next page."""
+    after_id = decode_cursor(cursor)
+    rows, next_id = get_threats_page(threat_type=threat_type,
+                                     after_id=after_id, limit=limit)
+    return page_envelope(rows, next_id, limit)
+
 
 @app.get("/api/v1/threats/{threat_id}")
-async def get_threat_details(threat_id: str):
-    """
-    Get details of a specific threat by ID
-    """
-    try:
-        threat = get_threat_by_id(threat_id)
-        if not threat:
-            raise HTTPException(status_code=404, detail="Threat not found")
-        return threat
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get threat: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+async def get_threat_details(threat_id: str,
+                             user: Dict = Depends(get_current_user),
+                             _rl: None = Depends(rate_limit())):
+    threat = get_threat_by_id(threat_id)
+    if not threat:
+        raise HTTPException(status_code=404, detail="Threat not found")
+    return threat
+
 
 @app.post("/api/v1/threats/report")
 async def report_threat(
-    content: str,
-    threat_type: str,
-    sender: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    content: str, threat_type: str, sender: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    user: Dict = Depends(require_role("analyst")),
+    _rl: None = Depends(rate_limit()),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
-    """
-    Manually report a new threat
-    
-    This allows users to submit threats that weren't automatically detected
-    """
+    def _do():
+        result = store_threat(content=content, threat_type=threat_type,
+                              sender=sender or "user_reported", metadata=metadata or {})
+        if not isinstance(result, dict) or result.get("error"):
+            # DB unavailable: buffer durably so the user report is never lost.
+            from common.streaming.dlq import dead_letter
+            dead_letter("threat", {"content": content, "threat_type": threat_type,
+                                   "sender": sender or "user_reported",
+                                   "metadata": metadata or {}})
+            return {"status": "queued", "threat_id": None,
+                    "note": "buffered (DB unavailable); will persist on recovery",
+                    "timestamp": datetime.now().isoformat()}
+        return {"status": "success", "threat_id": result.get("id"),
+                "timestamp": datetime.now().isoformat()}
+
+    if not idempotency_key:
+        return _do()
     try:
-        result = store_threat(
-            content=content,
-            threat_type=threat_type,
-            sender=sender or "user_reported",
-            metadata=metadata or {}
-        )
-        
-        return {
-            "status": "success",
-            "message": "Threat reported successfully",
-            "threat_id": result.get("id"),
-            "timestamp": datetime.now().isoformat()
-        }
+        with idempotent(_idem, idempotency_key) as ctx:
+            if ctx.already_completed:
+                return ctx.stored_result
+            ctx.result = _do()
+        return ctx.result
+    except DuplicateRequestError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+# ============================================================ admin / model ops
+@app.get("/api/v1/model")
+async def model_info(user: Dict = Depends(get_current_user)):
+    """Champion version + its golden-eval metrics from the registry."""
+    try:
+        from PhishGuard.phish_mlm.training.registry import ModelRegistry
+        from PhishGuard.phish_mlm.phishing_detector import MODEL_DIR
+        reg = ModelRegistry(MODEL_DIR)
+        return {"champion": reg.current_version(),
+                "versions": reg.list_versions(),
+                "metrics": reg.champion_metrics(),
+                "calibrated": detector.platt is not None}
     except Exception as e:
-        logger.error(f"Failed to report threat: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Do not leak internal exception text to clients (info-disclosure).
+        logger.error("model_info failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="model registry unavailable")
 
-@app.post("/api/v1/seed", response_model=SeedResponse)
-async def seed_threats():
-    from Autobot.VectorDB.NullPoint_Vector import get_all_threats
-    existing = get_all_threats(limit=5_000)
-    existing_contents = {t["id"] for t in existing}
-    inserted = 0
-    for sample in SEED_THREATS:
-        try:
-            store_threat(**sample)
-            inserted += 1
-        except Exception:
-            continue
-    total_after = len(get_all_threats(limit=5_000))
-    return SeedResponse(inserted=inserted, already_present=len(existing_contents), total_after=total_after)
 
-@app.post("/api/v1/retrain", response_model=RetrainResponse)
-async def retrain_model(background_tasks: BackgroundTasks):
+@app.post("/api/v1/retrain")
+async def retrain_model(background_tasks: BackgroundTasks,
+                        force: bool = False,
+                        user: Dict = Depends(require_role("admin"))):
+    """
+    Kick off a champion/challenger retrain. The candidate is promoted ONLY if it
+    clears the golden gate and does not regress vs the current champion.
+    """
     def _train():
-        detector = PhishingDetector(use_nn=False)
-        detector.detect_threats()
+        try:
+            from PhishGuard.phish_mlm.training.trainer import Trainer
+            result = Trainer().run(force_promote=force)
+            logger.info(f"retrain: version={result.version} promoted={result.promoted} "
+                        f"reason={result.reason}")
+        except Exception as e:
+            logger.error(f"retrain failed: {e}", exc_info=True)
+
     background_tasks.add_task(_train)
-    return RetrainResponse(started=True, timestamp=datetime.now().isoformat())
+    return {"started": True, "by": user["user_id"], "timestamp": datetime.now().isoformat()}
+
 
 if __name__ == "__main__":
     import uvicorn

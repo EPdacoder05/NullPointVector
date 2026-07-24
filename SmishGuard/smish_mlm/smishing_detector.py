@@ -1,149 +1,157 @@
-import numpy as np
-import pandas as pd
-import joblib
-import os
+"""
+SmishGuard — SMS smishing detector.
+
+Bootstraps off the PhishGuard architecture via the shared `ChannelDetector`
+(word + char TF-IDF + structural features → calibrated SGDClassifier). The only
+channel-specific parts are the SMS structural feature vector and the cold-start
+corpus below. Detection is a sub-millisecond, single-message latency path —
+purpose-built for real-time SMS intercept (no batch email windows).
+"""
+from __future__ import annotations
+
 import logging
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-import torch
-import torch.nn as nn
 from pathlib import Path
-import sys
-from datetime import datetime, timedelta
-import re
 
-# Fix import path
-project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root))
-from Autobot.VectorDB.NullPoint_Vector import connect_db
-from Autobot.VectorDB.NullPoint_Vector import encrypt_data, decrypt_data
+from common.ml import features as F
+from common.ml.channel_detector import ChannelDetector
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = Path(__file__).parent / 'models'
-MODEL_DIR.mkdir(exist_ok=True)
-MODEL_PATH = MODEL_DIR / 'smishing_logreg_model.pkl'
-SCALER_PATH = MODEL_DIR / 'scaler.pkl'
-NN_MODEL_PATH = MODEL_DIR / 'smishing_nn_model.pth'
-FEATURE_ENGINEERING_PATH = MODEL_DIR / 'feature_engineering.pkl'
+MODEL_PATH = Path(__file__).parent / "models" / "smishing_sgd_model.pkl"
 
-class FeatureEngineering:
-    def __init__(self):
-        self.feature_columns = [
-            'hour_of_day', 'day_of_week', 'is_weekend',
-            'has_urgent_words', 'has_suspicious_number',
-            'has_money_mentions', 'has_personal_info',
-            'url_count', 'shortened_url_count',
-            'message_length', 'has_unicode_chars'
-        ]
-        
-    def extract_features(self, sms_data):
-        """Extract features from SMS data."""
-        df = pd.DataFrame(sms_data)
-        
-        # Time-based features
-        df['timestamp'] = pd.to_datetime(df['date'])
-        df['hour_of_day'] = df['timestamp'].dt.hour
-        df['day_of_week'] = df['timestamp'].dt.dayofweek
-        df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
-        
-        # Content-based features
-        df['has_urgent_words'] = df['body'].str.contains('urgent|immediate|action required|expire|limited time', case=False).astype(int)
-        df['has_suspicious_number'] = df['sender'].str.contains(r'\+?\d{10,}', regex=True).astype(int)
-        df['has_money_mentions'] = df['body'].str.contains('money|payment|bank|account|transfer|refund|claim', case=False).astype(int)
-        df['has_personal_info'] = df['body'].str.contains('password|login|account|verify|confirm|security|update', case=False).astype(int)
-        
-        # Structure-based features
-        df['url_count'] = df['body'].str.count('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-        df['shortened_url_count'] = df['body'].str.count('bit\.ly|t\.co|goo\.gl|tinyurl\.com').astype(int)
-        df['message_length'] = df['body'].str.len()
-        df['has_unicode_chars'] = df['body'].str.contains(r'[^\x00-\x7F]').astype(int)
-        
-        return df[self.feature_columns]
+# Feature schema version == length of the structural vector. Bump implicitly by
+# changing _sms_numeric_features; a mismatch on disk triggers an auto-retrain.
+NUM_SMS_FEATURES = 18
 
-class SmishingDetector:
-    def __init__(self, use_nn=False):
-        self.use_nn = use_nn
-        self.model = None
-        self.scaler = None
-        self.feature_engineering = FeatureEngineering()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.conn = None
-        self.load_model()
 
-    def connect_db(self):
-        self.conn = connect_db()
-        logger.info("Connected to database for SmishingDetector")
+def _sms_text(record: dict) -> str:
+    """Flatten an SMS record into text for vectorization."""
+    body = record.get("body") or record.get("message") or record.get("text") or ""
+    sender = record.get("from") or record.get("sender") or record.get("caller_id") or ""
+    return f"{sender} {body}".strip()
 
-    def fetch_training_data(self):
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT embedding, label, sender, date, body 
-                FROM messages
-                WHERE label IS NOT NULL AND message_type = 'sms'
-            """)
-            rows = cursor.fetchall()
-            if not rows:
-                logger.warning("No training data found for SMS")
-                return np.array([]), np.array([])
-            
-            # Convert to DataFrame for feature engineering
-            data = [{'embedding': row[0], 'label': row[1], 'sender': row[2], 
-                    'date': row[3], 'body': row[4]} for row in rows]
-            df = pd.DataFrame(data)
-            
-            # Extract features
-            features = self.feature_engineering.extract_features(df)
-            
-            # Combine with embeddings
-            X = np.column_stack([np.array([np.array(row[0]) for row in rows]), features])
-            y = np.array([row[1] for row in rows])
-            
-            return X, y
 
-    def generate_analysis_report(self):
-        """Generate detailed analysis report of smishing attempts."""
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT date, sender, body, is_threat, confidence
-                FROM messages
-                WHERE message_type = 'sms'
-                ORDER BY date DESC
-            """)
-            rows = cursor.fetchall()
-            
-        df = pd.DataFrame(rows, columns=['date', 'sender', 'body', 'is_threat', 'confidence'])
-        df['date'] = pd.to_datetime(df['date'])
-        
-        # Time-based analysis
-        time_analysis = {
-            'total_sms': len(df),
-            'threat_count': df['is_threat'].sum(),
-            'threat_percentage': (df['is_threat'].sum() / len(df)) * 100,
-            'hourly_distribution': df.groupby(df['date'].dt.hour)['is_threat'].mean(),
-            'daily_distribution': df.groupby(df['date'].dt.day_name())['is_threat'].mean(),
-            'top_senders': df[df['is_threat'] == 1]['sender'].value_counts().head(10),
-            'avg_confidence': df.groupby('is_threat')['confidence'].mean(),
-            'common_keywords': self._extract_common_keywords(df[df['is_threat'] == 1]['body'])
-        }
-        
-        # Save report
-        report_path = MODEL_DIR / 'smishing_analysis_report.json'
-        pd.Series(time_analysis).to_json(report_path)
-        logger.info(f"Analysis report saved to {report_path}")
-        
-        return time_analysis
+def _sms_numeric_features(text: str, record: dict | None) -> list:
+    """
+    18 hard-to-fake structural features for SMS.
+    """
+    record = record or {}
+    body = record.get("body") or record.get("message") or record.get("text") or text
+    sender = record.get("from") or record.get("sender") or ""
+    length = len(body)
+    return [
+        float(len(F.urls(body))),
+        float(F.shortener_count(body)),
+        float(F.suspicious_tld_count(body)),
+        float(F.lexicon_count(body, F.URGENCY_WORDS)),
+        float(F.lexicon_count(body, F.CREDENTIAL_WORDS)),
+        float(F.lexicon_count(body, F.MONEY_WORDS)),
+        float(F.lexicon_count(body, F.THREAT_AUTHORITY_WORDS)),
+        float(F.has_phone(body)),
+        min(length / 160.0, 4.0),           # SMS segments (160 chars each)
+        F.non_ascii_ratio(body),
+        F.digit_ratio(body),
+        F.upper_ratio(body),
+        float(body.count("!")),
+        float(F.sender_is_shortcode(sender)),
+        float(F.sender_is_alpha(sender)),
+        float(F.sender_is_long_number(sender)),
+        float(F.otp_delivery_signal(body)),
+        float(F.otp_theft_signal(body)),
+    ]
 
-    def _extract_common_keywords(self, texts):
-        """Extract common keywords from threat messages."""
-        words = ' '.join(texts).lower()
-        words = re.findall(r'\b\w+\b', words)
-        return pd.Series(words).value_counts().head(20).to_dict()
 
-    # ... (rest of the methods similar to PhishingDetector)
+def _seed_corpus() -> list:
+    """Curated cold-start corpus: (record, label) with label 1 = smishing."""
+    smish = [
+        ("+18885550101", "USPS: your package is on hold due to an unpaid fee. Pay now: http://bit.ly/usps-fee"),
+        ("+18005550102", "Your Apple ID has been locked. Verify within 24h or it will be deleted: http://appleid-verify.xyz"),
+        ("VERIZON", "URGENT: Your bill is overdue. Avoid suspension, pay immediately: http://vz-billing.click"),
+        ("+447700900103", "You have WON a $1000 Walmart gift card! Claim now: http://tinyurl.com/wm-prize"),
+        ("+18885550104", "Bank Alert: unusual activity detected. Confirm your identity: http://secure-bank-login.top"),
+        ("+12025550105", "IRS Final Notice: you owe back taxes. Pay or face legal action: http://irs-gov-pay.work"),
+        ("+18005550106", "Amazon: we couldn't process your order. Update payment: http://amzn-billing.cf"),
+        ("+13105550107", "Netflix: your account is on hold. Update billing info: http://netflix-update.ga"),
+        ("+18885550108", "Your debit card has been suspended. Reactivate: http://cardservices-verify.tk"),
+        ("CHASE", "Chase: did you make a $750 transfer? Reply NO and verify: http://chase-secure.pw"),
+        ("+18005550109", "FedEx: address could not be verified. Reschedule delivery: http://fedex-redeliver.bid"),
+        ("+12025550110", "Your SSN has been suspended due to suspicious activity. Call immediately to avoid arrest."),
+        ("+18885550111", "PayPal: your account is limited. Resolve now to avoid permanent suspension: http://pp-resolve.xyz"),
+        ("+13235550112", "Crypto bonus! Deposit $100 get $500. Limited time: http://bit.ly/crypto-x5"),
+        ("+18005550113", "Coinbase security: confirm this login or your wallet will be locked: http://cb-verify.click"),
+        ("+19175550114", "Mom I dropped my phone in water, this is my new number, text me back I need help with money"),
+        ("+18885550115", "Geek Squad renewal $399.99 charged. To cancel call now or pay: http://gs-refund.top"),
+        ("+12125550116", "Your account password expires today. Reset now: http://account-reset.loan"),
+        ("+18005550117", "Zelle: a $480 payment failed. Verify your bank: http://zelle-verify.men"),
+        ("+13105550118", "Toll unpaid: $6.99 outstanding. Pay to avoid penalty: http://ezpass-toll.review"),
+        ("+18885550119", "Your DMV registration is suspended. Renew immediately: http://dmv-renew.download"),
+        ("+12025550120", "Social Security benefits suspended. Confirm SSN to reinstate: http://ssa-confirm.country"),
+        ("+18005550121", "Costco: you've been selected for a reward. Claim your prize: http://costco-reward.win"),
+        ("+19295550122", "Bank of America: card locked. Unlock here: http://boa-unlock.cn"),
+        ("+18885550123", "Verify your number to keep your account active. Tap: http://acct-keepalive.gq"),
+        ("+13475550124", "You have an undelivered voicemail. Listen: http://vm-listen.ru"),
+        ("+18005550906", "Hi, this is your bank. Reply with the 6-digit code we sent to confirm it's you."),
+    ]
+    legit = [
+        ("GOOGLE", "Your verification code is 558213. It expires in 10 minutes."),
+        ("AMAZON", "123456 is your Amazon OTP. Do not share it with anyone."),
+        ("APPLE", "Your Apple ID code is 847291. It expires in 5 minutes."),
+        ("CHASE", "Chase: Your one-time passcode is 339102. Never share this code."),
+        ("+15551230201", "Hey, running 5 min late — see you at the coffee shop!"),
+        ("+15551230202", "Your Uber is arriving now. Toyota Camry, plate 8XYZ123."),
+        ("VERIZON", "Your data usage is at 75% of your monthly plan. Manage settings in the My Verizon app."),
+        ("+15551230203", "Reminder: dentist appointment tomorrow at 2pm. Reply C to confirm."),
+        ("+15551230204", "Mom: don't forget to pick up milk on your way home, love you"),
+        ("CHASE", "Chase: your statement is ready. View it securely in the Chase app."),
+        ("+15551230205", "Your Amazon package was delivered to your front door."),
+        ("+15551230206", "Thanks for your order! It will ship within 2 business days."),
+        ("+15551230207", "Pizza Palace: your order #482 is ready for pickup."),
+        ("+15551230208", "Hey it's Sarah from work, can you send me the slides when you get a sec?"),
+        ("+15551230209", "Your ride with Lyft is complete. Total: $14.20. Rate your driver in the app."),
+        ("+15551230210", "Library: the book you reserved is now available for pickup."),
+        ("DELTA", "Delta: flight DL482 to ATL is on time, boarding at gate B12 at 3:40pm."),
+        ("+15551230211", "Happy birthday! Hope you have an amazing day, let's grab dinner soon"),
+        ("+15551230212", "Your appointment with Dr. Lee is confirmed for Thursday 10am."),
+        ("+15551230213", "Gym: your class 'Yoga Flow' starts in 1 hour. See you there!"),
+        ("STARBUCKS", "You've earned 25 Stars! Check your rewards in the Starbucks app."),
+        ("+15551230214", "Hey, the game got moved to Saturday. You still in?"),
+        ("+15551230215", "Your grocery delivery window is 5-6pm today. Driver: Mike."),
+        ("+15551230216", "Reminder: rent is due on the 1st. Thanks!"),
+        ("+15551230217", "It's Dad. Call me when you get a chance, nothing urgent."),
+        ("AMC", "AMC: your tickets for the 7:30pm show are confirmed. Enjoy!"),
+        ("+15551230218", "Carpool tomorrow at 7:45, I'll swing by your place."),
+        ("+15551230219", "Your prescription is ready for pickup at the pharmacy."),
+        ("+15551230220", "Team lunch moved to 12:30 in the big conference room."),
+        ("+15551230221", "Got the tickets! Can't wait for the concert this weekend."),
+    ]
+    records = []
+    for sender, body in smish:
+        records.append(({"from": sender, "body": body}, 1))
+    for sender, body in legit:
+        records.append(({"from": sender, "body": body}, 0))
+    return records
+
+
+# Process-wide singleton (drop-in `detector` for risk.assess).
+detector = ChannelDetector(
+    name="SmishGuard",
+    model_path=MODEL_PATH,
+    text_fn=_sms_text,
+    numeric_fn=_sms_numeric_features,
+    num_features=NUM_SMS_FEATURES,
+    seed_fn=_seed_corpus,
+)
+
+# Backwards-compatible class alias for existing imports.
+SmishingDetector = ChannelDetector
+
 
 if __name__ == "__main__":
-    detector = SmishingDetector(use_nn=False)
-    detector.detect_threats()
-    detector.generate_analysis_report() 
+    logging.basicConfig(level=logging.INFO)
+    tests = [
+        {"from": "+18885550101", "body": "USPS: package on hold, pay fee: http://bit.ly/usps-fee"},
+        {"from": "+15551230201", "body": "Hey, running 5 min late — see you at the coffee shop!"},
+    ]
+    for t in tests:
+        pred, conf = detector.predict(t)
+        print(f"[{'SMISH' if pred else 'SAFE '}] conf={conf:.2%}  {t['body'][:60]}")
