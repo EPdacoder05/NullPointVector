@@ -140,26 +140,6 @@ def _is_shortener_host(host: str) -> bool:
 _RELAY_HINTS = ("privaterelay.appleid.com", "reply.github.com", "bounces.", "mailer-daemon",
                 "protect.your", "yourscoreandmore", ".click", "temp-mail")
 
-# Latin letter → common Cyrillic / Greek lookalikes (homograph attack).
-_HOMOGLYPHS = {
-    "a": "ааàáâãäåāăą",  # includes Cyrillic а U+0430
-    "c": "сçćĉċč",
-    "e": "еёèéêëēĕėęě",  # Cyrillic е U+0435
-    "i": "іїíìîïĩīĭįı",
-    "j": "ј",
-    "o": "оοόòóôõöøōŏő",
-    "p": "р",
-    "s": "ѕșşśŝš",
-    "x": "х×",
-    "y": "уýÿŷ",
-    "h": "һհ",
-    "k": "κкḳķ",
-    "m": "м",
-    "n": "ոṅņňŉŋ",
-    "t": "τţťŧ",
-    "b": "ьҍ",
-}
-
 
 def _snip(text: str, needle: str, pad: int = 28) -> str:
     low = text.lower()

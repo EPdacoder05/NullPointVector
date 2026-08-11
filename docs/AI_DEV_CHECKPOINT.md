@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (WET pass: features lexicon home; mood_lexicon; mail_parse.sender_domain; recruit/marketing facades; Outlook inherits base_fetcher; card partial)
+_Last updated: 2026-08-11 (PR#13: drop archive CI/Dockerfiles; merge main; gate_decide DRY; README/DEPLOYMENT align Signal Deck :8088; card partial on dashboard+message_detail)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |

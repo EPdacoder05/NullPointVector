@@ -1,7 +1,0 @@
-.git
-*.md
-.env
-__pycache__
-*.pyc
-.vscode
-.idea

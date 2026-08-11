@@ -12,11 +12,11 @@ from urllib.parse import urlparse
 # Centralized URL regex pattern (used across 6+ modules)
 URL_REGEX = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 
-# Suspicious TLDs commonly used in phishing
-SUSPICIOUS_TLDS = ['.ru', '.tk', '.cc', '.cn', '.ga', '.ml', '.cf', '.xyz', '.top', '.work']
+# Suspicious TLDs / shorteners — single source: common.ml.features (dotted for endswith).
+from common.ml.features import SUSPICIOUS_TLDS as _TLD_SET, URL_SHORTENERS as _SHORT_SET
 
-# Common URL shorteners (obscure final destination)
-URL_SHORTENERS = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'buff.ly', 'shorte.st']
+SUSPICIOUS_TLDS = [f".{t}" if not str(t).startswith(".") else str(t) for t in sorted(_TLD_SET)]
+URL_SHORTENERS = sorted(_SHORT_SET)
 
 
 def extract_urls(text: str) -> List[str]:

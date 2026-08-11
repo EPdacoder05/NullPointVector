@@ -54,21 +54,12 @@
     </details>
     {% endif %}
     <div class="inbox-row" data-mid="{{ msg.id }}" data-sender="{{ msg.sender }}" style="border:none;padding:0;margin-top:16px">
-      <div class="inbox-foot" style="flex:1 1 100%;margin-top:0">
-        <div class="inbox-actions">
-          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
-          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
-          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
-        </div>
-        <button type="button" class="btn-report js-report" data-channel="email"
-          data-mid="{{ msg.id }}" data-sender="{{ msg.sender }}"
-          title="Tell us why this feels wrong — helps protect others">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
-          </svg>
-          Report this
-        </button>
-      </div>
+      {% set mid = msg.id %}
+      {% set sender = msg.sender %}
+      {% set channel = 'email' %}
+      {% set tags = [] %}
+      {% set reason_codes = [] %}
+      {% include "_card_tags_actions.html" %}
     </div>
   </div>
 </section>

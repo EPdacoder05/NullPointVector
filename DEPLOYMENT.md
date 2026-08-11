@@ -16,9 +16,9 @@ The mental model that ties all three together:
                                      │  routes by path
                           ┌──────────┴───────────┐
                           ▼                       ▼
-                   Dash UI  :8050          FastAPI  :8000
-                   (/ , /assets,           (/api/, /health,
-                    /_dash-*)               /metrics, /docs)
+                   Signal Deck            FastAPI API
+                   /app  (:8088)          /api /health /docs
+                                          (app also :8000 internal)
 ```
 
 The **ingress** is:
@@ -41,15 +41,14 @@ docker compose up -d --build       # db + app(API+UI+monitor) + proxy
 
 | URL | What |
 |-----|------|
-| http://localhost:8088/        | Dashboard (through the proxy — use this) |
+| http://localhost:8088/app     | Signal Deck (through the proxy — use this) |
 | http://localhost:8088/docs    | API Swagger |
 | http://localhost:8088/health  | API health JSON |
 | http://localhost:8088/metrics | Prometheus metrics |
-| http://localhost:8050/        | Dash direct (dev only, bypasses proxy) |
-| http://localhost:8000/docs    | API direct (dev only) |
+| http://localhost:8000/docs    | API direct (dev only, bypasses proxy) |
 
 Always demo through **`:8088`** — it's the only thing that also works over LAN,
-ngrok, and cloud unchanged.
+ngrok, and cloud unchanged. Legacy Dash `:8050` was removed.
 
 ---
 
@@ -66,7 +65,7 @@ Everything already binds `0.0.0.0` inside the containers and the proxy publishes
    Example: `192.168.1.237`.
 
 2. **On your phone/other laptop (same WiFi):** open
-   `http://192.168.1.237:8088/`
+   `http://192.168.1.237:8088/app`
 
 3. **If it won't connect** it's almost always the host firewall:
    - macOS: System Settings → Network → Firewall → allow Docker/incoming.
@@ -76,8 +75,8 @@ Everything already binds `0.0.0.0` inside the containers and the proxy publishes
 so the host accepts connections from the LAN and forwards them into the proxy
 container. No tunnel, no internet — packets stay on your WiFi.
 
-> ⚠️ LAN exposure is still "real" exposure to everyone on that network. The
-> dashboard has no login; the API does. Don't do this on public/coffee-shop WiFi.
+> LAN exposure is still real exposure to everyone on that network. Signal Deck
+> requires login for triage/report; the API is JWT-gated. Don't do this on public/coffee-shop WiFi.
 
 ---
 
