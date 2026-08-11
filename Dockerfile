@@ -37,7 +37,7 @@ ENV PIP_DEFAULT_TIMEOUT=120 \
 # Install runtime system dependencies only
 RUN apt-get update && apt-get install -y \
     curl \
-    libpq-dev \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # SECURITY: Create a non-root user
