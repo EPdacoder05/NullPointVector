@@ -38,7 +38,7 @@
     <div class="bd terminal-log" id="live-log">
       {% for row in live %}
       <div class="log-line {{ 'threat' if row.threat else 'ok' }}">
-        <span class="log-ts">{{ row.ts }}</span>
+        <span class="log-ts" {% if row.ts_utc %}datetime="{{ row.ts_utc }}"{% endif %}>{{ row.ts }}</span>
         <span class="log-mark">{% if row.threat %}THR{% else %}OK{% endif %}</span>
         <span class="log-from">{{ row.sender }}</span>
         <span class="log-meta">{{ row.channel }} · {{ row.score }}</span>
@@ -64,7 +64,7 @@
           <span class="kbd">{{ geo|length }} origins</span>
         </div>
       </div>
-      <p class="hint" style="margin-top:12px;">Origins derived from threat metadata when present; demo pins until geo enrichment is live.</p>
+      <p class="hint" style="margin-top:12px;">Origins appear when threat metadata includes geo; empty until enrichment lands.</p>
     </div>
   </section>
 </div>
@@ -80,22 +80,26 @@
     {% if active_threats %}
     <div class="inbox-list">
       {% for t in active_threats %}
-      <div class="inbox-row" data-mid="{{ t.id }}">
+      <div class="inbox-row" data-mid="{{ t.id }}" data-sender="{{ t.sender or '' }}">
         <span class="inbox-avatar">{{ (t.sender or '?')[0]|upper }}</span>
         <div class="inbox-main">
-          <div class="inbox-title">{{ t.sender or 'unknown' }}</div>
-          <div class="inbox-sub">{{ t.channel }} · risk {{ t.score }}</div>
+          <div class="inbox-title"><a class="msg-link" href="/app/message/{{ t.id }}">{{ t.sender or 'unknown' }}</a></div>
+          <div class="inbox-sub">{{ t.channel }} · risk {{ t.score }} · <a class="msg-link" href="/app/message/{{ t.id }}">Open</a></div>
         </div>
-        <div class="inbox-actions">
-          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
-          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
-          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
-        </div>
+        {% set mid = t.id %}
+        {% set sender = t.sender or '' %}
+        {% set channel = 'email' %}
+        {% set tags = [] %}
+        {% set reason_codes = [] %}
+        {% include "_card_tags_actions.html" %}
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <div class="feed-empty">Queue clear — no unprocessed threats.</div>
+    <div class="feed-empty">
+      High-confidence holds are on <a class="msg-link" href="/app/quarantine">Quarantine</a>
+      ({{ stats.quarantined }} waiting) — not duplicated here. Grade there.
+    </div>
     {% endif %}
   </div>
 </section>

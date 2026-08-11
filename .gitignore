@@ -158,6 +158,8 @@ yarn-error.log*
 # Application specific
 backup/
 data/ingestion/
+data/cross_channel_crumbs.jsonl
+data/nightly_retrain_report.json
 reports/
 uploads/
 
@@ -185,4 +187,16 @@ data/threat_actions.json
 data/warned_senders.json
 data/threat_cache.json
 data/url_cache/
-data/reports/
+data/reports/data/benchmark_snapshot.json
+
+.ios_pilot_auth
+
+.ios_pilot_token
+# PilotSecrets is committed with Internal TestFlight defaults (noadmin).
+# Do not put production secrets here.
+
+# Never commit crash dumps or Xcode per-user state
+/core
+core
+*.xcuserstate
+xcuserdata/

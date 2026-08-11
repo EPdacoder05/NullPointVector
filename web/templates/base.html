@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="NullPoint IDPS — phishing, smishing, and vishing protection" />
   <title>{% block title %}NullPoint{% endblock %}</title>
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="stylesheet" href="/static/app.css?v=20260811-ship5" />
+  <link rel="stylesheet" href="/static/npr-report.css?v=20260811-ship5" />
 </head>
 <body data-channel="{{ active }}">
   <div class="shell">
@@ -49,8 +50,17 @@
       </a>
 
       <div class="nav-label">System</div>
+      <a class="nav-item {{ 'active' if active == 'benchmarks' else '' }}" href="/app/benchmarks">
+        <span class="dot"></span><span>Benchmarks</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'account' else '' }}" href="/app/account">
+        <span class="dot"></span><span>Account</span>
+      </a>
       <a class="nav-item {{ 'active' if active == 'pricing' else '' }}" href="/app/pricing">
         <span class="dot"></span><span>Pricing</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'privacy' else '' }}" href="/app/privacy">
+        <span class="dot"></span><span>Privacy</span>
       </a>
       {% if not user %}
       <a class="nav-item" href="/app/login"><span class="dot"></span><span>Sign in</span></a>
@@ -69,6 +79,20 @@
           <div class="acct-meta">{{ user.role }} · <a href="/app/logout">Sign out</a></div>
         </div>
         {% endif %}
+        <label class="tz-picker" title="Display timestamps in this timezone (email Date stored as UTC)">
+          <span class="kbd">{{ tz_abbrev }}</span>
+          <select id="tz-select" aria-label="Timezone">
+            {% for z, label in tz_choices %}
+            <option value="{{ z }}" {% if z == tz %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="tz-picker" title="12-hour or 24-hour clock">
+          <select id="hour-select" aria-label="Clock format">
+            <option value="0" {% if not hour12 %}selected{% endif %}>24h</option>
+            <option value="1" {% if hour12 %}selected{% endif %}>12h</option>
+          </select>
+        </label>
         <span class="health-pill" id="health"><span class="led"></span> operational</span>
       </div>
     </aside>
@@ -78,6 +102,131 @@
     </main>
   </div>
   <div id="toast-root" class="toast-root" aria-live="polite"></div>
-  <script src="/static/app.js" defer></script>
+  <div id="cascade-modal" class="np-modal hidden" role="dialog" aria-modal="true" aria-labelledby="cascade-title">
+    <div class="np-modal-panel">
+      <h3 id="cascade-title">Apply to other mail from this sender?</h3>
+      <p class="hint" id="cascade-sender"></p>
+      <div class="cascade-actions-bar">
+        <button type="button" class="btn secondary" id="cascade-all">Select all</button>
+        <button type="button" class="btn secondary" id="cascade-none">Select none</button>
+      </div>
+      <div id="cascade-list" class="cascade-list"></div>
+      <div class="np-modal-foot">
+        <button type="button" class="btn secondary" id="cascade-cancel">Cancel</button>
+        <button type="button" class="btn" id="cascade-one">This message only</button>
+        <button type="button" class="btn" id="cascade-apply">Apply to selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report modal: npr-* namespace — matches nullpoint_report_modal.html; isolated from .btn/.np-modal -->
+  <div id="npr-overlay" role="dialog" aria-modal="true" aria-labelledby="npr-title">
+    <div id="npr-modal">
+      <div class="npr-header">
+        <div>
+          <div class="npr-title" id="npr-title">Did you expect this?</div>
+          <div class="npr-step-label" id="npr-step-label">Step 1 of 3</div>
+        </div>
+        <button type="button" class="npr-close" id="npr-close" aria-label="Close">✕</button>
+      </div>
+      <div class="npr-body">
+        <div class="npr-steps" aria-hidden="true">
+          <div class="npr-dot npr-active" id="npr-dot-1"></div>
+          <div class="npr-dot" id="npr-dot-2"></div>
+          <div class="npr-dot" id="npr-dot-3"></div>
+        </div>
+
+        <div class="npr-panel npr-active" id="npr-step-1">
+          <div class="npr-q" id="npr-q1">Were you expecting this email?</div>
+          <div class="npr-sub">Tell us if this message caught you off guard.</div>
+          <div class="npr-yn">
+            <button type="button" class="npr-yn-btn" id="npr-yn-yes" data-yn="yes">Yes, I was expecting it</button>
+            <button type="button" class="npr-yn-btn" id="npr-yn-no" data-yn="no">No, it came out of nowhere</button>
+          </div>
+        </div>
+
+        <div class="npr-panel" id="npr-step-2">
+          <div class="npr-q">What made you suspicious?</div>
+          <div class="npr-sub">Pick everything that applies. Your answer helps protect others.</div>
+          <div class="npr-reasons">
+            <button type="button" class="npr-chip" data-reason="unsolicited">
+              <span class="npr-chip-icon"></span>
+              <span>
+                <div class="npr-chip-text">I didn't ask for this</div>
+                <div class="npr-chip-sub">Never signed up or gave them my contact info</div>
+              </span>
+            </button>
+            <button type="button" class="npr-chip" data-reason="credential">
+              <span class="npr-chip-icon"></span>
+              <span>
+                <div class="npr-chip-text">Trying to get my money or personal info</div>
+                <div class="npr-chip-sub">Asking for passwords, card numbers, or a payment</div>
+              </span>
+            </button>
+            <button type="button" class="npr-chip" data-reason="impersonation">
+              <span class="npr-chip-icon"></span>
+              <span>
+                <div class="npr-chip-text">Pretending to be someone I know or trust</div>
+                <div class="npr-chip-sub">Fake bank, company, government, or a contact</div>
+              </span>
+            </button>
+            <button type="button" class="npr-chip" data-reason="pressure">
+              <span class="npr-chip-icon"></span>
+              <span>
+                <div class="npr-chip-text">Creating urgency or panic to make me act fast</div>
+                <div class="npr-chip-sub">Threatening consequences, limited time offers</div>
+              </span>
+            </button>
+            <button type="button" class="npr-chip" data-reason="seen_before">
+              <span class="npr-chip-icon"></span>
+              <span>
+                <div class="npr-chip-text">I've seen this pattern before</div>
+                <div class="npr-chip-sub">Same script, different number or sender</div>
+              </span>
+            </button>
+            <button type="button" class="npr-chip" data-reason="other">
+              <span class="npr-chip-icon"></span>
+              <span><div class="npr-chip-text">Something else feels off</div></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="npr-panel" id="npr-step-3">
+          <div class="npr-q">Anything else to add?</div>
+          <div class="npr-sub">Optional — helps us spot new patterns faster.</div>
+          <textarea class="npr-textarea" id="npr-detail" maxlength="400"
+            placeholder="E.g. this is the third time I've gotten a call like this…"></textarea>
+          <div class="npr-char"><span id="npr-char-count">0</span> / 400</div>
+          <div class="npr-fleet">
+            <svg viewBox="0 0 16 16" fill="none" stroke="#3a8c5c" stroke-width="1.5" aria-hidden="true">
+              <circle cx="8" cy="8" r="6"/>
+              <line x1="8" y1="5" x2="8" y2="8.5"/>
+              <circle cx="8" cy="11" r="0.5" fill="#3a8c5c"/>
+            </svg>
+            <span>If enough people report the same sender, NullPoint automatically adds it to the shared threat list — so everyone stays protected, not just you.</span>
+          </div>
+        </div>
+
+        <div class="npr-panel" id="npr-step-success">
+          <div class="npr-success">
+            <div class="npr-success-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#1f9a62" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <div class="npr-success-title">Report submitted</div>
+            <div class="npr-success-sub">Your report goes into NullPoint's threat intelligence. If others flag the same sender, it gets escalated automatically.</div>
+            <div class="npr-success-fleet">This report will count toward fleet protection</div>
+          </div>
+        </div>
+      </div>
+      <div class="npr-footer" id="npr-footer">
+        <button type="button" class="npr-back" id="npr-back" style="visibility:hidden">← Back</button>
+        <button type="button" class="npr-primary" id="npr-next" disabled>Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=20260811-ship5" defer></script>
 </body>
 </html>

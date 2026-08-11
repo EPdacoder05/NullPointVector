@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Account — NullPoint{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Account</h1>
+    <div class="desc">Session, legal, and deletion.</div>
+  </div>
+</div>
+
+{% if not user %}
+<section class="card"><div class="bd">
+  <p class="hint">Sign in to manage your account.</p>
+  <a class="btn" href="/app/login?next=/app/account">Sign in</a>
+</div></section>
+{% else %}
+<section class="card" style="margin-bottom:18px">
+  <div class="hd"><h2>Signed in</h2></div>
+  <div class="bd stack">
+    <p><span class="kbd">Subject</span> {{ user.sub }}</p>
+    <p><span class="kbd">Role</span> {{ user.role }}</p>
+    <p class="hint"><a href="/app/privacy">Privacy</a> · <a href="/app/terms">Terms</a></p>
+    <a class="btn secondary" href="/app/logout">Sign out</a>
+  </div>
+</section>
+
+<section class="card">
+  <div class="hd"><h2>Delete account</h2></div>
+  <div class="bd stack">
+    <p class="hint">Removes your saved mailboxes, personal threat reports, and provider requests. Signs you out. Does not undo fleet promotions already shared with other users.</p>
+    <form id="delete-account-form" method="post" action="/app/account/delete">
+      <label class="check-row">
+        <input type="checkbox" name="confirm" id="delete-confirm" value="1" required>
+        <span>I understand this cannot be undone</span>
+      </label>
+      <button type="submit" class="act-block" id="delete-account-btn">Delete my account</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById("delete-account-form");
+  if (!form) return;
+  form.addEventListener("submit", function (e) {
+    if (!window.confirm("Delete account and personal data now?")) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>
+{% endblock %}

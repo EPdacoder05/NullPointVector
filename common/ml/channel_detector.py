@@ -234,6 +234,8 @@ class ChannelDetector:
             text = self.text_fn(record)
             X = build_feature_matrix(
                 self.word_tfidf, self.char_tfidf, [text], [record], self.numeric_fn)
-            self.clf.partial_fit(X, [int(bool(is_threat))], classes=[0, 1])
+            from common.ml.partial_fit_safe import partial_fit_one
+            partial_fit_one(self.clf, X, int(bool(is_threat)))
         except Exception as e:
             logger.error("%s: online update failed: %s", self.name, e)
+            raise

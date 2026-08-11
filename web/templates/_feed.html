@@ -1,17 +1,27 @@
 {% if not rows %}
-  <div class="feed-empty">No detections yet for this channel.</div>
+  <div class="feed-empty">No low/medium detections here. High-confidence holds are on <a class="msg-link" href="/app/quarantine">Quarantine</a>.</div>
 {% else %}
   {% for r in rows %}
   {% set conf = (r.confidence or 0) %}
-  {% set threat = conf >= 0.5 %}
+  {% set threat = conf >= 0.35 %}
   <div class="feed-item" data-threat="{{ 1 if threat else 0 }}">
     <span class="sev {{ 'danger' if conf >= 0.85 else 'warn' }}"></span>
     <div class="txt">
       <div class="sn">{{ r.sender or 'unknown sender' }}</div>
       <div class="mt">
-        {% if r.timestamp %}{{ r.timestamp[:10] }} · {{ r.timestamp[11:16] }}{% else %}—{% endif %}
+        {{ r.ts_local or '—' }}
         · confidence {{ (conf * 100) | round | int }}%
       </div>
+      {% if r.tags %}
+      <div class="reason-tags tag-cats" style="margin-top:4px">
+        {% for t in r.tags[:3] %}
+        <span class="reason-tag tag-cat">{{ t.label }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if r.reason_codes %}
+      <div class="hint" style="margin-top:4px">{{ r.reason_codes[0].evidence or r.reason_codes[0].label }}</div>
+      {% endif %}
     </div>
     <span class="ch">{{ r.threat_type }}</span>
   </div>

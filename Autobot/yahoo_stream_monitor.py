@@ -88,12 +88,15 @@ class YahooStreamMonitor:
             cursor = conn.cursor()
             
             # Find unprocessed high-risk threats
+            # is_threat is INTEGER (0/1); "processed" may not exist as a column —
+            # store the flag in metadata instead of failing the whole loop.
             cursor.execute("""
                 SELECT id, sender, subject, confidence, metadata
                 FROM messages
-                WHERE is_threat = true 
-                  AND processed = false 
+                WHERE is_threat = 1
                   AND confidence > %s
+                  AND (label IS NULL OR label = 1)
+                  AND COALESCE(metadata->>'processed', 'false') <> 'true'
                 ORDER BY confidence DESC
                 LIMIT 100
             """, (self.auto_triage_threshold,))
@@ -129,7 +132,12 @@ class YahooStreamMonitor:
                             logger.info(f"🚨 AUTO-BLOCKED: {sender} (score: {confidence:.2f}, {geo_info['country']})")
                 
                 # Mark as processed regardless of action taken
-                cursor.execute("UPDATE messages SET processed = true WHERE id = %s", (threat_id,))
+                cursor.execute("""
+                    UPDATE messages
+                    SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
+                                             '{processed}', 'true'::jsonb)
+                    WHERE id = %s
+                """, (threat_id,))
                 conn.commit()
             
             if blocked_count > 0:

@@ -26,7 +26,19 @@
     <ul class="price-feats">
       {% for f in p.features %}<li>{{ f }}</li>{% endfor %}
     </ul>
-    <button type="button" class="btn {% if not p.featured %}secondary{% endif %} price-cta" disabled>{{ p.cta }}</button>
+    {% if p.slug == 'enterprise' %}
+    <a class="btn {% if not p.featured %}secondary{% endif %} price-cta"
+       href="mailto:sales@nullpoint.security?subject=NullPoint%20Enterprise">{{ p.cta }}</a>
+    <a class="btn secondary price-cta" style="margin-top:8px"
+       href="/app/checkout?plan=enterprise&amp;interval=annual">Self-serve annual</a>
+    {% elif p.slug == 'pro' %}
+    <a class="btn price-cta js-checkout-link" href="/app/checkout?plan=pro&amp;interval=annual&amp;trial=1"
+       data-plan="pro" data-trial="1">{{ p.cta }}</a>
+    {% else %}
+    <a class="btn {% if not p.featured %}secondary{% endif %} price-cta js-checkout-link"
+       href="/app/checkout?plan={{ p.slug }}&amp;interval=annual"
+       data-plan="{{ p.slug }}" data-trial="0">{{ p.cta }}</a>
+    {% endif %}
   </article>
   {% endfor %}
 </div>
@@ -54,4 +66,10 @@
     </table>
   </div>
 </section>
+
+<div class="connect-note" style="margin-top:18px;">
+  <strong>Checkout without Stripe keys:</strong> with <code>BILLING_MOCK=true</code> (default),
+  Pricing → Checkout runs a full POC: server-priced plans, signed payload, hash-chained audit events,
+  success page — no card charged. Set real <code>STRIPE_*</code> and <code>BILLING_MOCK=false</code> for live Checkout Sessions.
+</div>
 {% endblock %}

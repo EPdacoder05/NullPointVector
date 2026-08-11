@@ -1,11 +1,10 @@
 # Core dependencies for IDPS functionality
 python-dotenv>=1.0.0
 PyYAML>=6.0
-# Pinned: the latest cryptography wheel SIGILLs (Illegal instruction) on some
-# ARM hosts (Colima/Apple-Silicon VM, Graviton) due to advanced SIMD codegen.
-# 43.0.1 is verified-good across x86_64 and aarch64. Do not loosen without
-# re-verifying `from cryptography.fernet import Fernet` on ARM.
-cryptography==43.0.1
+# 43.0.1 had HIGH CVEs (GHSA-537c-gmf6-5ccf, CVE-2026-26007, …).
+# 48.0.1 patches those. Re-verify `from cryptography.fernet import Fernet`
+# on linux/aarch64 if you bump further (old 44.x wheels SIGILL'd on some ARM).
+cryptography==48.0.1
 watchdog>=3.0
 
 # Email processing
@@ -29,17 +28,14 @@ bleach>=6.0
 passlib>=1.7
 bcrypt>=4.0
 
-# Web interface (Dash/Plotly)
-dash>=2.14
-plotly>=5.0
-dash-bootstrap-components>=1.5
+# Web / HTTP clients (Signal Deck is Jinja on FastAPI — no Dash)
 requests>=2.31.0
 
 # API framework
 fastapi>=0.100
 uvicorn[standard]>=0.23
 pydantic>=2.0
-python-jose[cryptography]>=3.3      # JWT auth
+PyJWT[crypto]>=2.8                  # JWT auth (no ecdsa / CVE-2024-23342)
 python-multipart>=0.0.6             # OAuth2 password form parsing
 prometheus-client>=0.19            # /metrics + latency histograms
 redis>=5.0                          # shared rate-limit + idempotency at scale
@@ -47,14 +43,6 @@ gunicorn>=21.0                      # multi-worker API (parallel CPU)
 
 # CLI interface
 rich>=13.0
-
-# Testing
-pytest>=7.4
-pytest-cov>=4.1
-
-# Code quality
-black>=23.0
-flake8>=6.0
 
 # Offensive intelligence
 dnspython>=2.0

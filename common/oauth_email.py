@@ -33,7 +33,8 @@ def connector_status() -> list[dict[str, Any]]:
     gmail_env = bool(os.getenv("GMAIL_USER") and os.getenv("GMAIL_PASS"))
     outlook_env = bool(os.getenv("OUTLOOK_USER") and (os.getenv("OUTLOOK_PASSWORD") or os.getenv("OUTLOOK_PASS")))
 
-    def _row(provider: str, mode: str, ready: bool, connected: bool, note: str) -> dict:
+    def _row(provider: str, mode: str, ready: bool, connected: bool, note: str,
+             *, oauth_ready: bool = False) -> dict:
         return {
             "provider": provider,
             "mode": mode,
@@ -41,17 +42,25 @@ def connector_status() -> list[dict[str, Any]]:
             "connected": connected or provider in _CONNECTIONS,
             "note": note,
             "account": (_CONNECTIONS.get(provider) or {}).get("account") or "",
+            "oauth_ready": oauth_ready,
+            "supports_oauth": provider in ("gmail", "microsoft"),
         }
 
     return [
         _row("yahoo", "app_password", yahoo_env, yahoo_env,
-             "Pilot: uses YAHOO_USER / YAHOO_PASS from .env (IMAP)"),
-        _row("gmail", "oauth2" if gmail_oauth else "app_password",
-             gmail_oauth or gmail_env, "gmail" in _CONNECTIONS or gmail_env,
-             "OAuth2 when GOOGLE_OAUTH_* set; else GMAIL_USER app password"),
-        _row("microsoft", "oauth2" if ms_oauth else "app_password",
-             ms_oauth or outlook_env, "microsoft" in _CONNECTIONS or outlook_env,
-             "OAuth2 when MICROSOFT_OAUTH_* set; else OUTLOOK_* app password"),
+             "Yahoo: guided app-password (IMAP). OAuth not offered by Yahoo for this path.",
+             oauth_ready=False),
+        _row("gmail", "oauth2", gmail_oauth or gmail_env, "gmail" in _CONNECTIONS or gmail_env,
+             ("OAuth ready — click Connect OAuth." if gmail_oauth
+              else "OAuth button visible; add GOOGLE_OAUTH_CLIENT_ID/SECRET to enable sign-in. "
+                   "App-password form works today."),
+             oauth_ready=gmail_oauth),
+        _row("microsoft", "oauth2", ms_oauth or outlook_env,
+             "microsoft" in _CONNECTIONS or outlook_env,
+             ("OAuth ready — click Connect OAuth." if ms_oauth
+              else "OAuth button visible; add MICROSOFT_OAUTH_CLIENT_ID/SECRET to enable sign-in. "
+                   "App-password form works today."),
+             oauth_ready=ms_oauth),
     ]
 
 

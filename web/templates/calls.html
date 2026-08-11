@@ -44,27 +44,43 @@
           <div class="call-transcript hidden">{{ e.transcript }}</div>
           {% endif %}
         </div>
-        <div class="inbox-actions">
-          {% if not e.graded %}
-          <button type="button" class="act-block js-grade" data-kind="call" data-verdict="block">Block &amp; Report</button>
-          {% if caution or not e.is_threat %}
-          <button type="button" class="act-unsure js-grade" data-kind="call" data-verdict="unsure">Needs review</button>
-          {% endif %}
-          <button type="button" class="act-safe js-grade" data-kind="call" data-verdict="safe">Mark as safe</button>
-          {% endif %}
+        <div class="inbox-foot">
+          <div class="inbox-actions">
+            {% if not e.graded %}
+            <button type="button" class="act-block js-grade" data-kind="call" data-verdict="block">Block &amp; Report</button>
+            {% if caution or not e.is_threat %}
+            <button type="button" class="act-unsure js-grade" data-kind="call" data-verdict="unsure">Needs review</button>
+            {% endif %}
+            <button type="button" class="act-safe js-grade" data-kind="call" data-verdict="safe">Mark as safe</button>
+            {% endif %}
+          </div>
+          <button type="button" class="btn-report js-report" data-channel="call"
+            data-mid="" data-sender="{{ e.caller_id or e.sender or '' }}"
+            title="Were you expecting this call? Report helps protect others">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
+            </svg>
+            Report this
+          </button>
         </div>
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <div class="feed-empty">No screens yet. Open Vishing → Call screen with a caller ID (try +16146958215).</div>
+    <div class="feed-empty">
+      No screens yet — Apple does <strong>not</strong> send carrier call history to apps.
+      Call Directory only loads the block/label list from sync.
+      To tune ML: open <a class="msg-link" href="/app?channel=vishing">Vishing → Call screen</a>,
+      paste a caller ID (try <code>+16146958215</code>) or use Guard → Active recon → Screen number on the phone
+      (that POSTs <code>/api/v1/vish/screen</code> and appears here).
+    </div>
     {% endif %}
   </div>
 </section>
 
 <div class="connect-note">
-  <strong>iPhone pilot:</strong> Call Directory syncs block/label lists from <code>GET /api/v1/vish/directory</code>.
-  Live ring decisions require the iOS app to call <code>/api/v1/vish/screen</code> with the caller ID (and optional transcript).
-  Apple will not expose carrier call logs to your app.
+  <strong>iPhone pilot:</strong> Settings → Phone → Call Blocking &amp; Identification → enable Guard Directory.
+  Settings → Messages → Unknown &amp; Spam → enable SMS Filter. Force-quit Phone + Messages after sync.
+  Ring-time screening uses the synced list; <em>Recent screens</em> only fills when the app screens a number (not from Recents).
 </div>
 {% endblock %}

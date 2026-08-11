@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Checkout success — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>You're in</h1>
+    <div class="desc">Payment path finished. Open Signal Deck to keep working.</div>
+  </div>
+</div>
+
+<section class="card">
+  <div class="bd success-panel">
+    {% if entitlement.degraded or billing_mock %}
+    <p class="hint">Simulated session — Stripe not collecting yet.</p>
+    {% endif %}
+    <p><strong>Plan:</strong> {{ entitlement.plan|default('—') }} · {{ entitlement.interval|default('') }}</p>
+    <p><strong>Status:</strong> {{ entitlement.status|default('active') }}</p>
+    <p class="hint">Session {{ session_id or '—' }}</p>
+    <div class="topbar-actions" style="margin-top:16px">
+      <a class="btn" href="/app/dashboard">Open Signal Deck</a>
+      <a class="btn secondary" href="/app/benchmarks">View model benchmarks</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

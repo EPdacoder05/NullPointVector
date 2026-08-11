@@ -8,8 +8,12 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: KX3P7M3B6L
     CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "10"
+    # Phone/TestFlight: Tailscale Funnel. Mac desktop run forces http://127.0.0.1:8088 in code.
+    API_BASE_URL: "https://elliss-macbook-pro.tail199a91.ts.net"
 
 targets:
   NullPointGuard:
@@ -18,12 +22,54 @@ targets:
     sources:
       - path: Sources/NullPointGuard
       - path: Sources/Shared
+      - path: Assets.xcassets
+        buildPhase: resources
+      - path: LaunchScreen.storyboard
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: NullPoint Guard
+        CFBundleIconName: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        API_BASE_URL: "$(API_BASE_URL)"
+        UILaunchStoryboardName: LaunchScreen
+        UIRequiresFullScreen: true
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            localhost:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+            "127.0.0.1":
+              NSExceptionAllowsInsecureHTTPLoads: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      TARGETED_DEVICE_FAMILY: "1,2"
       INFOPLIST_KEY_CFBundleDisplayName: NullPoint Guard
-      INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+      INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+      GENERATE_INFOPLIST_FILE: NO
+      INFOPLIST_FILE: Info.plist
     entitlements:
       path: Config/NullPointGuard.entitlements
+    dependencies:
+      - target: NullPointDirectory
+        embed: true
+      - target: NullPointSMSFilter
+        embed: true
 
   NullPointDirectory:
     type: app-extension
@@ -31,14 +77,19 @@ targets:
     sources:
       - path: Sources/NullPointDirectory
       - path: Sources/Shared
+    info:
+      path: Config/NullPointDirectory-Info.plist
+      properties:
+        CFBundleDisplayName: NullPoint Directory
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.callkit.call-directory
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CallDirectoryHandler
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard.directory
-      INFOPLIST_KEY_CFBundleDisplayName: NullPoint Directory
-      INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.callkit.call-directory
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_FILE: Config/NullPointDirectory-Info.plist
     entitlements:
       path: Config/NullPointDirectory.entitlements
-    dependencies:
-      - target: NullPointGuard
 
   NullPointSMSFilter:
     type: app-extension
@@ -46,14 +97,19 @@ targets:
     sources:
       - path: Sources/NullPointSMSFilter
       - path: Sources/Shared
+    info:
+      path: Config/NullPointSMSFilter-Info.plist
+      properties:
+        CFBundleDisplayName: NullPoint SMS Filter
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.identitylookup.message-filter
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).MessageFilterExtension
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard.smsfilter
-      INFOPLIST_KEY_CFBundleDisplayName: NullPoint SMS Filter
-      INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.identitylookup.message-filter
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_FILE: Config/NullPointSMSFilter-Info.plist
     entitlements:
       path: Config/NullPointSMSFilter.entitlements
-    dependencies:
-      - target: NullPointGuard
 
 schemes:
   NullPointGuard:
@@ -64,3 +120,5 @@ schemes:
         NullPointSMSFilter: all
     run:
       config: Debug
+    archive:
+      config: Release

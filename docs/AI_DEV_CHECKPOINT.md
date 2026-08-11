@@ -5,7 +5,309 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-07-24 (session: quarantine grading loop verified E2E + recovered decisions from lost chats)_
+_Last updated: 2026-08-11 (container: multi-stage image, PyJWT, cryptography 48.0.1, .trivyignore unfixed OS)
+
+### ANSWERED (delta — reports / vishing / known-good)
+| Question | Answer |
+|---|---|
+| Cap1 / every known-good spoofable? | **Yes — locked.** `is_known_good_sender` requires **auth_pass for EVERY domain**. Domain alone never short-circuits. |
+| PayPal ask without paypal.com? | **Hard malice** via `_payment_brand_spoof` in `policy_pipeline`. |
+| Granny report vs triage? | Separate **Report this** (flag) → expected? + reasons + detail → `user_reports` / fleet. Triage buttons still own grades. |
+| Become telecom for RTI vishing? | **No.** Call Directory + Live Lookup + IPQS/etc. No SIP/Telnyx/MVNO product track. |
+| SMS RTI already? | **Yes** — Message Filter on device. Email → tighter poll; Vish → number reputation + fleet reports. |
+
+### ANSWERED (delta — Cap1 / time / Avinash)
+| Question | Answer |
+|---|---|
+| Cap1 / every known-good spoofable? | **Yes — locked.** `is_known_good_sender` requires **auth_pass for EVERY domain** (GitHub, Cap1, Chime, …). Domain match alone never short-circuits. Spoofed Cap1 with spf=fail → ML. |
+| Why no Message-ID dedup / “we solved this”? | **Honest gap:** `Idempotency-Key` + Redis only covered **API** POSTs (`/analyze`). IMAP batch ingest never used it — `compute_hash` existed in the sanitizer but was never applied on insert. **Now:** `rfc_message_id` + `ingest_fp` + **partial unique indexes** + skip-on-conflict. |
+| Why Cap1 needs hardcoding? | AUTH_PASS + financial-notice dampens; ESP list blocks false BAD_URL; Cap1 on list still **auth_pass gated**. |
+| Times wrong (4:32 vs 9:01 PM)? | Poll clock vs `Date:` — fixed. TZ cookie sync + EDT labels. |
+| Why 80 Avinash clones? | Re-poll without ingest dedup. Collapsed flood; durable indexes now. |
+
+### Checkout / payment fraud controls (honest)
+| Control | Status |
+|---|---|
+| Server price authority (reject client `amount`/`price`) | **OK** `validate_checkout_payload` |
+| Payload shape / key-count guard | **OK** |
+| Origin allowlist on POST `/app/checkout` | **OK** |
+| Checkout velocity (Redis/process) | **OK** |
+| Hash-chained `payment_audit_events` | **OK** |
+| Trial fingerprint abuse score | **OK** (Pro trial) |
+| Guest checkout disabled (login required) | **OK** |
+| Stripe-hosted card entry (no raw PAN stored) | **OK** when live |
+| Stripe webhook HMAC (`STRIPE_WEBHOOK_SECRET`) | **OK** route `/api/v1/billing/webhook` — live needs secret; mock accepts `Stripe-Signature: mock_ok` |
+| Apple Pay / Google Pay / PayPal / BNPL | **OPEN** — Stripe Checkout `automatic_payment_methods` enables wallets when Stripe account supports them; PayPal/BNPL not wired as separate merchants yet |
+| Not a guarantee of “no fraud” | Chargebacks, stolen cards, account takeover still exist — we harden *payload/session* fraud, Stripe handles card fraud tooling |
+
+### Provider junk/trash sync
+| Piece | Status |
+|---|---|
+| Grade updates NullPoint DB immediately | **OK** |
+| Cascade Apply never waits on IMAP | **OK** — enqueue `provider_action_queue` + BackgroundTasks drain |
+| `metadata.provider_actions` JSONB per provider | **OK** pending/ok/failed |
+| Actual Yahoo/Gmail move | **HALF** — needs `metadata.imap_id` from ingest; `scripts/drain_provider_queue.py` for cron |
+| Trash vs junk | junk path live; trash maps to junk until fetcher supports trash |
+
+### Policy pipeline (Codex + review amalgam)
+Single pass `common/policy_pipeline.extract_signals` → malice/recruit ≥0.90 → known-good → marketing cap → ML. Malice wins over allowlist. Payment-brand spoof (PayPal ask without paypal origin) is hard malice.
+
+### User reports (granny path)
+- UI: **Report this** (flag, bottom of card, not in triage row) → modal “Were you expecting this?” → reasons → optional detail.
+- `POST /app/report` → `common/user_reports.py` → `user_reports` + `fleet_threat_keys`.
+- Fleet: 3 distinct reporters / 30d → analyst flag; 8 → auto key at conf ≤0.75 (score influence only).
+- Triage Block/Needs review/Safe still owns grades + feedback.jsonl. Report does not grade alone.
+
+### Evidence tags (2026-08-11)
+High-signal codes in `common/explain.py` (+ `common/lookalike.py`, mood `ADVANCE_FEE` in `message_tags.py`):
+`REPLY_TO_MISMATCH`, `ADVANCE_FEE`, `ATTACHMENT_RISK`, `IMAGE_ONLY` (also caps ML confidence ≤0.72 in `phishing_detector.predict`), `LOOKALIKE_DOMAIN`, `TOLL_FREE_CALLBACK`, `NEIGHBOR_SPOOF` (needs `user_area_code` / `X-NullPoint-User-Area` in headers — **HALF** until account profile stores it), `CAMPAIGN_MATCH` (fleet key + `data/vish_campaigns/*.json` pack CIDs).
+Tag pills: **inline-block flow** in `.reason-tags` (not flex) — lone-row pills must never stretch full width. Cache-bust `?v=` on static assets in `base.html`.
+
+### Quarantine routing
+- Inbox/Dashboard: `label IS NULL AND confidence < 0.85`
+- Quarantine: `label IS NULL AND confidence >= 0.85` only (no duplicate)
+
+### Grade velocity
+`common/grade_velocity.py` — 8+ grades same sender-domain campaign in 60m → extra ephemeral nudge (not champion promote).
+
+### LOCKED UI — cascade confirm modal
+Do not redesign `#cascade-modal` without explicit ask.
+
+### ANSWERED (delta)
+| Question | Answer |
+|---|---|
+| Payload verification = no payment fraud? | Hardens checkout *tampering* (price, origin, velocity, login, webhook sig). Does **not** eliminate card fraud/chargebacks — Stripe does card checks; wallets via Stripe AMP when live. |
+| Backend reflects Block to provider junk? | **Yes, async.** Queue + background drain; siblings not inline IMAP. |
+| Strawberry / Vertiv | Strawberry known-good; Vertiv Mark-Safe learn (not forever allowlist). |
+
+### HALF-ASSED / UNFINISHED (operator pain — audit 2026-08-10)
+Do **not** mark these done until verified with curl/device.
+
+| Gap | Reality |
+|---|---|
+| OAuth tokens → ingest | Callbacks process-local; **IMAP app-password path wired**; OAuth mail fetch still open |
+| Personal phone allow/block | **Not built** (no namespaced UI/API) |
+| Polling interval by plan | **Not built** (fixed ~5 min batch) |
+| IMAP IDLE / push | **Not built** |
+| Vendor enrich cron (A) | **Not built** — Identity fail-open stubs |
+| Live Caller ID Lookup (C) | **Not built** — user ready; no PIR server/extension |
+| Account signup DB users | Still env JWT users — **no self-register table** |
+| Stripe live | **Still `BILLING_MOCK`** |
+| iOS device sync | Source passwordless; Funnel+Archive still operator-fragile |
+| Secrets in chat | Burned — rotate before shared deploy |
+
+### FULL CHECKPOINT AUDIT (2026-08-10) — beginning → tagging/pwd
+Re-read §§0–9 + session notes. Verified against live stack + code (not memory).
+
+Legend: **OK** = true now · **HALF** = UI/code stub, not E2E · **STALE** = doc lies · **OPEN** = not built · **LOCK** = decision only
+
+#### Locked product (§0 / identity) — OK
+NullPoint + Signal Deck; Phish/Smish/Vish labels; brass+forest; no purple/emoji/npm; Jinja+hand CSS/JS; plans in `common/plans.py`; JWT roles; OSINT outsourced fail-open. Themes Deck/Standard/Terminal/Blackout live.
+
+#### Pilot sequence (§0b) status
+| ID | Claim | Verdict |
+|---|---|---|
+| P0a Grade loop | Persist label + bubble-out + reload | **OK** in NullPoint DB/UI. User pain = Yahoo not updated (**OPEN** junk move) + siblings need modal (**OK** modal shipped) |
+| P0b Known-good | auth_pass allowlist | **OK** Costco/GitHub/Sezzle on list; no-auth → ML. `test_safe_domains` + gate **7 passed** just now |
+| M1 Checkout | mock Stripe + audit chain | **HALF** — routes 200, `BILLING_MOCK=true` still; live Stripe **OPEN** |
+| M2 Feedback | buffer + Δw toast + nightly | **OK** code path; durable champion = nightly gate only |
+| M3 Benchmarks | snapshot deck | **OK** `/app/benchmarks` 200; snapshot: phish 97.5% GATE PASS, smish 100%, vish 93.8% |
+| P0c Home feel | logged-in operator home | **HALF** — dashboard works; not a polished “account home” |
+| P1 Identity views | enrich fail-open | **OK** UI; vendors often `missing_keys`/`unavailable` |
+| P1 Connectors customer | no .env lecture | **HALF** — app-password form exists; ingest still .env; OAuth needs client IDs |
+| P2 iOS TestFlight | Call Directory + SMS Filter | **HALF** — source passwordless; device/Funnel flaky; display name still **NullPoint Guard** not Latch (**STALE** vs README) |
+| P2 Redis multi-replica | shared RL/idempotency | **OK** code + `REDIS_URL` in compose (verify under 2 replicas not re-proven today) |
+| P3 Android | deferred | **LOCK** |
+
+#### Phone/SMS honesty (§0 phone) — OK
+Email batch ingest live. SMS paste on Signal Deck. SMS RTI needs public host + extension. Calls = Call Directory lists; no carrier Recents API. Loop C VoIP **DROPPED**.
+
+#### Session 2026-07-13 / 07-24 claims
+| Claim | Verdict |
+|---|---|
+| 5 containers + `/health` | **OK** now |
+| Quarantine + grade → feedback.jsonl | **OK** |
+| Self-labeling bug fixed (`label=None` on ingest) | **OK** (locked) |
+| Legacy Dash `:8050` / `ui/dash_app.py` | **STALE** — deleted; only `:8088/app` |
+| `docs/REFERENCE.md` | **STALE** — deleted; checkpoint is sole resume anchor |
+| ASC “Add Apps before Aug 8” | **STALE date** — today is Aug 10; check ASC manually |
+
+#### Recovered decisions (§2c) vs built
+| Decision | Built? |
+|---|---|
+| Loop A+B only, no Loop C | **LOCK** + Call Directory path **OK** |
+| Entity graph (number+CNAM+velocity+cross-channel) | **OPEN** (crumbs stub only) |
+| OAuth connectors, never force login | **HALF** (routes; no ingest wire) |
+| Identity full report Pro | **OPEN** plan-gating (§4.3) + vendor keys |
+| Postgres SoT, Cloudflare front | **OK** / Funnel pilot |
+| Call-event schema growth fields | **OPEN** partial |
+
+#### Architecture (§3) — OK with gaps
+Hybrid CallKit contract doc **OK**. Reputation fail-open **OK**. Email still **`.env` IMAP** (§3.4 **HALF** vs Connectors form). DLQ Redis+disk **OK**.
+
+#### Open specs (§4) — none closed since last honest cut
+4.1 Dev-vet deploy — **OPEN** (user hosting).  
+4.2 OAuth→ingest — **OPEN**.  
+4.3 Plan-gate Credit/OSINT — **OPEN**.  
+4.4 Anomaly IF regen — **OPEN** (warn may remain).  
+4.5 Smish/Vish golden expand — **OPEN** (n=16 each).  
+4.6 PgBouncer restore — **OPEN** (still direct `db:5432`).  
+4.7 iOS TestFlight — **HALF** (user device work).
+
+#### User inputs (§5) — still on you
+Hosting/`PUBLIC_BASE_URL`, IPQS credits, OAuth apps, credit partner, Apple Team/device, **rotate burned secrets**.
+
+#### Gotchas (§6) — OK
+`:8088/app`, restart app after routes, Jinja dict keys, fail-open IPQS, `.env` gitignored.
+
+#### Session 2026-08-10 “done” — re-grade after tagging/pwd
+| Item | Verdict |
+|---|---|
+| Costco/GitHub FP fix + HTML body + backfill 2447 | **OK** (code+DB); new mail needs auth headers on ingest |
+| Cascade confirm modal | **OK** in templates/JS |
+| TZ on dash/inbox/quarantine + 12/24h | **OK** |
+| Connectors app-password UI | **HALF** — saves encrypted; **ingest never reads it** |
+| Category / “sentiment” tags | **HALF** — keyword+coarse tone on Quarantine/detail only; **not** sentiment analysis; **Inbox has zero tags** |
+| `origin_blocked` Funnel | **OK** allow `.ts.net` |
+| Password honesty | **OK** — login = pbkdf2 salted hash; mailbox = Fernet (not hash) |
+| NullPoint≠Yahoo delete | **OK** documented; junk wire **OPEN** |
+| iOS “Synced N” / Sync buttons | **HALF** — API directory returns **34 blocks** with pilot JWT; Mac/phone UX still operator-fragile (Funnel/VPN/stale binary) |
+
+#### Console UX note to fix in doc
+Older line “Mark Safe cascades automatically” is **STALE** — now **asks** via modal. Directory seed ≠ “only 3 forever” — tax pack → ~34.
+
+### Done this session (2026-08-10) — continued
+- **Known-good FPs:** `costco.com` / `digital.costco.com` on allowlist; Gmail/Yahoo fetchers preserve auth headers + HTML→text body (image-only retail). Backfill cleared **2447** known-good false quarantines (`scripts/backfill_known_good_safe.py`).
+- **Cascade confirm modal:** Safe/Block opens sibling checklist (select all / none / this only / apply selected). Grade API accepts `also_ids`.
+- **Timezone everywhere:** Quarantine + message detail use `format_local`; sidebar **12h/24h** cookie `np_hour12`. Dashboard/Inbox already local.
+- **Connectors B (partial):** `/app/connectors` Yahoo/IMAP app-password form → encrypted `user_mailboxes` (`common/mailbox_store.py`). OAuth buttons unchanged. **Still open:** wire saved secrets into `email_ingestion`; per-user phone allow/block namespace.
+- **Category tags:** `common/message_tags.py` (recruit-gmail, blast, pressure, tone) on quarantine/detail — rules, not a second model.
+- **Checkout origin:** Funnel `*.ts.net` allowed (`origin_blocked` fix).
+- **Honest product:** Mark Safe/Block = NullPoint DB only; does **not** delete Yahoo mail until IMAP `move_to_junk` on Block is wired.
+- Login hint no longer claims `admin/changeme` (use `.env` `API_ADMIN_*` / pilot `API_PILOT_*`).
+
+### Remaining (ordered — still open)
+| # | Item | Status |
+|---|---|---|
+| 1 | Wire `user_mailboxes` / OAuth tokens into `email_ingestion` + personal phone allow/block namespaced | **Gap** — store UI exists; ingest still .env |
+| 2 | IMAP move-to-junk on Block (so Yahoo inbox matches NullPoint) | **Not built** |
+| 3 | **A** Vendor enrich cron → directory growth | **Not built** |
+| 4 | IMAP IDLE / push | **Not built** |
+| 5 | **C** Live Caller ID Lookup (iOS 18 PIR) | **Not built** — user ready with Apple + public HTTPS |
+| 6 | SIP/Telnyx | **Deferred** |
+
+### Feedback loop (locked)
+Ephemeral Δw = process only. Durable champion = nightly gated retrain. Triage = `label IS NULL`. Docs: `docs/NULLPOINT_FEEDBACK_LOOP.html`.
+
+### Gate vs live FPs (honest)
+Golden gate (97.5% phish) = held-out seeds. Live Costco/GitHub 100% FPs were **empty auth headers** on GmailDoggy + missing Costco domain — not the gate lying. New mail with auth_pass short-circuits; old rows needed backfill/grade.
+
+### Recruiter Gmail (locked judgment)
+`khemsara@gmail.com` + BCC blast + Vandana/Vanessa mismatch = **suspicious**, not known-good. Tags: Recruiter via free mail / Tone: suspicious. Do not allowlist free-mail recruiters.
+
+### INTEGER `is_threat`
+Keep INTEGER 0/1; query with `= 1` not `TRUE`. Boolean migration = cosmetic unless greenfield table.
+
+### Ship board — today / tomorrow (locked cut)
+Crosswalk vs pilot sequence §0b. Legacy Dash/Streamlit docs were deleted 2026-08-09.
+
+| Your pain | Maps to | Today? | Notes |
+|---|---|---|---|
+| Mac `sharingd` / iCloudHelper keychain prompts | Ops (dev Mac only) | **Yes** | `scripts/fix_login_keychain_lock.sh` — **TestFlight users never see this** |
+| iOS Mac/phone “not working” (localhost/Tailscale) | **P2** | **Yes** | Funnel UP `https://elliss-macbook-pro.tail199a91.ts.net`; need **build 5+** auto-connect (screenshots still show old Sign-in UI = old binary) |
+| Good mail (Sezzle) = 100% phish | **P0b** | **Yes** | `sezzle.com` + auth_pass allowlist; hyphen auth header keys accepted |
+| Missed bad mail / “models not ready” | Gate + grading | Partial | Golden gate was PASS 2026-08-06; live FPs need grade→`nightly_retrain` — not a full rewrite today |
+| Feedback loop / sibling weights | **M2** | Verify | Grade toast + `scripts/nightly_retrain.py` already exist — prove with one Mark Safe / Block cycle |
+| Credit / dark-web freemium | **P1** | **No** | Outsource vendors only (Array/IPQS/HIBP); cards fail-open without keys — sell as “coming Pro” |
+| Mobile web UI / Fiverr wireframe | Later | **No** | Console stays Signal Deck; **iOS Guard home** now matches consumer IA (auto / scan / recon / Pro stubs) — Fiverr polish optional after sync works |
+| Jarvis MCP | Out of scope | **No** | Not required to ship NullPoint; optional for your other repo |
+
+**Do not do today:** MCP, DIY OSINT, model architecture rewrite, angel deck polish. **Do:** Archive **build 10**, prove scan on phone + grade loop on email.
+
+### iOS (2026-08-09)
+- Public API path: **Tailscale Funnel** (home ISP blocks ngrok free edge). Keep `tailscale funnel --bg 8088`.
+- Build **10** Guard home (consumer IA, not sync stub): **Auto-mode** (info) → **Scan for threats** → **Active recon** (screen number + directory/activity) → **Credit / SSN** + **Dark web** as Pro fail-open stubs (Array/Plaid/IPQS — no DIY scrapers). Passwordless pilot connect. Mac → `http://127.0.0.1:8088`; phone → Funnel host.
+- `GET /api/v1/vish/screens` feeds Recent screens. Credit/dark-web live checks stay **P1** (vendor keys).
+- If UI still shows “Sign in” / bare “Sync again” → **old binary**; Archive/upload 10.
+- **Not TestFlight:** Mac `sharingd` / login-keychain prompts — fix once with `scripts/fix_login_keychain_lock.sh`; pilots never see those.
+- **No Jarvis MCP** required to ship NullPoint.
+
+### Keychain (2026-08-09)
+- Prompts are Apple Continuity (`sharingd` / `iCloudHelper`), not NullPoint JWT storage.
+- Fix once: `bash scripts/fix_login_keychain_lock.sh` then sync login keychain password in Keychain Access if needed.
+
+### Console UX
+- Mark Safe / Block opens **cascade confirm modal** (siblings checklist); then persists + bubble-out.
+- `/app/message/{id}` opens full decrypted body (analyst console; encrypted at rest).
+- Brand mention alone is **not** IMPERSONATION — needs spoof/pressure context.
+- Inbox = ungraded feed; Quarantine = ungraded holds. Both can Open. Graded rows leave both.
+
+### iOS / Latch
+- README wants display name **Latch**; **STALE in Xcode** — `CFBundleDisplayName` still **NullPoint Guard** / Directory / SMS Filter. Bundles stay `com.nullpoint.guard*`.
+- Call Directory / Message Filter are **extension points in Xcode**, not portal App Services checkboxes.
+
+### GitHub / known-good FP (2026-08-06)
+- **Froms** = email `From:` addresses (not HTML forms).
+- Live GitHub CI mail scored 100% threat: (1) auth headers truncated at 500 chars in `base_fetcher` so `auth_pass` never fired; (2) headers not stored in metadata; (3) explain matched **ups** inside **Upstream**; (4) display-name ≠ mailbox flagged normal GitHub CI.
+- **Fixes:** preserve long auth headers; persist `headers` in ingest metadata; word-boundary brand match; skip DISPLAY_NAME_SPOOF on known-good domains; SOCIAL_ENGINEERING needs ≥2 lure hits. Cleared 2142 github.com rows in DB.
+- MiniLM embed-on-insert disabled by default (`ENABLE_MESSAGE_EMBEDDINGS=0`); `API_WORKERS=1` — was OOM → nginx 502.
+
+### Phishing gate (2026-08-06) — FIXED
+- **Root cause:** known-good allowlist short-circuited on brand From alone → spoofed Apple/PayPal/Google pump_fake scored 0.02 safe → pump recall 0.5, gate FAIL.
+- **Fix:** `common/safe_domains.is_known_good_sender` requires **auth_pass** (SPF/DKIM/DMARC); no headers / auth_fail → fall through to ML. Call sites pass full `email_data`.
+- **Verified (one-shot, app stopped):** phishing acc **97.5%**, FPR 4.8%, pump_fake **100%**, **GATE PASS**. Snapshot refreshed. Remaining 1 FP: transactional flight confirmation (does not fail gate).
+- Test: `test/test_safe_domains.py`.
+
+### Ops / resilience (2026-08-06)
+- **502 Bad Gateway** root cause: app OOM when `/app/benchmarks` ran golden eval + latency bench inline, and quarantine loaded detectors per row. App restart count climbed; nginx returned 502 while gunicorn respawned.
+- **Mitigation:** benchmarks read `data/benchmark_snapshot.json` only; refresh via `scripts/refresh_benchmarks.py` (one-shot, app stopped). Quarantine explain = rules only (no per-row SGD). Nginx `/app` timeouts + `proxy_next_upstream`. Dashboard mock geo pins removed.
+
+### App Store Connect
+- ASC shows **No Apps** → must **Add Apps** before TestFlight (hurry before Aug 8 maintenance).
+- Do **not** follow Apple VoIP CallKit sample; NullPoint = Call Directory + Message Filter only.
+- Full steps: `ios/README.md`.
+
+---
+
+## 0b. PILOT SEQUENCE — do in this order (locked 2026-08-05; money path promoted 2026-08-06)
+
+Do **not** parallelize App Store + FinOps + Android + model rewrite.
+Ship thorough, but sequence so P0s unblock the pilot.
+
+| # | Deliverable | Go / no-go |
+|---|---|---|
+| **P0a** | Grade loop works: Mark safe / Block bubble-out via CSS `transform`, persists `label`+`is_threat`, survives page reload | Mark safe on inbox → row gone → reload → still gone |
+| **P0b** | Known-good FPR guardrail (`common/safe_domains.py`) so GitHub/Google/AWS noreply are not 100% threats | `detector.predict(noreply@github.com) == (0, ~0.02)` |
+| **M1** | Pricing → checkout → success (mock Stripe until keys); hash-chained `payment_audit_events`; server price authority | CTA works; `BILLING_MOCK=true` shows SIMULATED; search `TODO(BILLING_MOCK)` to remove |
+| **M2** | Grade → buffer + ephemeral `partial_fit` with Δw toast; reason-code tags; plain-English math; nightly `scripts/nightly_retrain.py`; sibling crumbs | Grade toast shows weight movers; `/app/benchmarks` shows golden metrics |
+| **M3** | Benchmark Deck (BenchmarkList-inspired) — real golden/latency only; assist slots keyed/missing | `/app/benchmarks` 200; no vanity filler |
+| **P0c** | Logged-in home feel (not same shell + credentials in footer only) | After login, dashboard reads as operator home |
+| **P1** | Identity / Credit / OSINT **views** (no plaintext passwords) | Enrich cards even when vendor missing_keys |
+| **P1** | Connectors as customer surface; OAuth optional | Presentable without `.env` lecture |
+| **P2** | iOS TestFlight: Message Filter + Call Directory only (no VoIP Loop C) | Internal TestFlight installs |
+| **P2** | Redis rate limit + idempotency before multi-replica | Two app replicas share limits |
+| **P3** | Android (deferred; share OpenAPI contract) | Not blocking iOS |
+| **Later** | Entity graph, FinOps, stego/qhish modules; DeepSeek/Kimi ensemble votes | Assist only |
+
+### Pricing (locked 2026-08-06)
+- Essential **$4.99** / **$50** yr — **no trial**
+- Pro **$14.99** / **$149.99** yr — **7-day trial** (fingerprint + IP risk score)
+- Enterprise **$49.99** / **$499** yr + Contact sales
+
+### Model / AI stance (locked)
+- Hot path stays **TF-IDF + calibrated SGD + structural features** — not DeepSeek.
+- LLMs (DeepSeek / Kimi / Groq) are **optional explanation/analyst assist only**, swappable, never sole enforcement.
+- Sibling channels: separate champions + shared entity crumbs (`common/ml/cross_channel.py`).
+- Contract: `docs/contracts/analyze.openapi.yaml` → generate TS for extensions later.
+- Prefer **owned thin wrappers**; REST + async workers; Postgres.
+
+### Phone / SMS ingest (honest)
+- **Email RTI:** live via ingest stream (already connected).
+- **SMS without TestFlight:** paste into Signal Deck `/app?channel=smishing` (or analyze form) — works on localhost now; no live host required for paste.
+- **SMS RTI:** iOS Message Filter extension POSTs to your public API — needs a reachable host (Tunnel/Cloudflare) + TestFlight build.
+- **Calls:** Call Directory lists = automated when installed; voicemail/transcript = paste or one-tap share into vishing channel.
+- **Do not** auto-text strangers as the product agent without explicit product/legal design — grading + analyze first.
+- Android: richer hooks later; share the OpenAPI contract, don’t rewrite Python ML in TypeScript.
 
 ---
 
@@ -16,8 +318,8 @@ _Last updated: 2026-07-24 (session: quarantine grading loop verified E2E + recov
 - Design system: **gold/brass + forest green** ("brass rail", corner brackets, forest ink)
   in `web/static/app.css`. **NEVER**: purple, emojis in UI, npm/Node/CDN dependencies.
   The web console is server-rendered Jinja + one hand-written CSS + one hand-written JS file.
-- Pricing tiers: Essential (3-day trial, 7-day history) / Pro (family, OSINT, credit) /
-  Enterprise (developers+teams, expedited support). Catalog: `common/plans.py` (DB seed + fallback).
+- Pricing tiers: Essential ($4.99 / $50 yr, no trial) / Pro ($14.99 / $149.99 yr, 7-day abuse-gated trial) /
+  Enterprise ($49.99 / $499 yr + Contact sales). Catalog: `common/plans.py`.
 - JWT roles: viewer / customer / analyst / admin / enterprise (`common/auth.py`).
 - Credit/OSINT is **outsourced to vendors** (Plaid, Array/credit partner, IPQS/HIBP/SpyCloud).
   **NEVER** build DIY credit bureaus or dark-web scrapers.
@@ -137,9 +439,8 @@ These were decided in external chats that are gone. They are LOCKED unless the u
    **Terminal** (green-phosphor console), **Blackout** (pure black).
    Implemented as CSS-variable overrides on `body[data-theme]` in `app.css` —
    new themes = new variable block, never a parallel stylesheet.
-   NOTE: the legacy Dash console still serves on :8050 (blue UI) — do not
-   confuse it with the Signal Deck at :8088/app. Its "Active Threats" panel has
-   a known bug: queries a nonexistent `processed` column.
+   NOTE: legacy Dash (`ui/dash_app.py` :8050) was **deleted 2026-08-09**. Only Signal Deck
+   at `http://localhost:8088/app` is the console.
 
 ### Recovered verbatim prompt (was wiped before it got a response)
 

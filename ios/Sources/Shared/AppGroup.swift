@@ -3,8 +3,39 @@ import Foundation
 enum AppGroup {
     static let id = "group.com.nullpoint.guard"
 
+    /// Writable shared container. On Mac (Designed for iPhone) the App Group
+    /// path exists but is not writable — never use it there.
     static var containerURL: URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id)
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            return localSupportURL()
+        }
+        if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id),
+           isWritableDirectory(group) {
+            return group
+        }
+        return localSupportURL()
+    }
+
+    private static func localSupportURL() -> URL {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.temporaryDirectory
+        let dir = base.appendingPathComponent("NullPointGuard", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private static func isWritableDirectory(_ url: URL) -> Bool {
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            let probe = url.appendingPathComponent(".np_write_probe")
+            try Data("ok".utf8).write(to: probe, options: .atomic)
+            try fm.removeItem(at: probe)
+            return true
+        } catch {
+            return false
+        }
     }
 
     static var blocklistURL: URL? {
@@ -35,7 +66,15 @@ extension BlocklistFile {
     }
 
     static func save(_ file: BlocklistFile) throws {
-        guard let url = AppGroup.blocklistURL else { return }
+        guard let url = AppGroup.blocklistURL else {
+            throw NSError(
+                domain: "NullPointGuard",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "No writable blocklist path"]
+            )
+        }
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(file)
         try data.write(to: url, options: .atomic)
     }

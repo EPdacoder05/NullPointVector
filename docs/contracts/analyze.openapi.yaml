@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: NullPoint Analyze Contract
+  version: 0.1.0
+  description: |
+    Language-neutral contract for Gmail/Outlook/Chrome buttons and mobile clients.
+    Generate TypeScript types from this file; Python uses Pydantic mirrors.
+    Stages: (1) stabilize this contract (2) integration templates (3) one-click extensions.
+servers:
+  - url: https://{host}/api/v1
+    variables:
+      host:
+        default: localhost:8088
+paths:
+  /analyze:
+    post:
+      summary: Score one message (any channel)
+      operationId: analyzeMessage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: Verdict with plain-English math and reason codes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeResponse'
+  /grade:
+    post:
+      summary: Human grade → feedback buffer + optional ephemeral nudge
+      operationId: gradeMessage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GradeRequest'
+      responses:
+        '200':
+          description: Grade accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GradeResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AnalyzeRequest:
+      type: object
+      required: [channel, content]
+      properties:
+        channel:
+          type: string
+          enum: [phishing, smishing, vishing]
+        content:
+          type: string
+          maxLength: 100000
+        sender:
+          type: string
+        subject:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        data_class:
+          type: string
+          enum: [public, internal, confidential, restricted]
+          default: confidential
+    ReasonCode:
+      type: object
+      properties:
+        code: { type: string }
+        label: { type: string }
+    PlainEnglishMath:
+      type: object
+      properties:
+        text: { type: string }
+        numbers: { type: object }
+        connect: { type: string }
+        reason_codes:
+          type: array
+          items: { $ref: '#/components/schemas/ReasonCode' }
+    AnalyzeResponse:
+      type: object
+      properties:
+        verdict: { type: string, enum: [safe, threat] }
+        confidence: { type: number }
+        channel: { type: string }
+        reason_codes:
+          type: array
+          items: { $ref: '#/components/schemas/ReasonCode' }
+        explain: { $ref: '#/components/schemas/PlainEnglishMath' }
+        cross_channel:
+          type: object
+          description: Sibling crumb boost / shared entity hits
+    GradeRequest:
+      type: object
+      required: [channel, verdict]
+      properties:
+        channel: { type: string, enum: [phishing, smishing, vishing] }
+        message_id: { type: string }
+        verdict: { type: string, enum: [block, safe, unsure] }
+        content: { type: string }
+        sender: { type: string }
+    GradeResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        buffered: { type: boolean }
+        nudge:
+          type: object
+          properties:
+            ephemeral: { type: boolean }
+            deltas:
+              type: array
+              items:
+                type: object
+                properties:
+                  feature: { type: string }
+                  delta: { type: number }
+            plain: { type: string }

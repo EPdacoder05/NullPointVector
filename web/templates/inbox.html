@@ -29,17 +29,22 @@
   <div class="hd"><h2>Feed</h2><span class="kbd" id="stream-label">live</span></div>
   <div class="bd inbox-list" id="inbox-list">
     {% for row in rows %}
-    <div class="inbox-row" data-threat="{{ 1 if row.threat else 0 }}" data-q="{{ (row.sender or '')|lower }}" data-mid="{{ row.id }}">
+    <div class="inbox-row" data-threat="{{ 1 if row.threat else 0 }}" data-q="{{ (row.sender or '')|lower }}" data-mid="{{ row.id }}" data-sender="{{ row.sender or '' }}">
       <span class="inbox-avatar {{ 'threat' if row.threat else '' }}">{{ (row.sender or '?')[0]|upper }}</span>
       <div class="inbox-main">
-        <div class="inbox-title">{{ row.sender or 'unknown sender' }}</div>
-        <div class="inbox-sub">{{ row.channel }} · {{ row.ts }} · score {{ row.score }}</div>
+        <div class="inbox-title"><a class="msg-link" href="/app/message/{{ row.id }}">{{ row.sender or 'unknown sender' }}</a></div>
+        <div class="inbox-sub">{{ row.channel }} · <time datetime="{{ row.ts_utc }}">{{ row.ts }}</time> · score {{ row.score }} · <a class="msg-link" href="/app/message/{{ row.id }}">Open</a></div>
+        {% if row.subject %}<div class="hint">{{ row.subject[:140] }}{% if row.subject|length > 140 %}…{% endif %}</div>{% endif %}
+        {% if row.why %}<div class="hint why-line">{{ row.why[:220] }}{% if row.why|length > 220 %}…{% endif %}</div>{% endif %}
       </div>
-      <div class="inbox-actions">
-        <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
-        <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
-        <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
-      </div>
+      {% set mid = row.id %}
+      {% set sender = row.sender %}
+      {% set channel = row.channel or 'email' %}
+      {% set tags = row.tags %}
+      {% set reason_codes = row.reason_codes %}
+      {% set max_tags = 5 %}
+      {% set max_reasons = 4 %}
+      {% include "_card_tags_actions.html" %}
     </div>
     {% else %}
     <div class="feed-empty">No messages in stream yet. Connect mail OAuth later — for now paste-analyze seeds the feed.</div>
@@ -48,7 +53,8 @@
 </section>
 
 <div class="connect-note">
-  <strong>Connectors next:</strong> Gmail / Microsoft OAuth for email ingest.
-  SMS and voice stay harder (carrier + CallKit) — iOS Message Filter and Call Directory cover device-side; this inbox is the operator triage surface.
+  <strong>Triage:</strong> Block &amp; Report / Needs review / Mark as safe write the feedback buffer and ephemeral Δw.
+  Nightly gated retrain updates the champion. Block also tries IMAP junk move when the message was ingested with an <code>imap_id</code>.
+  <strong>Report this</strong> stays bottom-right. <a href="/app/connectors">Connect mail</a> to add your mailbox.
 </div>
 {% endblock %}

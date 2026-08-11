@@ -27,10 +27,10 @@ from typing import Dict, List, Optional, Tuple
 
 from common.ml.channel_detector import build_artifact, predict_with
 from common.ml.training.channel_eval import evaluate, passes_gate, load_golden
+from common.ml.training.gate_decide import decide_promotion
 
 logger = logging.getLogger(__name__)
 
-_REGRESSION_EPS = 0.01
 _MAX_FEEDBACK = 20_000
 
 # Per-channel golden file (held-out, never used for training).
@@ -218,21 +218,15 @@ class ChannelTrainer:
 
     @staticmethod
     def _decide(cand: Dict, champ: Dict, force: bool) -> Tuple[bool, str]:
-        if force:
-            return True, "force_promote"
-        if not passes_gate(cand):
-            return False, (f"candidate failed gate (recall={cand['recall']:.3f}, "
-                           f"fpr={cand['fpr']:.3f}, acc={cand['accuracy']:.3f})")
-        if not champ:
-            return True, "no champion → promote first passing model"
-        regressed = (cand["recall"] < champ.get("recall", 0) - _REGRESSION_EPS
-                     or cand["fpr"] > champ.get("fpr", 1) + _REGRESSION_EPS
-                     or cand["accuracy"] < champ.get("accuracy", 0) - _REGRESSION_EPS)
-        if regressed:
-            return False, (f"regression vs champion (cand recall={cand['recall']:.3f} "
-                           f"fpr={cand['fpr']:.3f} vs champ recall={champ.get('recall', 0):.3f})")
-        return True, (f"improves/holds (recall {champ.get('recall', 0):.3f}→{cand['recall']:.3f}, "
-                      f"fpr {champ.get('fpr', 1):.3f}→{cand['fpr']:.3f})")
+        return decide_promotion(
+            cand, champ, force,
+            gate_ok=passes_gate(cand),
+            gate_fail_reason=(
+                f"candidate failed gate (recall={cand['recall']:.3f}, "
+                f"fpr={cand['fpr']:.3f}, acc={cand['accuracy']:.3f})"
+            ),
+            primary_key="recall",
+        )
 
     def _persist_champion(self, artifact: dict) -> None:
         with open(self.detector.model_path, "wb") as f:

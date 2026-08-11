@@ -37,14 +37,13 @@ from phishing_detector import (  # noqa: E402
     MODEL_DIR, MODEL_PATH, NUM_STRUCTURAL_FEATURES, FEEDBACK_PATH,
 )
 from eval.evaluate import evaluate, passes_gate  # noqa: E402
+from common.ml.training.gate_decide import decide_promotion  # noqa: E402
 
 from .registry import ModelRegistry
 from .feedback_buffer import FeedbackBuffer
 
 FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Tolerance when comparing a candidate to the champion (avoid churn on noise).
-_REGRESSION_EPS = 0.01
 # Hard cap on feedback samples folded into a single retrain (reservoir-sampled).
 _MAX_FEEDBACK = 20_000
 
@@ -184,27 +183,17 @@ class Trainer:
 
     @staticmethod
     def _decide(cand: Dict, champ: Dict, force: bool) -> Tuple[bool, str]:
-        if force:
-            return True, "force_promote"
-        if not passes_gate(cand):
-            return False, (f"candidate failed gate "
-                           f"(acc={cand['accuracy']:.3f}, fpr={cand['fpr']:.3f}, "
-                           f"pump={cand['pump_fake_recall']:.2f})")
-        if not champ:
-            return True, "no champion → promote first passing model"
-        regressed = (
-            cand["accuracy"] < champ.get("accuracy", 0) - _REGRESSION_EPS
-            or cand["fpr"] > champ.get("fpr", 1) + _REGRESSION_EPS
-            or cand["pump_fake_recall"] < champ.get("pump_fake_recall", 0)
+        return decide_promotion(
+            cand, champ, force,
+            gate_ok=passes_gate(cand),
+            gate_fail_reason=(
+                f"candidate failed gate "
+                f"(acc={cand['accuracy']:.3f}, fpr={cand['fpr']:.3f}, "
+                f"pump={cand['pump_fake_recall']:.2f})"
+            ),
+            primary_key="pump_fake_recall",
+            primary_eps=0.0,  # historical: any pump_fake drop is regression
         )
-        if regressed:
-            return False, (f"regression vs champion "
-                           f"(cand acc={cand['accuracy']:.3f} fpr={cand['fpr']:.3f} "
-                           f"vs champ acc={champ.get('accuracy', 0):.3f} "
-                           f"fpr={champ.get('fpr', 1):.3f})")
-        return True, (f"improves/holds (acc {champ.get('accuracy', 0):.3f}"
-                      f"→{cand['accuracy']:.3f}, fpr {champ.get('fpr', 1):.3f}"
-                      f"→{cand['fpr']:.3f})")
 
     @staticmethod
     def _persist_champion(artifact: dict) -> None:

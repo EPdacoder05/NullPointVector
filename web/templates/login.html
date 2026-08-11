@@ -6,30 +6,36 @@
   <title>Sign in — NullPoint</title>
   <link rel="stylesheet" href="/static/app.css" />
 </head>
-<body class="auth-body">
+<body class="auth-body" data-theme="deck">
   <div class="auth-shell">
     <div class="auth-brand">
       <div class="mark">N</div>
       <h1>NullPoint</h1>
       <p>Signal Deck access. JWT roles: viewer, customer, analyst, admin, enterprise.</p>
     </div>
-    <form class="card auth-card" id="login-form" method="post" action="/app/login">
+    <div class="card auth-card">
       <div class="hd"><h2>Sign in</h2></div>
       <div class="bd stack">
         {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
-        <div class="fld">
-          <label for="username">Username</label>
-          <input id="username" name="username" class="input" required autocomplete="username" value="{{ username or '' }}">
-        </div>
-        <div class="fld">
-          <label for="password">Password</label>
-          <input id="password" name="password" type="password" class="input" required autocomplete="current-password">
-        </div>
-        <button type="submit" class="btn">Continue</button>
-        <div class="hint">Dev default: admin / changeme · tokens stay server-side</div>
+        {% set next_path = next or '/app/dashboard' %}
+        {% set loop_id = 'login' %}
+        {% include "_oauth_buttons.html" %}
+        <form id="login-form" method="post" action="/app/login">
+          <input type="hidden" name="next" value="{{ next_path }}">
+          <div class="fld">
+            <label for="username">Username or email</label>
+            <input id="username" name="username" class="input" required autocomplete="username" value="{{ username or '' }}">
+          </div>
+          <div class="fld">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" class="input" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn">Continue</button>
+        </form>
+        <div class="hint">Pilot: <code>API_PILOT_USER</code> / <code>API_PILOT_PASSWORD</code> from <code>.env</code>. OAuth uses same-window redirect (callback needs this origin’s cookie — do not open in a new tab).</div>
         <a class="auth-back" href="/app">Back to console</a>
       </div>
-    </form>
+    </div>
   </div>
   <script src="/static/app.js" defer></script>
 </body>

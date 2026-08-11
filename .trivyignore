@@ -1,0 +1,18 @@
+# Unfixed in Debian trixie (python:3.11-slim) — Trivy reports no Fixed Version.
+# Re-check when the base image digest moves; do NOT ignore fixable Python CVEs.
+CVE-2026-58050
+CVE-2026-58051
+CVE-2026-66032
+CVE-2026-66033
+CVE-2026-66034
+CVE-2026-66035
+CVE-2026-18508
+CVE-2026-18477
+CVE-2026-18938
+CVE-2026-27171
+CVE-2026-15534
+CVE-2026-6791
+CVE-2026-53613
+CVE-2026-53614
+CVE-2026-56391
+CVE-2026-56392
