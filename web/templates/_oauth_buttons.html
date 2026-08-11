@@ -1,4 +1,5 @@
-{# Brand OAuth CTAs — login + checkout. Same-window redirect (callback needs cookies). #}
+{# Brand OAuth CTAs — login + checkout. Same-window redirect (callback needs cookies).
+   Only Google/Microsoft ship for pilot; X/IG stay hidden until keys exist. #}
 {% set next_q = next_path or '/app/dashboard' %}
 <div class="oauth-stack" role="group" aria-label="Sign in with">
   <a class="oauth-btn oauth-google" href="/app/auth/oauth/google?next={{ next_q|urlencode }}">
@@ -17,26 +18,6 @@
     </svg>
     Continue with Microsoft
   </a>
-  <a class="oauth-btn oauth-x" href="/app/auth/oauth/x?next={{ next_q|urlencode }}">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.258 5.63 5.906-5.63Zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-    </svg>
-    Continue with X
-  </a>
-  <a class="oauth-btn oauth-meta" href="/app/auth/oauth/meta?next={{ next_q|urlencode }}">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="ig-grad-{{ loop_id or 'np' }}" x1="0%" y1="100%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#feda75"/><stop offset="26%" stop-color="#fa7e1e"/>
-          <stop offset="52%" stop-color="#d62976"/><stop offset="78%" stop-color="#962fbf"/>
-          <stop offset="100%" stop-color="#4f5bd5"/>
-        </linearGradient>
-      </defs>
-      <rect width="20" height="20" x="2" y="2" rx="5" fill="url(#ig-grad-{{ loop_id or 'np' }})"/>
-      <circle cx="12" cy="12" r="3.2" stroke="#fff" stroke-width="1.5" fill="none"/>
-      <circle cx="17" cy="7" r="1" fill="#fff"/>
-    </svg>
-    Continue with Instagram
-  </a>
 </div>
+<p class="hint" style="margin-top:8px">By continuing you agree to our <a href="/app/terms">Terms</a> and <a href="/app/privacy">Privacy</a> policy.</p>
 <div class="oauth-or">or</div>

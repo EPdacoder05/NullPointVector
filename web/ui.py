@@ -1,16 +1,8 @@
 """
-Premium server-rendered console for the Yahoo_Phish IDPS.
+Premium server-rendered console for NullPoint (Signal Deck).
 
-Design choices (matches the agreed direction: small deps, minimal supply chain):
-  * Jinja2 templates rendered by the SAME FastAPI process — no separate Node
-    server, no npm, no axios. The only client JS is a ~60-line vanilla file we
-    own (progressive enhancement); nothing is pulled from a CDN.
-  * Talks directly to the in-process detection pipeline (`process_one`) and the
-    threat store the API already uses — one source of truth, no API round-trip.
-  * Aesthetic: near-black/zinc surface, emerald = safe, red/amber = threat.
-    No purple, no emojis.
-
-Mounted under /app so the legacy Dash dashboard keeps serving "/".
+Jinja2 + hand-written CSS/JS in the same FastAPI process — no npm/CDN.
+Talks to process_one / Postgres threat store. Aesthetic: brass + forest.
 """
 from __future__ import annotations
 
@@ -60,6 +52,50 @@ def _current_user(request: Request):
     return {"sub": payload.get("sub") or "user", "role": payload.get("role") or "viewer"}
 
 
+def _require_user_json(request: Request):
+    """Return (user_dict, None) or (None, JSON 401) for mutating console routes."""
+    from fastapi.responses import JSONResponse
+    user = _current_user(request)
+    if not user or not user.get("sub") or user.get("sub") in ("anon", "anonymous"):
+        return None, JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    return user, None
+
+
+@router.get("/app/privacy", response_class=HTMLResponse)
+async def ui_privacy(request: Request):
+    return templates.TemplateResponse(
+        request, "privacy.html", _ctx(request, active="privacy"))
+
+
+@router.get("/app/terms", response_class=HTMLResponse)
+async def ui_terms(request: Request):
+    return templates.TemplateResponse(
+        request, "terms.html", _ctx(request, active="privacy"))
+
+
+@router.get("/app/account", response_class=HTMLResponse)
+async def ui_account(request: Request):
+    return templates.TemplateResponse(
+        request, "account.html", _ctx(request, active="account"))
+
+
+@router.post("/app/account/delete")
+async def ui_account_delete(request: Request,
+                            confirm: str = Form(""),
+                            _rl: None = Depends(rate_limit())):
+    from fastapi.responses import RedirectResponse, JSONResponse
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/app/login?next=/app/account", status_code=303)
+    if confirm not in ("1", "true", "yes", "on"):
+        return RedirectResponse("/app/account?err=confirm", status_code=303)
+    from common.account_delete import delete_account_data
+    delete_account_data(str(user.get("sub") or ""))
+    resp = RedirectResponse("/app/login?next=/app/dashboard&error=account_deleted", status_code=303)
+    resp.delete_cookie("np_access", path="/")
+    return resp
+
+
 def _request_tz(request: Request) -> str:
     """Operator timezone: cookie override, else UTC (browser can auto-set cookie)."""
     raw = (request.cookies.get("np_tz") or "").strip() or "UTC"
@@ -90,108 +126,36 @@ def _ctx(request: Request, **kw) -> dict:
     return kw
 
 
-import re
-
-_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.I)
-_DOMAIN_RE = re.compile(r"https?://([^/\s:]+)", re.I)
-_PHONE_RE = re.compile(r"(?:\+?\d[\d\-\.\s()]{7,}\d)")
-# Brands commonly impersonated; we flag digit/symbol obfuscation of these.
-_BRANDS = ["microsoft", "paypal", "google", "amazon", "apple", "netflix",
-           "chase", "wellsfargo", "bankofamerica", "fedex", "ups", "usps",
-           "docusign", "coinbase", "irs", "att", "verizon"]
-_BAD_TLDS = (".ru", ".tk", ".top", ".xyz", ".zip", ".mov", ".cn", ".gq",
-             ".ml", ".cf", ".ga", ".work", ".click", ".link")
-_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd",
-               "buff.ly", "rebrand.ly", "cutt.ly")
-_URGENT = ["urgent", "immediately", "expires", "expir", "suspend", "locked",
-           "verify now", "act now", "final notice", "within 24", "deactivat",
-           "right away", "asap", "last warning"]
-_SENSITIVE = ["password", "ssn", "social security", "gift card", "wire transfer",
-              "bank account", "routing number", "one-time", "otp", "verification code",
-              "credentials", "login", "pin number", "card number", "cvv"]
-
-
-def _obfuscated_brand(text: str):
-    """Detect a known brand spelled with digit/symbol substitution (micr0soft, paypa1)."""
-    sub = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "$": "s", "@": "a", "!": "i"})
-    low = text.lower()
-    deob = low.translate(sub)
-    for b in _BRANDS:
-        if b not in low and b in deob:  # only flag if the CLEAN brand wasn't literally present
-            return b
-    return None
+# Map evidence codes → consumer signal severity for the analyze card.
+_SIGNAL_SEV = {
+    "BAD_URL": "danger", "SHORT_LINK": "warn", "DOMAIN_MISMATCH": "warn",
+    "HTML_OBFUSCATION": "danger", "HOMOGRAPH": "danger", "PUNYCODE_IDN": "danger",
+    "LOOKALIKE_DOMAIN": "danger", "SENSITIVE_ASK": "danger", "URGENCY_FEAR": "warn",
+    "CALLBACK_PRESSURE": "warn", "TOLL_FREE_CALLBACK": "warn", "ADVANCE_FEE": "danger",
+    "ATTACHMENT_RISK": "danger", "REPLY_TO_MISMATCH": "warn", "DISPLAY_NAME_SPOOF": "warn",
+    "SPF_FAIL": "danger", "DKIM_FAIL": "danger", "DMARC_FAIL": "danger",
+    "BLACKMAIL": "danger", "IMPERSONATION": "danger", "CREDIT_LURE": "warn",
+    "HAPPY_LURE": "warn", "SUSPICIOUS_RELAY": "warn", "CAMPAIGN_MATCH": "danger",
+}
 
 
 def _consumer_signals(channel: str, content: str, sender: str) -> list:
-    """Transparent, human-readable investigation cues (the consumer 'why').
-
-    These are heuristic *investigation aids* shown alongside the ML verdict — they
-    use only public, explainable signals (no secret weights/thresholds), so they
-    are safe to show and to open-source.
-    """
-    sig = []
-    text = f"{content} {sender}".strip()
-    low = text.lower()
-    sender_dom = sender.split("@")[-1].lower() if "@" in sender else ""
-
-    urls = _URL_RE.findall(content)
-    link_domains = [d.lower() for d in _DOMAIN_RE.findall(content)]
-
-    # Domain-level obfuscation is high-signal even if the brand is also named
-    # cleanly in the body (the body check stays conservative to avoid FPs).
-    dom_str = " ".join(link_domains + ([sender_dom] if sender_dom else []))
-    brand = _obfuscated_brand(dom_str) or _obfuscated_brand(text)
-    if brand:
-        sig.append({"sev": "danger", "label": "Look-alike brand name",
-                    "detail": f"A web/sender address imitates “{brand}” using altered characters (e.g. 0 for o, 1 for l)."})
-
-    bad = [d for d in (link_domains + ([sender_dom] if sender_dom else []))
-           if any(d.endswith(t) for t in _BAD_TLDS)]
-    if bad:
-        sig.append({"sev": "danger", "label": "High-risk web address",
-                    "detail": f"Uses an uncommon/abused domain ending: {', '.join(sorted(set(bad)))}."})
-
-    if any("xn--" in d for d in link_domains):
-        sig.append({"sev": "danger", "label": "Disguised (punycode) link",
-                    "detail": "A link uses encoded characters that can hide a fake domain."})
-
-    short = [d for d in link_domains if any(s in d for s in _SHORTENERS)]
-    if short:
-        sig.append({"sev": "warn", "label": "Shortened link hides destination",
-                    "detail": f"Link shortener detected: {', '.join(sorted(set(short)))}."})
-
-    if sender_dom and link_domains and all(sender_dom not in d and d not in sender_dom for d in link_domains):
-        sig.append({"sev": "warn", "label": "Link doesn’t match sender",
-                    "detail": f"Sender is “{sender_dom}” but links point elsewhere ({link_domains[0]})."})
-
-    hits = sorted({w for w in _URGENT if w in low})
-    if hits:
-        sig.append({"sev": "warn", "label": "Pressure / urgency tactics",
-                    "detail": f"Language pushing you to act fast: {', '.join(hits[:4])}."})
-
-    asks = sorted({w for w in _SENSITIVE if w in low})
-    if asks:
-        sig.append({"sev": "danger", "label": "Requests sensitive info / payment",
-                    "detail": f"Asks for: {', '.join(asks[:4])}."})
-
-    if channel in ("vishing", "smishing"):
-        phones = _PHONE_RE.findall(content)
-        if phones:
-            sig.append({"sev": "warn", "label": "Call-back number pressure",
-                        "detail": f"Urges contact at a phone number ({phones[0].strip()})."})
-
-    if urls and channel == "smishing":
-        try:
-            from common.reputation.intel import scan_url_external
-            hit = scan_url_external(urls[0])
-            if hit and hit.get("risk", 0) >= 0.5:
-                src = hit.get("source", "threat intel")
-                sig.append({"sev": "danger", "label": "Malicious link detected",
-                            "detail": f"URL flagged by {src} (risk {int(hit['risk']*100)}%)."})
-        except Exception:
-            pass
-
-    return sig
+    """Consumer 'why' cues — thin wrapper over common.explain (no second lexicon)."""
+    try:
+        from common.explain import analyze_findings
+        findings = analyze_findings(channel, content, sender or "")
+    except Exception:
+        return []
+    out = []
+    for f in findings[:8]:
+        code = f.get("code") or ""
+        sev = _SIGNAL_SEV.get(code, "warn")
+        out.append({
+            "sev": sev,
+            "label": f.get("label") or code,
+            "detail": (f.get("evidence") or "")[:220],
+        })
+    return out
 
 
 def _technical_view(channel: str, v) -> dict:
@@ -687,9 +651,9 @@ async def ui_quarantine(request: Request):
     hour12 = _request_hour12(request)
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_review_queue
-        from common.explain import reason_codes_for, plain_english_math
+        from common.explain import plain_english_math
         from common.timefmt import format_local
-        from common.message_tags import categorize_message
+        from common.pills import build_pills
         rows, counts = get_review_queue(limit=100)
         for r in rows:
             text = " ".join([
@@ -697,18 +661,20 @@ async def ui_quarantine(request: Request):
                 r.get("body") or "",
                 str((r.get("metadata") or {}).get("snippet") or ""),
             ]).strip()
-            codes = reason_codes_for(
-                r.get("channel") or "phishing", text, r.get("sender") or "",
+            pack = build_pills(
+                channel=r.get("channel") or "phishing",
+                subject=r.get("subject") or "",
+                body=r.get("body") or "",
+                sender=r.get("sender") or "",
                 confidence=float(r.get("confidence") or 0),
                 headers=(r.get("metadata") or {}).get("headers")
                 or (r.get("metadata") or {}).get("auth"),
             )
-            # Do NOT load detectors per row here — that OOMs the app (502s).
+            codes = pack["reason_codes"]
             r["reason_codes"] = codes
-            r["tags"] = categorize_message(
-                subject=r.get("subject") or "", body=r.get("body") or "",
-                sender=r.get("sender") or "",
-            )
+            r["tags"] = pack["tags"]
+            if r.get("body"):
+                r["body"] = pack["preview"]
             r["ts_local"] = format_local(
                 r.get("timestamp"), tz, hour12=hour12, with_date=True)
             r["explain"] = plain_english_math(
@@ -770,12 +736,10 @@ async def ui_user_report(
     from fastapi.responses import JSONResponse
     import json as _json
 
-    account = "anon"
-    try:
-        user = _current_user(request) or {}
-        account = str(user.get("sub") or "anon")[:128]
-    except Exception:
-        pass
+    user, err = _require_user_json(request)
+    if err:
+        return err
+    account = str(user.get("sub") or "")[:128]
 
     mid_i = None
     if mid.strip().isdigit():
@@ -844,6 +808,9 @@ async def ui_quarantine_grade(request: Request,
     Provider junk/trash is enqueued async — never blocks Cascade Apply.
     """
     from fastapi.responses import JSONResponse
+    user, err = _require_user_json(request)
+    if err:
+        return err
     if verdict not in ("block", "unsure", "safe"):
         return JSONResponse({"ok": False, "error": "bad_verdict"}, status_code=400)
     label = {"block": 1, "safe": 0}.get(verdict)
@@ -922,11 +889,14 @@ async def ui_quarantine_grade(request: Request,
 @router.get("/app/message/{mid}", response_class=HTMLResponse)
 async def ui_message_detail(request: Request, mid: int):
     """Open full message body for analyst review (console; encrypted-at-rest)."""
+    from fastapi.responses import RedirectResponse
+    if not _current_user(request):
+        return RedirectResponse(f"/app/login?next=/app/message/{mid}", status_code=303)
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_message_detail
-        from common.explain import reason_codes_for, plain_english_math
+        from common.explain import plain_english_math
         from common.timefmt import format_local
-        from common.message_tags import categorize_message
+        from common.pills import build_pills
         msg = get_message_detail(mid)
     except Exception as e:
         logger.warning("message detail unavailable: %s", e)
@@ -937,10 +907,17 @@ async def ui_message_detail(request: Request, mid: int):
             _ctx(request, active="quarantine", msg=None, error="Message not found"))
     text = " ".join([msg.get("subject") or "", msg.get("body") or ""]).strip()
     headers = (msg.get("metadata") or {}).get("headers") or {}
-    codes = reason_codes_for(
-        msg.get("channel") or "phishing", text, msg.get("sender") or "",
-        confidence=float(msg.get("confidence") or 0), headers=headers,
+    pack = build_pills(
+        channel=msg.get("channel") or "phishing",
+        subject=msg.get("subject") or "",
+        body=msg.get("body") or "",
+        sender=msg.get("sender") or "",
+        confidence=float(msg.get("confidence") or 0),
+        headers=headers,
+        max_cats=5,
+        max_reasons=8,
     )
+    codes = pack["reason_codes"]
     explain = plain_english_math(
         channel=msg.get("channel") or "phishing",
         content=text, sender=msg.get("sender") or "",
@@ -951,14 +928,10 @@ async def ui_message_detail(request: Request, mid: int):
     msg["ts_local"] = format_local(
         msg.get("timestamp"), _request_tz(request),
         hour12=_request_hour12(request), with_date=True)
-    tags = categorize_message(
-        subject=msg.get("subject") or "", body=msg.get("body") or "",
-        sender=msg.get("sender") or "",
-    )
     return templates.TemplateResponse(
         request, "message_detail.html",
         _ctx(request, active="quarantine", msg=msg, reason_codes=codes,
-             explain=explain, tags=tags, error=None))
+             explain=explain, tags=pack["tags"], error=None))
 
 
 @router.post("/app/calls/grade")
@@ -998,7 +971,8 @@ async def ui_inbox(request: Request):
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_threats_page
         from common.timefmt import format_local
-        from common.message_tags import categorize_message
+        from common.pills import build_pills
+        from common.explain import plain_english_math
         raw, _ = get_threats_page(threat_type=None, after_id=None, limit=80,
                                   max_confidence=0.85)
         for r in (raw or []):
@@ -1014,13 +988,19 @@ async def ui_inbox(request: Request):
             counts["threat" if threat else "cleared"] += 1
             ts_raw = r.get("timestamp") or ""
             subj = r.get("subject") or ""
-            from common.explain import reason_codes_for, plain_english_math
-            text = subj
-            codes = reason_codes_for("phishing", text, sender, confidence=conf,
-                                     headers=meta.get("headers") or {})
-            tags = categorize_message(subject=subj, body="", sender=sender)
+            pack = build_pills(
+                channel=r.get("threat_type") or "phishing",
+                subject=subj,
+                body="",
+                sender=sender,
+                confidence=conf,
+                headers=meta.get("headers") or {},
+                max_cats=3,
+                max_reasons=4,
+            )
+            codes = pack["reason_codes"]
             why = plain_english_math(
-                channel="phishing", content=text, sender=sender,
+                channel="phishing", content=subj, sender=sender,
                 pred=1 if threat else 0, confidence=conf,
                 reason_codes=codes, top_features=None,
             )
@@ -1033,8 +1013,8 @@ async def ui_inbox(request: Request):
                 "ts_utc": ts_raw,
                 "score": f"{int(conf*100)}%",
                 "threat": threat,
-                "tags": tags,
-                "reason_codes": codes[:4],
+                "tags": pack["tags"],
+                "reason_codes": codes,
                 "why": (why or {}).get("text") or "",
             })
         counts["all"] = counts["threat"] + counts["cleared"]
@@ -1086,8 +1066,7 @@ async def ui_feed(request: Request, channel: str = ""):
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_threats_page
         from common.timefmt import format_local
-        from common.message_tags import categorize_message
-        from common.explain import reason_codes_for
+        from common.pills import build_pills
         ch = channel if channel in CHANNELS else None
         raw, _ = get_threats_page(threat_type=ch, after_id=None, limit=12,
                                   max_confidence=0.85)
@@ -1095,15 +1074,21 @@ async def ui_feed(request: Request, channel: str = ""):
             conf = float(r.get("confidence") or 0)
             sender = r.get("sender") or ""
             subj = r.get("subject") or ""
-            codes = reason_codes_for(
-                r.get("threat_type") or "phishing", subj, sender, confidence=conf,
+            pack = build_pills(
+                channel=r.get("threat_type") or "phishing",
+                subject=subj,
+                body="",
+                sender=sender,
+                confidence=conf,
                 headers=(r.get("metadata") or {}).get("headers") or {},
+                max_cats=2,
+                max_reasons=3,
             )
             rows.append({
                 **r,
                 "ts_local": format_local(r.get("timestamp"), tz, hour12=hour12),
-                "tags": categorize_message(subject=subj, body="", sender=sender),
-                "reason_codes": codes[:3],
+                "tags": pack["tags"],
+                "reason_codes": pack["reason_codes"],
             })
     except Exception as e:
         logger.warning("ui feed unavailable: %s", e)

@@ -442,6 +442,16 @@
           .catch(function () { toast("Request failed", "danger"); });
       });
     }
+    document.querySelectorAll(".js-oauth-consent").forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        var id = a.getAttribute("data-consent");
+        var box = id ? document.getElementById(id) : null;
+        if (box && !box.checked) {
+          e.preventDefault();
+          toast("Confirm mailbox read consent first", "warn");
+        }
+      });
+    });
   }
 
   function postGrade(row, verdict, alsoIds) {

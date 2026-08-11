@@ -446,6 +446,40 @@ async def get_threat_details(threat_id: str,
     return threat
 
 
+@app.post("/api/v1/reports")
+async def api_user_report(
+    request: Request,
+    user: Dict = Depends(get_current_user),
+    _rl: None = Depends(rate_limit()),
+):
+    """JWT user report path (iOS / API clients). Same fleet rules as /app/report."""
+    body = await request.json()
+    mid = body.get("message_id") or body.get("mid")
+    mid_i = int(mid) if str(mid or "").isdigit() else None
+    exp = body.get("expected")
+    if isinstance(exp, str):
+        exp = exp.lower() in ("1", "true", "yes")
+    reasons = body.get("reasons") or []
+    if isinstance(reasons, str):
+        reasons = [x.strip() for x in reasons.split(",") if x.strip()]
+    from common.user_reports import submit_user_report
+    out = submit_user_report(
+        message_id=mid_i,
+        account_sub=str(user.get("sub") or "")[:128],
+        channel=str(body.get("channel") or "email"),
+        sender=str(body.get("sender") or ""),
+        expected=exp if isinstance(exp, bool) else None,
+        reasons=list(reasons),
+        detail=body.get("detail"),
+    )
+    if not out.get("ok"):
+        raise HTTPException(
+            status_code=400 if out.get("error") == "empty_report" else 500,
+            detail=out.get("error") or "failed",
+        )
+    return {"ok": True, "id": out.get("id"), "fleet": out.get("fleet") or {}}
+
+
 @app.post("/api/v1/threats/report")
 async def report_threat(
     content: str, threat_type: str, sender: Optional[str] = None,

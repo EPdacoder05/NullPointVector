@@ -676,40 +676,45 @@ textarea { min-height: 132px; resize: vertical; line-height: 1.55; }
   padding: 12px 0 4px;
   border-top: 1px solid var(--line);
 }
-/* Pills: inline flow (not flex). Flex stretch/grow made lone-row pills full-width. */
+/* Pills: shrink-to-fit, wrap left-to-right. Width is capped so a long label can
+   never render as a full-row bar; the full text stays in the title tooltip. */
 .reason-tags,
 .tag-band .reason-tags,
 .reason-tags.tag-cats {
-  display: block !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-start !important;
+  align-items: flex-start !important;
+  align-content: flex-start !important;
+  gap: 6px;
   width: 100%;
   margin: 0;
   padding: 0;
-  line-height: 1.85;
-  font-size: 0; /* kill whitespace gaps between spans; pills set their own size */
 }
 .reason-tag,
 .tag-band .reason-tag,
 .reason-tags .reason-tag,
 .reason-tags span.reason-tag {
-  display: inline-block !important;
+  flex: 0 0 auto !important;
   float: none !important;
-  flex: none !important;
-  width: auto !important;
-  max-width: 100% !important;
+  width: max-content !important;
+  max-width: min(100%, 28ch) !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
   white-space: nowrap !important;
-  vertical-align: top;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   font-size: 10px !important;
+  line-height: 1.6;
   letter-spacing: .04em;
   text-transform: uppercase;
   font-weight: 700;
   padding: 3px 8px;
-  margin: 0 6px 6px 0;
+  margin: 0 !important;
   border: 1px solid rgba(201,162,39,.35);
   color: var(--brass);
   background: rgba(201,162,39,.08);
-  text-align: left;
+  text-align: left !important;
   cursor: default;
 }
 .inbox-extra { padding-top: 4px; }
@@ -876,7 +881,6 @@ a.kpi-link:hover { border-color: var(--brass); }
 .order-total { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .success-panel { font-size: 15px; line-height: 1.5; }
 
-.tag-cat { border-color: var(--brass); color: var(--brass); }
 .explain-panel { margin-top: 8px; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; word-break: break-word; }
 .explain-panel summary { cursor: pointer; color: var(--text); font-weight: 600; }
 .explain-panel p,

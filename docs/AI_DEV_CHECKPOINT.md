@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (pushed `ship/signal-deck-report-tags` @ 1b84433 — report/tags/policy/iOS; next = P0 multi-tenant + secrets + Stripe + OAuth ingest)
+_Last updated: 2026-08-11 (pills short+dedupe; account delete; privacy/terms; auth on report/grade; POST /api/v1/reports — after 84c4bee)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |

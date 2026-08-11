@@ -120,7 +120,13 @@
       {% if c.account %}<div class="kbd">{{ c.account }}</div>{% endif %}
       <div class="inbox-actions">
         {% if c.provider == 'gmail' %}
-        <a class="oauth-btn oauth-google" href="/app/connectors/oauth/gmail"
+        <label class="check-row" style="margin-bottom:8px">
+          <input type="checkbox" id="consent-gmail" required>
+          <span>NullPoint may read this mailbox to detect threats
+            (<a href="/app/privacy">Privacy</a>)</span>
+        </label>
+        <a class="oauth-btn oauth-google js-oauth-consent" data-consent="consent-gmail"
+           href="/app/connectors/oauth/gmail"
            style="width:auto; padding:10px 14px; font-size:13px;">
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -131,7 +137,13 @@
           {% if c.oauth_ready %}Connect Gmail{% else %}Connect Gmail (setup){% endif %}
         </a>
         {% elif c.provider == 'microsoft' %}
-        <a class="oauth-btn oauth-microsoft" href="/app/connectors/oauth/microsoft"
+        <label class="check-row" style="margin-bottom:8px">
+          <input type="checkbox" id="consent-microsoft" required>
+          <span>NullPoint may read this mailbox to detect threats
+            (<a href="/app/privacy">Privacy</a>)</span>
+        </label>
+        <a class="oauth-btn oauth-microsoft js-oauth-consent" data-consent="consent-microsoft"
+           href="/app/connectors/oauth/microsoft"
            style="width:auto; padding:10px 14px; font-size:13px;">
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
             <path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/>
