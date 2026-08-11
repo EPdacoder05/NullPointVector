@@ -1,0 +1,431 @@
+/* NullPoint Report modal — npr-* namespace.
+   Isolated from app.css (.btn, .modal, .np-modal, etc).
+   display:none uses !important so step panels never stack. */
+
+#npr-overlay {
+  display: none !important;
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.75) !important;
+  z-index: 300 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+#npr-overlay.npr-open {
+  display: flex !important;
+}
+
+#npr-overlay *,
+#npr-overlay *::before,
+#npr-overlay *::after {
+  box-sizing: border-box;
+}
+
+#npr-modal {
+  background: #111810 !important;
+  border: 1px solid #1e2a22 !important;
+  border-radius: 6px !important;
+  width: 100% !important;
+  max-width: 480px !important;
+  max-height: 90vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+  color: #d4d4d4 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+#npr-overlay .npr-header {
+  padding: 20px 24px 16px !important;
+  border-bottom: 1px solid #1a241e !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  flex: none !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+#npr-overlay .npr-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: #e8e8e8 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  line-height: 1.3 !important;
+}
+
+#npr-overlay .npr-step-label {
+  font-size: 11px !important;
+  color: #4a5a50 !important;
+  margin-top: 2px !important;
+  letter-spacing: 0.5px !important;
+  text-transform: none !important;
+  font-weight: 400 !important;
+}
+
+#npr-overlay .npr-close {
+  appearance: none !important;
+  background: none !important;
+  border: none !important;
+  color: #4a5a50 !important;
+  cursor: pointer !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+  margin: -2px 0 0 0 !important;
+  width: auto !important;
+  height: auto !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-weight: 400 !important;
+}
+#npr-overlay .npr-close:hover { color: #8a9e90 !important; }
+
+#npr-overlay .npr-body {
+  padding: 22px 24px 20px !important;
+  overflow: auto !important;
+  flex: 1 1 auto !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+#npr-overlay .npr-steps {
+  display: flex !important;
+  gap: 4px !important;
+  margin: 0 0 20px 0 !important;
+  padding: 0 !important;
+}
+
+#npr-overlay .npr-dot {
+  height: 3px !important;
+  flex: 1 !important;
+  background: #1e2a22 !important;
+  border-radius: 2px !important;
+  transition: background 0.2s !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+#npr-overlay .npr-dot.npr-active { background: #1f9a62 !important; }
+#npr-overlay .npr-dot.npr-complete { background: #1a5e3a !important; }
+
+/* CRITICAL — only one step visible */
+#npr-overlay .npr-panel {
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+#npr-overlay .npr-panel.npr-active {
+  display: block !important;
+}
+
+#npr-overlay .npr-q {
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: #e0e0e0 !important;
+  margin: 0 0 6px 0 !important;
+  padding: 0 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  line-height: 1.4 !important;
+}
+
+#npr-overlay .npr-sub {
+  font-size: 12px !important;
+  color: #5a6a60 !important;
+  margin: 0 0 18px 0 !important;
+  padding: 0 !important;
+  font-weight: 400 !important;
+  text-transform: none !important;
+}
+
+#npr-overlay .npr-yn {
+  display: flex !important;
+  gap: 10px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+#npr-overlay .npr-yn-btn {
+  appearance: none !important;
+  flex: 1 !important;
+  padding: 10px !important;
+  border-radius: 4px !important;
+  border: 1px solid #2a3a2e !important;
+  background: #0e1510 !important;
+  color: #c8c8c8 !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  font-weight: 400 !important;
+  cursor: pointer !important;
+  text-align: center !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+  transition: border-color 0.15s, background 0.15s, color 0.15s !important;
+}
+#npr-overlay .npr-yn-btn:hover {
+  border-color: #3a8c5c !important;
+  background: #0e1f16 !important;
+}
+#npr-overlay .npr-yn-btn.npr-selected {
+  border-color: #1f9a62 !important;
+  background: #0e2318 !important;
+  color: #3acc88 !important;
+}
+
+#npr-overlay .npr-reasons {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 7px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+#npr-overlay .npr-chip {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  padding: 10px 12px !important;
+  border: 1px solid #1e2a22 !important;
+  border-radius: 4px !important;
+  background: #0e1510 !important;
+  cursor: pointer !important;
+  transition: border-color 0.15s, background 0.15s !important;
+  margin: 0 !important;
+  width: 100% !important;
+  text-align: left !important;
+  font-family: inherit !important;
+  color: inherit !important;
+  appearance: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-weight: 400 !important;
+  font-size: 13px !important;
+}
+#npr-overlay .npr-chip:hover {
+  border-color: #2a3a2e !important;
+  background: #111c14 !important;
+}
+#npr-overlay .npr-chip.npr-selected {
+  border-color: #1f9a62 !important;
+  background: #0e1f16 !important;
+}
+
+#npr-overlay .npr-chip-icon {
+  width: 16px !important;
+  height: 16px !important;
+  border: 1.5px solid #2a3a2e !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+  margin-top: 1px !important;
+  position: relative !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+#npr-overlay .npr-chip.npr-selected .npr-chip-icon {
+  border-color: #1f9a62 !important;
+  background: #1f9a62 !important;
+}
+#npr-overlay .npr-chip.npr-selected .npr-chip-icon::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 3px !important;
+  left: 3px !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+}
+
+#npr-overlay .npr-chip-text {
+  font-size: 13px !important;
+  color: #c0c8c2 !important;
+  flex: 1 !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
+}
+#npr-overlay .npr-chip-sub {
+  font-size: 11px !important;
+  color: #4a5a50 !important;
+  margin-top: 2px !important;
+  line-height: 1.35 !important;
+  font-weight: 400 !important;
+}
+
+#npr-overlay .npr-textarea {
+  width: 100% !important;
+  background: #0e1510 !important;
+  border: 1px solid #1e2a22 !important;
+  border-radius: 4px !important;
+  color: #c8c8c8 !important;
+  font-size: 13px !important;
+  padding: 10px 12px !important;
+  resize: vertical !important;
+  min-height: 90px !important;
+  font-family: inherit !important;
+  outline: none !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+  display: block !important;
+}
+#npr-overlay .npr-textarea:focus { border-color: #2a3a2e !important; }
+#npr-overlay .npr-textarea::placeholder { color: #3a4a40 !important; }
+
+#npr-overlay .npr-char {
+  font-size: 11px !important;
+  color: #3a4a40 !important;
+  text-align: right !important;
+  margin-top: 4px !important;
+}
+
+#npr-overlay .npr-fleet {
+  margin-top: 14px !important;
+  padding: 10px 12px !important;
+  background: #0a1610 !important;
+  border: 1px solid #1a2e20 !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  color: #4a6a54 !important;
+  display: flex !important;
+  gap: 8px !important;
+  align-items: flex-start !important;
+  line-height: 1.45 !important;
+}
+#npr-overlay .npr-fleet svg {
+  width: 13px !important;
+  height: 13px !important;
+  flex-shrink: 0 !important;
+  margin-top: 1px !important;
+}
+
+#npr-overlay .npr-footer {
+  padding: 14px 24px 18px !important;
+  border-top: 1px solid #1a241e !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex: none !important;
+  margin: 0 !important;
+  gap: 12px !important;
+  background: transparent !important;
+}
+
+#npr-overlay .npr-back {
+  appearance: none !important;
+  background: none !important;
+  border: none !important;
+  color: #4a5a50 !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-family: inherit !important;
+  font-weight: 400 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+#npr-overlay .npr-back:hover { color: #8a9e90 !important; }
+
+#npr-overlay .npr-primary {
+  appearance: none !important;
+  padding: 8px 20px !important;
+  background: #1f9a62 !important;
+  border: none !important;
+  border-radius: 3px !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  cursor: pointer !important;
+  font-family: inherit !important;
+  text-transform: none !important;
+  margin: 0 0 0 auto !important;
+  line-height: 1.4 !important;
+  transition: background 0.15s !important;
+}
+#npr-overlay .npr-primary:hover { background: #1a8252 !important; }
+#npr-overlay .npr-primary:disabled {
+  background: #1a3a28 !important;
+  color: #3a5a48 !important;
+  cursor: not-allowed !important;
+}
+
+#npr-overlay .npr-success {
+  padding: 40px 24px !important;
+  text-align: center !important;
+}
+#npr-overlay .npr-success-icon {
+  width: 48px !important;
+  height: 48px !important;
+  background: #0e2318 !important;
+  border: 1px solid #1f9a62 !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 auto 16px !important;
+}
+#npr-overlay .npr-success-icon svg {
+  width: 22px !important;
+  height: 22px !important;
+}
+#npr-overlay .npr-success-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: #e8e8e8 !important;
+  margin: 0 0 8px 0 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+#npr-overlay .npr-success-sub {
+  font-size: 13px !important;
+  color: #5a6a60 !important;
+  max-width: 300px !important;
+  margin: 0 auto 20px !important;
+  line-height: 1.5 !important;
+}
+#npr-overlay .npr-success-fleet {
+  font-size: 11px !important;
+  color: #3a8c5c !important;
+  background: #0a1610 !important;
+  border: 1px solid #1a2e20 !important;
+  border-radius: 4px !important;
+  padding: 8px 12px !important;
+  display: inline-block !important;
+}
+
+/* Card trigger — bottom-right of inbox-foot; triage stays left with original act-* look */
+.btn-report.js-report {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: #4a5a50;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 2px;
+  margin-left: auto;
+  font-family: inherit;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.btn-report.js-report:hover { color: #8a9e90; }
+.btn-report.js-report svg { width: 13px; height: 13px; flex: none; }

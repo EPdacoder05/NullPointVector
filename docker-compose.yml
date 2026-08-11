@@ -2,7 +2,6 @@ services:
   app:
     build: .
     ports:
-      - "8050:8050"
       - "8000:8000"
     volumes:
       # DEV MODE: live-edit code without rebuilding. REMOVE this line for a
@@ -33,7 +32,9 @@ services:
       - ML_MODEL_PATH=${ML_MODEL_PATH}
       - REDIS_URL=redis://redis:6379/0
       - USE_GUNICORN=${USE_GUNICORN:-true}
-      - API_WORKERS=${API_WORKERS:-2}
+      - API_WORKERS=${API_WORKERS:-1}
+      # MiniLM-on-every-insert OOMs the app (nginx 502). Opt in when you have RAM.
+      - ENABLE_MESSAGE_EMBEDDINGS=${ENABLE_MESSAGE_EMBEDDINGS:-0}
     depends_on:
       pgbouncer:
         condition: service_started   # app's start.sh retries DB init on its own

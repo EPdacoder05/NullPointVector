@@ -33,7 +33,7 @@ COPY requirements.txt .
 
 # Install Python dependencies (torch already satisfied above → not re-pulled)
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir fastapi uvicorn dash plotly dash-bootstrap-components
+RUN pip install --no-cache-dir fastapi uvicorn
 # API hardening deps (explicit layer so they are always present even if the
 # requirements layer above is cache-hit from an older build).
 RUN pip install --no-cache-dir "python-multipart>=0.0.6" "python-jose[cryptography]>=3.3" "prometheus-client>=0.19" "redis>=5.0" "gunicorn>=21.0" "argon2-cffi>=23.1" "jinja2>=3.1"
@@ -72,10 +72,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # API process is up (it reports DB status in the body without failing), so a
 # transient DB outage does NOT flap the container — only a dead API does.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-  CMD curl -f http://localhost:8000/health || curl -f http://localhost:8050/ || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
 
-# Expose ports
-EXPOSE 8050 8000
+# API only (public ingress is nginx :8088 → /app)
+EXPOSE 8000
 
-# Run the startup script (Runs both API and UI)
+# API + Yahoo stream monitor (Signal Deck served by FastAPI /app)
 CMD ["./start.sh"]

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Benchmarks — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Benchmarks</h1>
+    <div class="desc">Held-out golden metrics and measured latency per channel — same harness as CI.{% if snapshot_stale %} Snapshot stale or missing — run <code>scripts/refresh_benchmarks.py</code>.{% endif %}</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/quarantine">Quarantine</a>
+  </div>
+</div>
+
+{# Build chart heights from quality/latency for SVG #}
+{% set channels = ['phishing', 'smishing', 'vishing'] %}
+
+<section class="card">
+  <div class="hd"><h2>Accuracy / precision / recall / FPR</h2></div>
+  <div class="bd">
+    <div class="bench-chart-wrap">
+      <svg class="bench-svg" viewBox="0 0 640 220" role="img" aria-label="Channel golden metrics">
+        <text x="8" y="16" class="svg-label">%</text>
+        {% for i in range(0, 101, 25) %}
+        <line x1="40" y1="{{ 200 - i * 1.6 }}" x2="620" y2="{{ 200 - i * 1.6 }}" class="svg-grid"/>
+        <text x="4" y="{{ 204 - i * 1.6 }}" class="svg-label">{{ i }}</text>
+        {% endfor %}
+        {% for ch in channels %}
+          {% set m = quality.get(ch, {}) %}
+          {% set xi = loop.index0 * 200 + 70 %}
+          {% set acc = ((m.accuracy or 0) * 100)|int if m.available else 0 %}
+          {% set prec = ((m.precision or 0) * 100)|int if m.available else 0 %}
+          {% set rec = ((m.recall or 0) * 100)|int if m.available else 0 %}
+          {% set fpr = ((m.fpr or 0) * 100)|int if m.available else 0 %}
+          <rect x="{{ xi }}" y="{{ 200 - acc * 1.6 }}" width="28" height="{{ acc * 1.6 }}" class="bar-acc"/>
+          <rect x="{{ xi + 32 }}" y="{{ 200 - prec * 1.6 }}" width="28" height="{{ prec * 1.6 }}" class="bar-prec"/>
+          <rect x="{{ xi + 64 }}" y="{{ 200 - rec * 1.6 }}" width="28" height="{{ rec * 1.6 }}" class="bar-rec"/>
+          <rect x="{{ xi + 96 }}" y="{{ 200 - fpr * 1.6 }}" width="28" height="{{ fpr * 1.6 }}" class="bar-fpr"/>
+          <text x="{{ xi + 40 }}" y="216" class="svg-label">{{ ch[:5] }}</text>
+        {% endfor %}
+      </svg>
+      <div class="bench-legend">
+        <span><i class="lg acc"></i> Accuracy</span>
+        <span><i class="lg prec"></i> Precision</span>
+        <span><i class="lg rec"></i> Recall</span>
+        <span><i class="lg fpr"></i> FPR</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="hd"><h2>Inference latency (ms)</h2></div>
+  <div class="bd">
+    <div class="bench-chart-wrap">
+      <svg class="bench-svg" viewBox="0 0 640 200" role="img" aria-label="Latency p50 p95">
+        {% for ch in channels %}
+          {% set lat = latency.get(ch, {}) %}
+          {% set xi = loop.index0 * 200 + 80 %}
+          {% set p50 = (lat.p50_ms or 0) %}
+          {% set p95 = (lat.p95_ms or 0) %}
+          {% set h50 = ((p50 / max_lat_ms) * 150)|int %}
+          {% set h95 = ((p95 / max_lat_ms) * 150)|int %}
+          <rect x="{{ xi }}" y="{{ 170 - h50 }}" width="40" height="{{ h50 }}" class="bar-acc"/>
+          <rect x="{{ xi + 48 }}" y="{{ 170 - h95 }}" width="40" height="{{ h95 }}" class="bar-fpr"/>
+          <text x="{{ xi + 20 }}" y="188" class="svg-label">{{ ch[:5] }}</text>
+          <text x="{{ xi }}" y="{{ 166 - h50 }}" class="svg-label">{{ '%.0f'|format(p50) }}</text>
+          <text x="{{ xi + 48 }}" y="{{ 166 - h95 }}" class="svg-label">{{ '%.0f'|format(p95) }}</text>
+        {% endfor %}
+      </svg>
+      <div class="bench-legend">
+        <span><i class="lg acc"></i> p50 ms</span>
+        <span><i class="lg fpr"></i> p95 ms</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="hd"><h2>Channel champions</h2></div>
+  <div class="bd bench-snapshot">
+    {% for ch in channels %}
+    {% set m = quality.get(ch, {}) %}
+    <div class="bench-col">
+      <h3>{{ ch|capitalize }}</h3>
+      {% if m.available %}
+      <div class="bench-score">{{ '%.1f'|format((m.accuracy or 0) * 100) }}<span class="unit">% acc</span></div>
+      <div class="badge {{ 'tone-safe' if m.gate_pass else 'tone-danger' }}">
+        {{ 'GATE PASS' if m.gate_pass else 'GATE FAIL' }}
+      </div>
+      <p class="hint">precision {{ '%.0f'|format((m.precision or 0)*100) }}% · recall {{ '%.0f'|format((m.recall or 0)*100) }}% · FPR {{ '%.1f'|format((m.fpr or 0)*100) }}%</p>
+      {% set lat = latency.get(ch) if latency else None %}
+      {% if lat %}<p class="hint">p50 {{ lat.p50_ms }} ms · p95 {{ lat.p95_ms }} ms</p>{% endif %}
+      {% else %}
+      <p class="hint">{{ m.reason or 'no metrics' }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+{% if ops %}
+<section class="card">
+  <div class="hd"><h2>Live traffic mix</h2></div>
+  <div class="bd">
+    <div class="ops-bars">
+      {% set tot = ops.total if ops.total else 1 %}
+      {% for c in ops.by_channel %}
+      <div class="bench-bar-row">
+        <span>{{ c.channel }}</span>
+        <div class="bench-bar"><i style="width:{{ ((c.total / tot) * 100)|int }}%"></i></div>
+        <span>{{ c.total }} / {{ c.threats }} threat</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="hd"><h2>Assist slots</h2></div>
+  <div class="bd assist-grid">
+    {% for a in assist %}
+    <div class="assist-card">
+      <div class="assist-name">{{ a.name }}</div>
+      <div class="badge {{ 'tone-safe' if a.status == 'keyed' else 'tone-warn' }}">{{ a.status }}</div>
+      <p class="hint">{{ a.role }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

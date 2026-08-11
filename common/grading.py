@@ -1,22 +1,21 @@
 """
-Human grading → durable per-channel feedback buffers.
+Human grading → durable per-channel feedback buffers + optional ephemeral nudge.
 
 The ONLY manual touchpoint in the product is grading quarantined / potential
-threats. A grade never mutates a live model directly (poisoning vector);
-it is appended to that channel's append-only feedback buffer, which the
-ChannelTrainer folds into the next full retrain behind the golden gate.
+threats.
 
-Verdict mapping:
-    block  → label 1 (confirmed threat)
-    safe   → label 0 (confirmed clean)
-    unsure → NOT written to the buffer (an unsure human label is noise);
-             the item just stays/moves to the quarantine review queue.
+  block  → label 1 + feedback buffer + ephemeral partial_fit (Δw proof)
+  safe   → label 0 + feedback buffer + ephemeral partial_fit (Δw proof)
+  unsure → NOT written to the buffer (noise); stays in review queue
+
+Durable production weights change only when ChannelTrainer / nightly job
+promotes a candidate that clears the golden gate.
 """
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("grading")
 
@@ -31,20 +30,29 @@ _BUFFER_PATHS = {
 
 
 def record_grade(channel: str, record: dict, verdict: str,
-                 source: str = "console") -> Optional[int]:
-    """Append one human verdict to the channel's feedback buffer.
+                 source: str = "console", *, nudge: bool = True) -> dict[str, Any]:
+    """Append human verdict; optionally apply ephemeral partial_fit with Δw proof.
 
-    Returns the numeric label written, or None when nothing was written
-    (unsure verdict, unknown channel, or buffer failure — never raises).
+    Returns dict: {label, buffered, nudge}.
     """
+    out: dict[str, Any] = {"label": None, "buffered": False, "nudge": None}
     label = VERDICT_LABEL.get(verdict)
     path = _BUFFER_PATHS.get(channel)
     if label is None or path is None:
-        return None
+        return out
+    out["label"] = label
     try:
         from PhishGuard.phish_mlm.training.feedback_buffer import FeedbackBuffer
         FeedbackBuffer(path).append(record, label, source=source)
-        return label
+        out["buffered"] = True
     except Exception as e:
         logger.error("feedback append failed [%s/%s]: %s", channel, verdict, e)
-        return None
+
+    if nudge and out["buffered"]:
+        try:
+            from common.ml.nudge import apply_nudge
+            out["nudge"] = apply_nudge(channel, record, is_threat=bool(label))
+        except Exception as e:
+            logger.error("nudge failed [%s]: %s", channel, e)
+            out["nudge"] = {"ok": False, "error": str(e), "deltas": []}
+    return out

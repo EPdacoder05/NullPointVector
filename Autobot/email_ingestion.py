@@ -417,9 +417,21 @@ class EmailIngestionEngine:
 
                     is_threat = 0
                     confidence = 0.0
+                    safe = False
 
-                    # Run ML prediction only if enabled
-                    if self.ml_detector:
+                    # Known-good + auth_pass only — spoofed brand From must hit ML.
+                    try:
+                        from common.safe_domains import is_known_good_sender
+                        safe, reason = is_known_good_sender(email.get("from", ""), email)
+                        if safe:
+                            is_threat = 0
+                            confidence = 0.02
+                            metadata = {**(metadata or {}), "safe_domain": reason}
+                    except Exception:
+                        safe = False
+
+                    # Run ML prediction only if enabled and not already cleared
+                    if self.ml_detector and not safe:
                         try:
                             result = self.ml_detector.predict(email)
                             if result:
@@ -436,14 +448,40 @@ class EmailIngestionEngine:
                         except Exception as ml_e:
                             logger.error(f"ML prediction failed: {ml_e}")
 
-                    # Build unified metadata for storage
+                    # Build unified metadata for storage (keep auth headers for allowlist + explain)
+                    from common.email_time import parse_email_date, normalize_message_id
+                    from common.ingest_dedup import (
+                        already_ingested, ensure_ingest_dedup_indexes, ingest_fingerprint,
+                    )
+                    try:
+                        ensure_ingest_dedup_indexes(conn)
+                    except Exception:
+                        pass
+                    rfc_mid = normalize_message_id(
+                        (email.get("headers") or {}).get("message_id")
+                        or (email.get("headers") or {}).get("Message-ID")
+                        or email.get("message_id")
+                    )
+                    email_ts = parse_email_date(email.get("date"))
+                    ingest_fp = ingest_fingerprint(
+                        sender=email.get("from", ""),
+                        subject=email.get("subject", ""),
+                        body=email.get("body", "") or "",
+                        date_raw=email.get("date"),
+                        rfc_message_id=rfc_mid,
+                    )
                     full_metadata = {
                         **metadata,
                         'source': provider,
-                        'timestamp': email.get('date', datetime.now().isoformat()),
+                        'provider': provider,  # registry key for move_to_junk
+                        'imap_id': email.get('id'),  # IMAP sequence id from fetcher
+                        'rfc_message_id': rfc_mid,
+                        'ingest_fp': ingest_fp,
+                        'timestamp': email_ts.isoformat(),
                         'geo': geo,
                         'ip_address': ip_address,
-                        'url_analysis': url_analysis  # Add URL analysis results
+                        'url_analysis': url_analysis,
+                        'headers': email.get('headers') or {},
                     }
                     
                     # SECURITY: Boost threat score if high-risk URLs detected
@@ -457,6 +495,17 @@ class EmailIngestionEngine:
 
                     # Insert message using vector DB helper
                     try:
+                        # Durable dedup: Message-ID and/or content fingerprint
+                        # (API Idempotency-Key never applied to IMAP batch — this is it)
+                        existing = already_ingested(
+                            conn, rfc_message_id=rfc_mid, ingest_fp=ingest_fp,
+                        )
+                        if existing:
+                            logger.debug(
+                                "skip duplicate ingest id=%s mid=%s", existing, rfc_mid or ingest_fp[:12],
+                            )
+                            continue
+
                         msg_id = insert_message(
                             conn=conn,
                             # Normalized channel taxonomy: phishing/smishing/vishing.
@@ -468,7 +517,7 @@ class EmailIngestionEngine:
                             preprocessed_text=email.get('body', ''),
                             subject=email.get('subject', ''),
                             recipient=email.get('to', ''),
-                            timestamp=datetime.now(),
+                            timestamp=email_ts,
                             is_threat=is_threat,
                             confidence=confidence,
                             metadata=full_metadata,

@@ -1099,9 +1099,33 @@ class PhishingDetector:
         """
         if not self.clf:
             return (0, 0.0)
-        # Delegate to the shared stateless predictor so calibration + feature
-        # fusion logic lives in exactly one place.
-        return predict_with(self._artifact, email_data)
+        # Single-pass policy: malice → known-good → marketing → ML
+        try:
+            from common.policy_pipeline import predict_override
+            forced = predict_override(email_data if isinstance(email_data, dict) else {})
+            if forced is not None:
+                return forced
+        except Exception:
+            pass
+        pred, conf = predict_with(self._artifact, email_data)
+        # IMAGE_ONLY: TF-IDF starved of text → don't trust a 100% quarantine score.
+        try:
+            blob = " ".join([
+                str((email_data or {}).get("subject") or ""),
+                str((email_data or {}).get("body") or ""),
+                str((email_data or {}).get("text") or ""),
+            ])
+            text_only = re.sub(r"<[^>]+>", " ", blob)
+            text_only = re.sub(r"\s+", " ", text_only).strip()
+            img_hits = len(re.findall(r"<img\b|cid:|\[image:", blob, re.I))
+            if img_hits >= 1 and len(text_only) < 48:
+                conf = min(float(conf), 0.72)
+            elif len(text_only) < 12 and len(blob) > 80 and (
+                    "<html" in blob.lower() or "multipart" in blob.lower()):
+                conf = min(float(conf), 0.72)
+        except Exception:
+            pass
+        return (pred, conf)
 
     def learn_from_feedback(self, email_data: dict, is_phishing: bool):
         """
@@ -1150,14 +1174,17 @@ class PhishingDetector:
         # 2. EPHEMERAL: one in-memory SGD step so the RUNNING process adapts
         #    immediately. Deliberately NOT persisted — a restart or the next
         #    gated retrain discards any transient poisoning.
+        #    class_weight='balanced' cannot run on a single-class mini-batch
+        #    (sklearn compute_class_weight) — see common.ml.partial_fit_safe.
         try:
             X = self._transform(text, email_data)
-            self.clf.partial_fit(X, [label], classes=[0, 1])
+            from common.ml.partial_fit_safe import partial_fit_one
+            partial_fit_one(self.clf, X, label)
             logger.info(f"🧠 Ephemeral update + buffered: "
                         f"{'PHISHING' if is_phishing else 'SAFE'} sample")
         except Exception as e:
             logger.error(f"Ephemeral update failed: {e}")
-
+            raise
         if is_phishing:
             try:
                 store_threat(

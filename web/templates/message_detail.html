@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Message {{ msg.id if msg else '' }} — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Message</h1>
+    <div class="desc">Full content for analyst review. Stored encrypted at rest; shown only in Signal Deck.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/quarantine">Back to quarantine</a>
+    <a class="btn secondary" href="/app/inbox">Inbox stream</a>
+  </div>
+</div>
+
+{% if error or not msg %}
+<section class="card"><div class="bd"><div class="feed-empty">{{ error or 'Message not found' }}</div></div></section>
+{% else %}
+<section class="card">
+  <div class="hd">
+    <h2>{{ msg.subject or '(no subject)' }}</h2>
+    <span class="kbd">#{{ msg.id }}</span>
+  </div>
+  <div class="bd">
+    <p class="hint">From <strong>{{ msg.sender }}</strong>
+      {% if msg.recipient %} · To {{ msg.recipient }}{% endif %}
+      · {{ msg.channel }} · {{ msg.ts_local or (msg.timestamp or '—')[:19] }}
+      · model {{ (msg.confidence * 100)|round|int }}%
+      {% if msg.label == 0 %}<span class="badge tone-safe">graded safe</span>
+      {% elif msg.label == 1 %}<span class="badge tone-danger">graded block</span>
+      {% endif %}
+    </p>
+    {% if tags or reason_codes %}
+    <div class="reason-tags" style="margin-bottom:10px">
+      {% if tags %}
+      {% for t in tags[:6] %}
+      <span class="reason-tag tag-cat" title="{{ t.code }}">{{ t.label }}</span>
+      {% endfor %}
+      {% endif %}
+      {% if reason_codes %}
+      {% for t in reason_codes[:8] %}
+      <span class="reason-tag" title="{{ t.evidence or t.code }}">{{ t.label }}</span>
+      {% endfor %}
+      {% endif %}
+    </div>
+    {% endif %}
+    <pre class="msg-body">{{ msg.body or '(empty body — often image-only HTML; ingest now strips HTML text)' }}</pre>
+    {% if explain %}
+    <details class="explain-panel" open>
+      <summary>Why (plain-English math)</summary>
+      <p><strong>Text:</strong> {{ explain.text }}</p>
+      <p><strong>Numbers:</strong> confidence {{ explain.numbers.model_confidence_pct }}/100 · {{ explain.numbers.formula }}</p>
+      <p><strong>Connect:</strong> {{ explain.connect }}</p>
+    </details>
+    {% endif %}
+    <div class="inbox-row" data-mid="{{ msg.id }}" data-sender="{{ msg.sender }}" style="border:none;padding:0;margin-top:16px">
+      <div class="inbox-foot" style="flex:1 1 100%;margin-top:0">
+        <div class="inbox-actions">
+          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
+          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
+          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+        </div>
+        <button type="button" class="btn-report js-report" data-channel="email"
+          data-mid="{{ msg.id }}" data-sender="{{ msg.sender }}"
+          title="Tell us why this feels wrong — helps protect others">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
+          </svg>
+          Report this
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

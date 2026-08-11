@@ -29,10 +29,7 @@ bleach>=6.0
 passlib>=1.7
 bcrypt>=4.0
 
-# Web interface (Dash/Plotly)
-dash>=2.14
-plotly>=5.0
-dash-bootstrap-components>=1.5
+# Web / HTTP clients (Signal Deck is Jinja on FastAPI — no Dash)
 requests>=2.31.0
 
 # API framework

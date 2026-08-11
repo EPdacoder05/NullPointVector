@@ -1,0 +1,189 @@
+{
+  "generated_at": 1785993359.6576173,
+  "quality": {
+    "phishing": {
+      "n": 40,
+      "accuracy": 0.975,
+      "precision": 0.95,
+      "recall": 1.0,
+      "specificity": 0.9523809523809523,
+      "fpr": 0.047619047619047616,
+      "f1": 0.9743589743589743,
+      "confusion": {
+        "tp": 19,
+        "tn": 20,
+        "fp": 1,
+        "fn": 0
+      },
+      "pump_fake_recall": 1.0,
+      "per_tag": {
+        "2fa": 1.0,
+        "auth_fail": 1.0,
+        "auth_pass": 1.0,
+        "bec": 1.0,
+        "brand": 1.0,
+        "credential": 1.0,
+        "crypto": 1.0,
+        "devops": 1.0,
+        "ip": 1.0,
+        "leet": 1.0,
+        "malware": 1.0,
+        "marketing": 1.0,
+        "personal": 1.0,
+        "prize": 1.0,
+        "pump_fake": 1.0,
+        "shortener": 1.0,
+        "spear": 1.0,
+        "transactional": 0.75,
+        "url": 1.0,
+        "work": 1.0
+      },
+      "failures": [
+        {
+          "expected": 0,
+          "pred": 1,
+          "conf": 0.646,
+          "tags": [
+            "transactional"
+          ],
+          "text": "Flight confirmation | Your booking is confirmed: SFO to SEA on March 4, seat 14C. Check in"
+        }
+      ],
+      "available": true,
+      "gate_pass": true
+    },
+    "smishing": {
+      "n": 16,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "specificity": 1.0,
+      "fpr": 0.0,
+      "f1": 1.0,
+      "confusion": {
+        "tp": 8,
+        "tn": 8,
+        "fp": 0,
+        "fn": 0
+      },
+      "pump_fake_recall": 1.0,
+      "per_tag": {
+        "appointment": 1.0,
+        "bank": 1.0,
+        "billing": 1.0,
+        "delivery": 1.0,
+        "gov": 1.0,
+        "legit": 1.0,
+        "otp": 1.0,
+        "otp_theft": 1.0,
+        "payment": 1.0,
+        "personal": 1.0,
+        "prize": 1.0,
+        "reservation": 1.0,
+        "smish": 1.0,
+        "url": 1.0,
+        "warranty": 1.0
+      },
+      "failures": [],
+      "available": true,
+      "gate_pass": true
+    },
+    "vishing": {
+      "n": 16,
+      "accuracy": 0.9375,
+      "precision": 1.0,
+      "recall": 0.875,
+      "specificity": 1.0,
+      "fpr": 0.0,
+      "f1": 0.9333333333333333,
+      "confusion": {
+        "tp": 7,
+        "tn": 8,
+        "fp": 0,
+        "fn": 1
+      },
+      "pump_fake_recall": 1.0,
+      "per_tag": {
+        "appointment": 1.0,
+        "authority": 1.0,
+        "bank": 1.0,
+        "card": 1.0,
+        "delivery": 1.0,
+        "giftcard": 1.0,
+        "impersonation": 1.0,
+        "legit": 1.0,
+        "personal": 1.0,
+        "pharmacy": 1.0,
+        "prize": 1.0,
+        "reservation": 1.0,
+        "service": 1.0,
+        "ssn": 1.0,
+        "tech_support": 0.0,
+        "vish": 0.875,
+        "work": 1.0
+      },
+      "failures": [
+        {
+          "expected": 1,
+          "pred": 0,
+          "conf": 0.926,
+          "tags": [
+            "tech_support",
+            "vish"
+          ],
+          "text": " | Your computer has a virus. This is Windows support. Grant remote access to remove it no"
+        }
+      ],
+      "available": true,
+      "gate_pass": true
+    }
+  },
+  "latency": {},
+  "ops": {
+    "by_channel": [
+      {
+        "channel": "phishing",
+        "total": 27124,
+        "threats": 13942
+      }
+    ],
+    "total": 27124,
+    "threats": 13942,
+    "action_dist": {},
+    "anomaly_dist": {},
+    "threats_24h": [
+      [
+        "2026-08-05 22:00:00",
+        2597
+      ],
+      [
+        "2026-08-05 23:00:00",
+        2425
+      ],
+      [
+        "2026-08-06 00:00:00",
+        999
+      ],
+      [
+        "2026-08-06 01:00:00",
+        8
+      ],
+      [
+        "2026-08-06 02:00:00",
+        518
+      ],
+      [
+        "2026-08-06 03:00:00",
+        1852
+      ],
+      [
+        "2026-08-06 04:00:00",
+        4724
+      ],
+      [
+        "2026-08-06 05:00:00",
+        819
+      ]
+    ]
+  }
+}

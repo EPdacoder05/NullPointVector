@@ -5,19 +5,109 @@
 <div class="topbar">
   <div>
     <h1>Connectors</h1>
-    <div class="desc">Link mail for live IDPS ingest. OAuth for Gmail/Microsoft; Yahoo uses your .env app password for pilot.</div>
+    <div class="desc">Add your mailboxes for live ingest. Sign in first, then save an app password or connect OAuth.</div>
   </div>
   <div class="topbar-actions">
+    {% if not user %}<a class="btn" href="/app/login">Sign in</a>{% endif %}
     <a class="btn secondary" href="/app/inbox">Inbox stream</a>
+    <a class="btn secondary" href="/app/quarantine">Quarantine</a>
   </div>
 </div>
 
 {% if request.query_params.get('ok') %}
-<div class="connect-note"><strong>Connected.</strong> Mail connector saved for this process — restart-safe store lands with encrypted DB next.</div>
+<div class="connect-note"><strong>Connected.</strong> OAuth token saved for this process. App passwords are Fernet-encrypted in Postgres under your account.</div>
 {% endif %}
 {% if request.query_params.get('err') %}
 <div class="auth-error" style="margin-bottom:16px;">Connector error: {{ request.query_params.get('err') }}</div>
 {% endif %}
+{% if request.query_params.get('req') %}
+<div class="connect-note"><strong>Request received.</strong> We logged your provider ask — modular fetcher can be added next.</div>
+{% endif %}
+
+<section class="card" style="margin-bottom:18px;">
+  <div class="hd"><h2>How secrets are stored</h2></div>
+  <div class="bd stack">
+    <p class="hint"><strong>Login password</strong>: salted <code>pbkdf2_sha256</code> hash — never reversible.</p>
+    <p class="hint"><strong>Mailbox app password</strong>: Fernet encrypt-at-rest (must decrypt for IMAP). Never logged.</p>
+  </div>
+</section>
+
+<section class="card" style="margin-bottom:18px;">
+  <div class="hd"><h2>Your saved mailboxes</h2>
+    <span class="kbd">{{ account_sub }}</span>
+  </div>
+  <div class="bd">
+    {% if mailboxes %}
+    <ul class="evidence-list">
+      {% for m in mailboxes %}
+      <li><code>{{ m.provider }}</code> — {{ m.account }} · {{ m.mode }} · updated {{ m.updated_at or '—' }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="hint">None yet — add an app password below. Ingest uses these when <code>.env</code> IMAP vars are empty.</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card" style="margin-bottom:18px;">
+  <div class="hd"><h2 id="ap-title">IMAP app password</h2></div>
+  <div class="bd stack">
+    <ol class="steps-list" id="ap-steps">
+      <li>Open your provider’s security settings and create an <strong>App Password</strong> (not your normal login password).</li>
+      <li>Name it NullPoint. Copy it once.</li>
+      <li>Paste mailbox + app password below. Stored encrypted under your JWT subject.</li>
+    </ol>
+    <form id="app-password-form" class="stack" method="post" action="/app/connectors/app-password">
+      <label class="field">
+        <span class="kbd">Provider</span>
+        <select name="provider" id="ap-provider" required>
+          <option value="yahoo">Yahoo</option>
+          <option value="gmail">Gmail (IMAP / app password)</option>
+          <option value="microsoft">Microsoft / Outlook IMAP</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="kbd">Mailbox email</span>
+        <input type="email" name="account_email" id="ap-email" required placeholder="you@example.com" autocomplete="username">
+      </label>
+      <label class="field">
+        <span class="kbd">App password</span>
+        <input type="password" name="app_password" required minlength="8" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="new-password">
+      </label>
+      {% if user %}
+      <button type="submit" class="btn">Save encrypted credentials</button>
+      {% else %}
+      <a class="btn" href="/app/login?next=/app/connectors">Sign in to save credentials</a>
+      {% endif %}
+    </form>
+  </div>
+</section>
+
+<section class="card" style="margin-bottom:18px;">
+  <div class="hd"><h2>Request another email provider</h2></div>
+  <div class="bd stack">
+    <p class="hint">Need Fastmail, Proton, iCloud IMAP, etc.? Send a request — we add a modular fetcher in the email-provider directory.</p>
+    <form id="provider-request-form" class="stack" method="post" action="/app/connectors/request-provider">
+      <label class="field">
+        <span class="kbd">Provider name</span>
+        <input type="text" name="provider_name" required maxlength="80" placeholder="e.g. Fastmail">
+      </label>
+      <label class="field">
+        <span class="kbd">IMAP host (if known)</span>
+        <input type="text" name="imap_host" maxlength="120" placeholder="imap.example.com">
+      </label>
+      <label class="field">
+        <span class="kbd">Notes</span>
+        <input type="text" name="notes" maxlength="240" placeholder="Why you need it / account type">
+      </label>
+      {% if user %}
+      <button type="submit" class="btn secondary">Submit request</button>
+      {% else %}
+      <a class="btn secondary" href="/app/login?next=/app/connectors">Sign in to submit</a>
+      {% endif %}
+    </form>
+  </div>
+</section>
 
 <div class="identity-grid">
   {% for c in connectors %}
@@ -29,13 +119,31 @@
       <div class="inbox-sub">{{ c.note }}</div>
       {% if c.account %}<div class="kbd">{{ c.account }}</div>{% endif %}
       <div class="inbox-actions">
-        {% if c.mode == 'oauth2' and c.ready %}
-        <a class="btn" href="/app/connectors/oauth/{{ c.provider }}">Connect OAuth</a>
+        {% if c.provider == 'gmail' %}
+        <a class="oauth-btn oauth-google" href="/app/connectors/oauth/gmail"
+           style="width:auto; padding:10px 14px; font-size:13px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          {% if c.oauth_ready %}Connect Gmail{% else %}Connect Gmail (setup){% endif %}
+        </a>
+        {% elif c.provider == 'microsoft' %}
+        <a class="oauth-btn oauth-microsoft" href="/app/connectors/oauth/microsoft"
+           style="width:auto; padding:10px 14px; font-size:13px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/>
+            <path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/>
+          </svg>
+          {% if c.oauth_ready %}Connect Microsoft{% else %}Connect Microsoft (setup){% endif %}
+        </a>
         {% endif %}
         {% if c.ready %}
-        <button type="button" class="btn secondary conn-env" data-provider="{{ c.provider }}">Use .env credentials</button>
-        {% else %}
-        <span class="hint">Add OAuth client IDs or app passwords to .env</span>
+        <button type="button" class="btn secondary conn-env" data-provider="{{ c.provider }}">Use process .env (pilot)</button>
+        {% elif c.provider == 'yahoo' %}
+        <span class="hint">Use the app-password form above for Yahoo.</span>
         {% endif %}
       </div>
     </div>
@@ -44,8 +152,7 @@
 </div>
 
 <div class="connect-note" style="margin-top:18px;">
-  <strong>CallKit reality:</strong> Apple does not give third-party apps a full inbound call history feed.
-  Pilot path = Call Directory block/label sync + <code>POST /api/v1/vish/screen</code> from the app when you have a caller ID / voicemail transcript.
-  Use <a href="/app/calls">Call log</a> to revise ML accuracy from every screen.
+  <strong>Feedback loop:</strong> Mark Safe / Block → Postgres + feedback.jsonl + ephemeral Δw → nightly gated retrain.
+  <strong>Block</strong> tries IMAP junk when the row has an ingest <code>imap_id</code>.
 </div>
 {% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Checkout — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Secure checkout</h1>
+    <div class="desc">Card details are handled by Stripe-hosted checkout. NullPoint never stores raw card numbers.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/pricing">Back to pricing</a>
+  </div>
+</div>
+
+{% if not plan %}
+<div class="card"><div class="bd">Unknown plan. <a href="/app/pricing">Pick a plan</a>.</div></div>
+{% else %}
+<div class="checkout-grid">
+  <section class="card">
+    <div class="hd"><h2>Account</h2></div>
+    <div class="bd">
+      <form id="checkout-form" method="post" action="/app/checkout" class="checkout-form">
+        <input type="hidden" name="plan" value="{{ plan.slug }}" />
+        <input type="hidden" name="interval" value="{{ interval }}" />
+        <input type="hidden" name="trial" value="{{ '1' if want_trial else '0' }}" />
+        <input type="hidden" name="fingerprint" id="fp-field" value="" />
+        {% if not user %}
+        <p class="hint">Sign in to continue — guest checkout is off. OAuth returns here after account link.</p>
+        {% set next_path = '/app/checkout?plan=' ~ plan.slug ~ '&interval=' ~ interval ~ ('&trial=1' if want_trial else '') %}
+        {% set loop_id = 'checkout' %}
+        {% include "_oauth_buttons.html" %}
+        <p class="hint" style="margin-bottom:12px">Or <a href="/app/login?next={{ next_path|urlencode }}">sign in with password</a>, then return to pay.</p>
+        {% else %}
+        <p class="hint">Signed in as <strong>{{ user.sub }}</strong></p>
+        {% endif %}
+        <label class="field">
+          <span>Email</span>
+          <input type="email" name="email" required placeholder="you@example.com"
+                 value="{{ user.sub if user and '@' in (user.sub or '') else '' }}" />
+        </label>
+        {% if plan.slug == 'enterprise' %}
+        <p class="hint">Prefer a sales conversation?
+          <a href="mailto:sales@nullpoint.security?subject=NullPoint%20Enterprise">Contact sales</a>
+          — or continue for self-serve {{ interval }} at the listed rate.
+        </p>
+        {% endif %}
+        {% if want_trial %}
+        <p class="hint">Pro 7-day trial is abuse-gated (device fingerprint + IP velocity). Essential has no trial.</p>
+        {% endif %}
+        <button type="submit" class="btn" id="checkout-submit" {% if not user %}disabled title="Sign in first"{% endif %}>
+          {% if not user %}Sign in to continue
+          {% elif billing_mock %}Continue
+          {% else %}Continue to payment{% endif %}
+        </button>
+        {% if billing_mock %}
+        <p class="hint" style="margin-top:10px">Local simulation until Stripe keys are set (<code>BILLING_MOCK=false</code>).</p>
+        {% endif %}
+      </form>
+    </div>
+  </section>
+  <aside class="card">
+    <div class="hd"><h2>Order</h2></div>
+    <div class="bd">
+      <div class="order-line"><span>{{ plan.name }}</span><span>{{ interval }}</span></div>
+      <div class="order-line"><span>Tagline</span><span class="hint">{{ plan.tagline }}</span></div>
+      <div class="order-total">
+        <span>Total</span>
+        <strong>${{ '%.2f'|format(amount_cents / 100) }}{% if want_trial %} <span class="hint">(trial)</span>{% endif %}</strong>
+      </div>
+      <p class="hint">Price is set on the server from the plan catalog. Client-supplied amounts are rejected.</p>
+    </div>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}

@@ -33,6 +33,7 @@ except Exception:  # pragma: no cover
 # --------------------------------------------------------------------- config
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "CHANGE_ME_IN_PRODUCTION")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+# 0 or negative → access tokens omit `exp` (never expire until JWT_SECRET_KEY rotates).
 ACCESS_TTL_MIN = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TTL_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
@@ -64,16 +65,20 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 # --------------------------------------------------------------------- tokens
-def _encode(data: dict, expires: timedelta, token_type: str) -> str:
+def _encode(data: dict, expires: Optional[timedelta], token_type: str) -> str:
     if jwt is None:
         raise RuntimeError('python-jose not installed: pip install "python-jose[cryptography]"')
     now = datetime.now(timezone.utc)
-    payload = {**data, "iat": now, "exp": now + expires, "type": token_type}
+    payload = {**data, "iat": now, "type": token_type}
+    if expires is not None and expires.total_seconds() > 0:
+        payload["exp"] = now + expires
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
 def create_access_token(data: dict, expires: Optional[timedelta] = None) -> str:
-    return _encode(data, expires or timedelta(minutes=ACCESS_TTL_MIN), "access")
+    if expires is None:
+        expires = None if ACCESS_TTL_MIN <= 0 else timedelta(minutes=ACCESS_TTL_MIN)
+    return _encode(data, expires, "access")
 
 
 def create_refresh_token(data: dict) -> str:
@@ -83,7 +88,9 @@ def create_refresh_token(data: dict) -> str:
     payload = {"sub": data.get("sub")}
     if data.get("role"):
         payload["role"] = data["role"]
-    return _encode(payload, timedelta(days=REFRESH_TTL_DAYS), "refresh")
+    # Refresh still expires; revoke access by rotating JWT_SECRET_KEY.
+    refresh_exp = None if REFRESH_TTL_DAYS <= 0 else timedelta(days=REFRESH_TTL_DAYS)
+    return _encode(payload, refresh_exp, "refresh")
 
 
 def verify_token(token: str, expected_type: str = "access") -> Optional[Dict]:
@@ -156,6 +163,9 @@ def _env_users() -> Dict[str, Dict]:
         users[user] = {"password_hash": pw_hash, "role": role}
 
     _add("API_ADMIN_USER", "API_ADMIN_PASSWORD", "admin", "admin", "changeme")
+    # Pilot device app (NullPoint Guard) — simple defaults so TestFlight needs no typing.
+    # Override via API_PILOT_* in .env; rotate before any public/shared deploy.
+    _add("API_PILOT_USER", "API_PILOT_PASSWORD", "analyst", "noadmin", "thepasswordispoo")
     if os.getenv("API_CUSTOMER_USER") or os.getenv("API_CUSTOMER_PASSWORD"):
         _add("API_CUSTOMER_USER", "API_CUSTOMER_PASSWORD", "customer", "customer", "changeme")
     if os.getenv("API_ENTERPRISE_USER") or os.getenv("API_ENTERPRISE_PASSWORD"):

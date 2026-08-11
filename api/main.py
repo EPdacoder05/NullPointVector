@@ -108,7 +108,7 @@ except Exception as _ui_err:  # pragma: no cover
 # are same-origin (no CORS hit), but direct API access / cloud subdomains need
 # this. Configure via API_ALLOWED_ORIGINS (comma-separated) for ngrok/cloud.
 import os as _os
-_default_origins = "http://localhost:8050,http://127.0.0.1:8050,http://localhost:8088"
+_default_origins = "http://localhost:8088,http://127.0.0.1:8088"
 _allowed_origins = [o.strip() for o in
                     _os.getenv("API_ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
 app.add_middleware(
@@ -320,13 +320,41 @@ async def screen_call_endpoint(
     except Exception:
         pass
     if result.is_threat:
+        meta = {
+            "risk_score": result.risk,
+            "action": result.action.value,
+            "label": 1,
+            "channel": "vishing",
+            "verdict": result.verdict,
+            "paths": result.paths,
+            "via": "callkit",
+        }
         background_tasks.add_task(
             persist_threat_durable,
             content=request.transcript or f"[call from {request.caller_id}]",
             threat_type="vishing", sender=request.caller_id or "unknown",
-            metadata={"risk_score": result.risk, "action": result.action.value,
-                      "label": 1, "channel": "vishing", "verdict": result.verdict,
-                      "paths": result.paths, "via": "callkit"})
+            metadata=meta,
+        )
+        # Fan-out: callback TFNs / spoken numbers in the transcript join the directory.
+        try:
+            from common.vish.phones import extract_e164_numbers
+            for cb in extract_e164_numbers(
+                request.transcript, exclude=[request.caller_id]
+            ):
+                background_tasks.add_task(
+                    persist_threat_durable,
+                    content=f"[callback from transcript of {request.caller_id}] {request.transcript or ''}"[:2000],
+                    threat_type="vishing",
+                    sender=cb,
+                    metadata={
+                        **meta,
+                        "via": "transcript-callback",
+                        "parent_caller_id": request.caller_id,
+                        "action": "block",
+                    },
+                )
+        except Exception:
+            pass
     return result.to_dict()
 
 
@@ -338,6 +366,18 @@ async def vish_directory_endpoint(
     """Call Directory block/label sync payload for iOS CallKit extension."""
     updated_at, block, label = get_vish_directory()
     return {"updatedAt": updated_at, "block": block, "label": label}
+
+
+@app.get("/api/v1/vish/screens")
+async def vish_screens_endpoint(
+    limit: int = 40,
+    user: Dict = Depends(require_role("analyst")),
+    _rl: None = Depends(rate_limit()),
+):
+    """Recent hybrid screen events for Guard activity feed."""
+    from common.call_events import list_screens
+    n = max(1, min(int(limit or 40), 80))
+    return {"events": list_screens(n)}
 
 
 class IdentityEnrichRequest(BaseModel):
@@ -478,6 +518,34 @@ async def retrain_model(background_tasks: BackgroundTasks,
 
     background_tasks.add_task(_train)
     return {"started": True, "by": user["user_id"], "timestamp": datetime.now().isoformat()}
+
+
+@app.post("/api/v1/billing/webhook")
+async def billing_webhook(request: Request):
+    """Stripe (or mock) webhook — signature required. Vendor HMAC, not CSRF."""
+    from common.billing import verify_stripe_webhook, append_audit_event, use_mock
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature") or request.headers.get("Stripe-Signature") or ""
+    verified = verify_stripe_webhook(payload, sig)
+    if not verified.get("ok"):
+        raise HTTPException(status_code=400, detail=verified.get("error") or "bad_webhook")
+    event = verified.get("event") or {}
+    etype = event.get("type") if isinstance(event, dict) else getattr(event, "type", "unknown")
+    try:
+        from Autobot.VectorDB.NullPoint_Vector import connect_db
+        conn = connect_db()
+        if conn:
+            append_audit_event(
+                conn,
+                stream_id=f"webhook:{(etype or 'evt')[:48]}",
+                event_type="webhook_received",
+                payload={"type": etype, "mock": bool(verified.get("mock"))},
+                provider="mock" if use_mock() else "stripe",
+            )
+            conn.close()
+    except Exception as e:
+        logger.warning("webhook audit failed: %s", e)
+    return {"ok": True, "type": etype}
 
 
 if __name__ == "__main__":

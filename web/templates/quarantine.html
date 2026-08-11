@@ -8,7 +8,8 @@
     <div class="desc">The one manual touchpoint. Grade what the engine held back — every verdict feeds the next gated retrain.</div>
   </div>
   <div class="topbar-actions">
-    <a class="btn secondary" href="/app/dashboard">Back to dashboard</a>
+    <a class="btn secondary" href="/app/benchmarks">Benchmarks</a>
+    <a class="btn secondary" href="/app/dashboard">Dashboard</a>
   </div>
 </div>
 
@@ -37,21 +38,69 @@
     {% if rows %}
     <div class="inbox-list" id="quarantine-list">
       {% for r in rows %}
-      <div class="inbox-row" data-mid="{{ r.id }}">
+      <div class="inbox-row" data-mid="{{ r.id }}" data-sender="{{ r.sender }}">
         <span class="inbox-avatar {{ 'threat' if r.band == 'quarantined' else '' }}">{{ (r.sender or '?')[0]|upper }}</span>
         <div class="inbox-main">
-          <div class="inbox-title">{{ r.sender }}
+          <div class="inbox-title">
+            <a class="msg-link" href="/app/message/{{ r.id }}">{{ r.sender }}</a>
             <span class="badge tone-{{ 'danger' if r.band == 'quarantined' else ('warn' if r.band == 'potential' else 'safe') }}">
               {{ 'Quarantined' if r.band == 'quarantined' else ('Potential threat' if r.band == 'potential' else 'Unsure') }}
             </span>
           </div>
-          <div class="inbox-sub">{{ r.channel }} · {{ (r.timestamp or '—')[:16] }} · model confidence {{ (r.confidence * 100)|round|int }}%</div>
-          {% if r.subject %}<div class="hint">{{ r.subject[:160] }}</div>{% endif %}
+          <div class="inbox-sub">{{ r.channel }} · {{ r.ts_local or (r.timestamp or '—')[:16] }} · model confidence {{ (r.confidence * 100)|round|int }}%</div>
+          {% if r.subject %}<div class="hint"><a class="msg-link" href="/app/message/{{ r.id }}">{{ r.subject[:160] }}</a></div>{% endif %}
+          {% if r.body %}<div class="hint msg-preview">{{ r.body[:220] }}{% if r.body|length > 220 %}…{% endif %}</div>{% endif %}
         </div>
-        <div class="inbox-actions">
-          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
-          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
-          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+        {% if r.tags or r.reason_codes %}
+        <div class="tag-band">
+          <div class="reason-tags">
+            {% if r.tags %}
+            {% for t in r.tags[:5] %}
+            <span class="reason-tag tag-cat" title="{{ t.code }}">{{ t.label }}</span>
+            {% endfor %}
+            {% endif %}
+            {% if r.reason_codes %}
+            {% for t in r.reason_codes[:6] %}
+            <span class="reason-tag" title="{{ t.evidence or t.code }}">{{ t.label }}</span>
+            {% endfor %}
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {% if r.explain %}
+        <div class="inbox-extra">
+          <details class="explain-panel">
+            <summary>Why (plain-English math)</summary>
+            <p><strong>Text:</strong> {{ r.explain.text }}</p>
+            <p><strong>Numbers:</strong> confidence {{ r.explain.numbers.model_confidence_pct }}/100 ·
+              {{ r.explain.numbers.formula }}
+              {% if r.explain.numbers.feature_line %} · {{ r.explain.numbers.feature_line }}{% endif %}
+            </p>
+            <p><strong>Connect:</strong> {{ r.explain.connect }}</p>
+            {% if r.reason_codes %}
+            <ul class="evidence-list">
+              {% for t in r.reason_codes %}
+              <li><code>{{ t.code }}</code> — {{ t.evidence or t.label }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </details>
+        </div>
+        {% endif %}
+        <div class="inbox-foot">
+          <div class="inbox-actions">
+            <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
+            <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
+            <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+          </div>
+          <button type="button" class="btn-report js-report" data-channel="email"
+            data-mid="{{ r.id }}" data-sender="{{ r.sender }}"
+            title="Tell us why this feels wrong — helps protect others">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
+            </svg>
+            Report this
+          </button>
         </div>
       </div>
       {% endfor %}
@@ -63,8 +112,10 @@
 </section>
 
 <div class="connect-note">
-  <strong>How grading works:</strong> Block &amp; Report and Mark as safe write a durable label to the
-  feedback buffer; the trainer folds them into the next retrain, which must pass the golden gate
-  before promotion. A single grade can never silently change the live model.
+  <strong>How grading works:</strong> Block &amp; Report / Mark as safe write the feedback buffer and run one
+  in-memory <code>partial_fit</code> step. Needs review never touches weights.
+  Nightly full retrain must pass the golden gate before the on-disk champion changes.
+  Block also attempts IMAP junk/spam move when the message has an ingest <code>imap_id</code> (fail-open).
+  <strong>Report this</strong> stays bottom-right — separate from triage. Category + sentiment tags are rules for scanning — not a courtroom verdict.
 </div>
 {% endblock %}

@@ -1,0 +1,579 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		03AC7421352CD0C176DE05C0 /* MessageFilterExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFB8541005E04AB6F31773BC /* MessageFilterExtension.swift */; };
+		404820A3A4D50DE98A5DC945 /* PilotSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE24C42B43997836ED0247B /* PilotSecrets.swift */; };
+		69A108D8636902142E41CB39 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */; };
+		739BD6002E5582CC7602F699 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A99B2E988E45EAF235408A71 /* App.swift */; };
+		77F1AEEC2B9FFED25B8154A6 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D199DBC5088BFBA127A2EE4C /* APIService.swift */; };
+		7A58A96CE7FFDA293E7E2D31 /* NullPointDirectory.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E853ECCF21CF47726BDF134E /* NullPointDirectory.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		864D5357D3B9A34DEB8127B8 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */; };
+		86A37F4145E3293544CF2155 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D6882E7EBF7746502E3A183 /* Assets.xcassets */; };
+		87963FF25E85AC9FD4857E7B /* NullPointSMSFilter.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DCFC0CEF8ACFFA19027DF1A3 /* NullPointSMSFilter.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8B29B20DDCB40CB9920DE426 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0091FA6F430394F2753CDF74 /* KeychainTokenStore.swift */; };
+		A51302D0A90D4C572E6EE1AF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F79ACA6EE2C983761EAC239E /* LaunchScreen.storyboard */; };
+		C1E1A4ACD9CDFD674B26AF00 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */; };
+		CF566DBAE8501257D99D2A2C /* CallDirectoryHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A50BD389146306C37408055 /* CallDirectoryHandler.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B7B6637BC13E51428638D819 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BDED16D1EDE96CEBC0EA8682 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2FFF476DD9DB936D8E70BCFC;
+			remoteInfo = NullPointSMSFilter;
+		};
+		DB18DF5B1AA11FB4F9754E70 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BDED16D1EDE96CEBC0EA8682 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1897075856DEB14D0C320C36;
+			remoteInfo = NullPointDirectory;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2ED58F6AA14D0D7A7A469920 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7A58A96CE7FFDA293E7E2D31 /* NullPointDirectory.appex in Embed Foundation Extensions */,
+				87963FF25E85AC9FD4857E7B /* NullPointSMSFilter.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0091FA6F430394F2753CDF74 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		329F9280F26F51CDCE196115 /* NullPointGuard.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NullPointGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3FE24C42B43997836ED0247B /* PilotSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotSecrets.swift; sourceTree = "<group>"; };
+		6D6882E7EBF7746502E3A183 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7A50BD389146306C37408055 /* CallDirectoryHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallDirectoryHandler.swift; sourceTree = "<group>"; };
+		A99B2E988E45EAF235408A71 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		BFB8541005E04AB6F31773BC /* MessageFilterExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFilterExtension.swift; sourceTree = "<group>"; };
+		D199DBC5088BFBA127A2EE4C /* APIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
+		D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
+		DCFC0CEF8ACFFA19027DF1A3 /* NullPointSMSFilter.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NullPointSMSFilter.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E853ECCF21CF47726BDF134E /* NullPointDirectory.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NullPointDirectory.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F79ACA6EE2C983761EAC239E /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0069BEAF0BB214F19B560EB2 = {
+			isa = PBXGroup;
+			children = (
+				6D6882E7EBF7746502E3A183 /* Assets.xcassets */,
+				F79ACA6EE2C983761EAC239E /* LaunchScreen.storyboard */,
+				80281557187C16892478F509 /* Sources */,
+				72D7B4D78723EAB811759E40 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		68F261CFF7E52C09028FC648 /* NullPointGuard */ = {
+			isa = PBXGroup;
+			children = (
+				D199DBC5088BFBA127A2EE4C /* APIService.swift */,
+				A99B2E988E45EAF235408A71 /* App.swift */,
+				0091FA6F430394F2753CDF74 /* KeychainTokenStore.swift */,
+				3FE24C42B43997836ED0247B /* PilotSecrets.swift */,
+			);
+			path = NullPointGuard;
+			sourceTree = "<group>";
+		};
+		72D7B4D78723EAB811759E40 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E853ECCF21CF47726BDF134E /* NullPointDirectory.appex */,
+				329F9280F26F51CDCE196115 /* NullPointGuard.app */,
+				DCFC0CEF8ACFFA19027DF1A3 /* NullPointSMSFilter.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		80281557187C16892478F509 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				873BDCCC0103505BB8720511 /* NullPointDirectory */,
+				68F261CFF7E52C09028FC648 /* NullPointGuard */,
+				9A628E45D6B88DCA5A994D92 /* NullPointSMSFilter */,
+				FDF384082F4690538487849E /* Shared */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		873BDCCC0103505BB8720511 /* NullPointDirectory */ = {
+			isa = PBXGroup;
+			children = (
+				7A50BD389146306C37408055 /* CallDirectoryHandler.swift */,
+			);
+			path = NullPointDirectory;
+			sourceTree = "<group>";
+		};
+		9A628E45D6B88DCA5A994D92 /* NullPointSMSFilter */ = {
+			isa = PBXGroup;
+			children = (
+				BFB8541005E04AB6F31773BC /* MessageFilterExtension.swift */,
+			);
+			path = NullPointSMSFilter;
+			sourceTree = "<group>";
+		};
+		FDF384082F4690538487849E /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1897075856DEB14D0C320C36 /* NullPointDirectory */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ECD9283B0D6F48D84F6E0900 /* Build configuration list for PBXNativeTarget "NullPointDirectory" */;
+			buildPhases = (
+				A70675990504EA011E3E14E6 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NullPointDirectory;
+			packageProductDependencies = (
+			);
+			productName = NullPointDirectory;
+			productReference = E853ECCF21CF47726BDF134E /* NullPointDirectory.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		2FFF476DD9DB936D8E70BCFC /* NullPointSMSFilter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E48D9C25456EF258AF53F5BF /* Build configuration list for PBXNativeTarget "NullPointSMSFilter" */;
+			buildPhases = (
+				AFCAEA3EEC12427950D0B8DE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NullPointSMSFilter;
+			packageProductDependencies = (
+			);
+			productName = NullPointSMSFilter;
+			productReference = DCFC0CEF8ACFFA19027DF1A3 /* NullPointSMSFilter.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		31EDD608A06FCAEE46C79B7A /* NullPointGuard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 784396C24F4FE1CEEAC3AB14 /* Build configuration list for PBXNativeTarget "NullPointGuard" */;
+			buildPhases = (
+				881CD6471F916F62E3981A80 /* Sources */,
+				A0E4BE56EF786B048E63EEA3 /* Resources */,
+				2ED58F6AA14D0D7A7A469920 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				788F215493B2F5806BBC1739 /* PBXTargetDependency */,
+				373DC1DD546E1E8F34C007F3 /* PBXTargetDependency */,
+			);
+			name = NullPointGuard;
+			packageProductDependencies = (
+			);
+			productName = NullPointGuard;
+			productReference = 329F9280F26F51CDCE196115 /* NullPointGuard.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BDED16D1EDE96CEBC0EA8682 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					1897075856DEB14D0C320C36 = {
+						DevelopmentTeam = KX3P7M3B6L;
+						ProvisioningStyle = Automatic;
+					};
+					2FFF476DD9DB936D8E70BCFC = {
+						DevelopmentTeam = KX3P7M3B6L;
+						ProvisioningStyle = Automatic;
+					};
+					31EDD608A06FCAEE46C79B7A = {
+						DevelopmentTeam = KX3P7M3B6L;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = AA80AA959627E9474EE9008E /* Build configuration list for PBXProject "NullPointGuard" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 0069BEAF0BB214F19B560EB2;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 72D7B4D78723EAB811759E40 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				31EDD608A06FCAEE46C79B7A /* NullPointGuard */,
+				1897075856DEB14D0C320C36 /* NullPointDirectory */,
+				2FFF476DD9DB936D8E70BCFC /* NullPointSMSFilter */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A0E4BE56EF786B048E63EEA3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				86A37F4145E3293544CF2155 /* Assets.xcassets in Resources */,
+				A51302D0A90D4C572E6EE1AF /* LaunchScreen.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		881CD6471F916F62E3981A80 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				77F1AEEC2B9FFED25B8154A6 /* APIService.swift in Sources */,
+				739BD6002E5582CC7602F699 /* App.swift in Sources */,
+				C1E1A4ACD9CDFD674B26AF00 /* AppGroup.swift in Sources */,
+				8B29B20DDCB40CB9920DE426 /* KeychainTokenStore.swift in Sources */,
+				404820A3A4D50DE98A5DC945 /* PilotSecrets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70675990504EA011E3E14E6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				69A108D8636902142E41CB39 /* AppGroup.swift in Sources */,
+				CF566DBAE8501257D99D2A2C /* CallDirectoryHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AFCAEA3EEC12427950D0B8DE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				864D5357D3B9A34DEB8127B8 /* AppGroup.swift in Sources */,
+				03AC7421352CD0C176DE05C0 /* MessageFilterExtension.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		373DC1DD546E1E8F34C007F3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2FFF476DD9DB936D8E70BCFC /* NullPointSMSFilter */;
+			targetProxy = B7B6637BC13E51428638D819 /* PBXContainerItemProxy */;
+		};
+		788F215493B2F5806BBC1739 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1897075856DEB14D0C320C36 /* NullPointDirectory */;
+			targetProxy = DB18DF5B1AA11FB4F9754E70 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4EFEB8F212B923850D57F4D5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointGuard.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "NullPoint Guard";
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		53DDABDD643DB99C6B47CB04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointSMSFilter.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/NullPointSMSFilter-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard.smsfilter;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		56565FD15DF58B022B07C0CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				API_BASE_URL = "https://elliss-macbook-pro.tail199a91.ts.net";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 10;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = KX3P7M3B6L;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		64D3C8240BE3B88C1780FE59 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointSMSFilter.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/NullPointSMSFilter-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard.smsfilter;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		79C76AA510D292EA918F85B4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				API_BASE_URL = "https://elliss-macbook-pro.tail199a91.ts.net";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 10;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = KX3P7M3B6L;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		7E0FE18130C983916C6F534C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointDirectory.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/NullPointDirectory-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard.directory;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E9AAF2755116D5F824E6D9B6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointGuard.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "NullPoint Guard";
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F3910F9E017E39449A461CB8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointDirectory.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/NullPointDirectory-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard.directory;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		784396C24F4FE1CEEAC3AB14 /* Build configuration list for PBXNativeTarget "NullPointGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4EFEB8F212B923850D57F4D5 /* Debug */,
+				E9AAF2755116D5F824E6D9B6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AA80AA959627E9474EE9008E /* Build configuration list for PBXProject "NullPointGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79C76AA510D292EA918F85B4 /* Debug */,
+				56565FD15DF58B022B07C0CC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E48D9C25456EF258AF53F5BF /* Build configuration list for PBXNativeTarget "NullPointSMSFilter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64D3C8240BE3B88C1780FE59 /* Debug */,
+				53DDABDD643DB99C6B47CB04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		ECD9283B0D6F48D84F6E0900 /* Build configuration list for PBXNativeTarget "NullPointDirectory" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E0FE18130C983916C6F534C /* Debug */,
+				F3910F9E017E39449A461CB8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = BDED16D1EDE96CEBC0EA8682 /* Project object */;
+}
