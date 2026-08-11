@@ -16,6 +16,9 @@ import re
 from typing import Any, Optional
 
 from common.homograph import fold_confusables, scan as homograph_scan
+from common.mail_parse import sender_domain as _parse_sender_domain
+from common.ml.features import URL_SHORTENERS, SUSPICIOUS_TLDS
+from common import mood_lexicon as _mood
 
 REASON_CODES = {
     "URGENCY_FEAR": "Urgency / fear",
@@ -52,11 +55,7 @@ REASON_CODES = {
     "CAMPAIGN_MATCH": "Campaign match",
 }
 
-_ADVANCE_FEE = (
-    "pay a small fee", "processing fee", "unlock your funds", "claim your inheritance",
-    "pay to release", "transfer fee to receive", "anti-terrorism fee", "clearance fee",
-    "pay the fee to", "send $", "western union fee",
-)
+_ADVANCE_FEE = tuple(_mood.ADVANCE_FEE)
 _TOLL_FREE = re.compile(
     r"(?<!\d)(?:\+?1[\s\-.]?)?(?:800|888|877|866|855|844|833)[\s\-.]?\d{3}[\s\-.]?\d{4}\b"
 )
@@ -68,20 +67,19 @@ _RISKY_ATTACH = re.compile(
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.I)
 _DOMAIN_RE = re.compile(r"https?://([^/\s:]+)", re.I)
 _EMAIL_RE = re.compile(r"[\w.+-]+@([\w.-]+\.[A-Za-z]{2,})")
-_URGENT = ["urgent", "immediately", "expires", "suspend", "locked", "verify now",
-           "act now", "final notice", "within 24", "deactivat", "last warning", "hacked"]
-_FEAR = ["arrest", "lawsuit", "legal action", "warrant", "fraud", "compromised", "unauthorized"]
-_HAPPY = ["congrats", "congratulations", "you won", "prize", "gift card", "free reward", "selected"]
-_IMPERSONATE = ["paypal", "microsoft", "apple", "amazon", "irs", "bank", "netflix", "google",
-                "chase", "fedex", "ups", "usps", "docusign", "quillbot", "nelnet"]
+_URGENT = list(_mood.URGENT)
+_FEAR = list(_mood.FEAR)
+_HAPPY = list(_mood.HAPPY)
+_IMPERSONATE = list(_mood.IMPERSONATE)
 # Short tokens need word boundaries — "pin" must not match "epinaman" / "iPhone".
 _SENSITIVE = ["password", "ssn", "gift card", "wire transfer", "otp", "pin", "cvv", "routing"]
 _SENSITIVE_WORD = frozenset({"otp", "pin", "cvv", "ssn"})
-_RELATIONSHIP = ["nude", "nsfw", "lonely", "date me", "sweetheart", "honey"]
-_BLACKMAIL = ["blackmail", "expose you", "send this to", "pay or we", "embarrassing"]
+_RELATIONSHIP = list(_mood.RELATIONSHIP)
+_BLACKMAIL = list(_mood.BLACKMAIL)
 _CREDIT = ["credit score", "credit review", "your score", "soft pull", "loan offer",
            "unexpected expenses", "protect.your", "creditscore", "yourscore"]
-_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "cutt.ly", "rebrand.ly")
+_SHORTENERS = tuple(sorted(URL_SHORTENERS))
+_BAD_TLDS = tuple(f".{t}" if not t.startswith(".") else t for t in sorted(SUSPICIOUS_TLDS))
 
 _VISH_PACK_CACHE: Optional[dict[str, str]] = None  # last10 digits → campaign_id
 
@@ -138,7 +136,7 @@ def _is_shortener_host(host: str) -> bool:
     if h in _SHORTENERS:
         return True
     return any(h == s or h.endswith("." + s) for s in _SHORTENERS)
-_BAD_TLDS = (".ru", ".tk", ".top", ".xyz", ".zip", ".click", ".link", ".gq", ".cf", ".ga", ".ml")
+
 _RELAY_HINTS = ("privaterelay.appleid.com", "reply.github.com", "bounces.", "mailer-daemon",
                 "protect.your", "yourscoreandmore", ".click", "temp-mail")
 
@@ -259,8 +257,8 @@ def analyze_findings(channel: str, content: str, sender: str = "",
             break
 
     domains = [d.lower() for d in _DOMAIN_RE.findall(content)]
-    sender_dom = ""
-    if "@" in sender:
+    sender_dom = _parse_sender_domain(sender)
+    if not sender_dom and "@" in sender:
         sender_dom = sender.split("@")[-1].strip(">;'\" ").lower()
     try:
         from common.esp_domains import is_esp_redirect_host, link_aligned_with_sender

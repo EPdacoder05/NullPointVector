@@ -14,6 +14,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from common.mail_parse import sender_domain as _sender_domain
+
 logger = logging.getLogger("user_reports")
 
 # Plain English → internal codes (UI never shows these)
@@ -29,11 +31,6 @@ REASON_MAP = {
 FLEET_REVIEW_THRESHOLD = 3
 FLEET_AUTO_THRESHOLD = 8
 FLEET_CONFIDENCE_CAP = 0.75
-
-
-def _sender_domain(sender: str) -> str:
-    m = re.search(r"@([A-Za-z0-9.\-]+)", sender or "")
-    return (m.group(1) if m else "").lower().rstrip(".")
 
 
 def ensure_user_reports_table(conn) -> None:

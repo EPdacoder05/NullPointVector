@@ -14,6 +14,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from common.safe_domains import is_known_good_sender, sender_auth_verdict
+from common.mail_parse import sender_domain as _sender_domain
 
 _HARD_MALICE = (
     "wire transfer", "gift card", "password reset", "verify your password",
@@ -81,11 +82,6 @@ def _text_blob(email_data: dict) -> str:
 
 def _sender(email_data: dict) -> str:
     return str(email_data.get("from") or email_data.get("sender") or "")
-
-
-def _sender_domain(sender: str) -> str:
-    m = re.search(r"@([A-Za-z0-9.\-]+)", sender or "")
-    return (m.group(1) if m else "").lower().rstrip(".")
 
 
 def _urls_and_domains(text: str, sender: str) -> set[str]:

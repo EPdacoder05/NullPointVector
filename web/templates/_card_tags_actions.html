@@ -1,0 +1,35 @@
+{# Shared tag band + triage/report footer. Expects: mid, sender, channel, tags, reason_codes,
+   max_tags (default 5), max_reasons (default 6), show_actions (default true) #}
+{% set _tags = tags or [] %}
+{% set _reasons = reason_codes or [] %}
+{% set _mt = max_tags if max_tags is defined else 5 %}
+{% set _mr = max_reasons if max_reasons is defined else 6 %}
+{% if _tags or _reasons %}
+<div class="tag-band">
+  <div class="reason-tags">
+    {% for t in _tags[:_mt] %}
+    <span class="reason-tag tag-cat" title="{{ t.code }}">{{ t.label }}</span>
+    {% endfor %}
+    {% for t in _reasons[:_mr] %}
+    <span class="reason-tag" title="{{ t.evidence or t.code }}">{{ t.label }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% if show_actions is not defined or show_actions %}
+<div class="inbox-foot">
+  <div class="inbox-actions">
+    <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
+    <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
+    <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+  </div>
+  <button type="button" class="btn-report js-report" data-channel="{{ channel or 'email' }}"
+    data-mid="{{ mid }}" data-sender="{{ sender }}"
+    title="Tell us why this feels wrong — helps protect others">
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
+    </svg>
+    Report this
+  </button>
+</div>
+{% endif %}

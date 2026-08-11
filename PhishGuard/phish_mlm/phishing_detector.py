@@ -28,29 +28,14 @@ MODEL_PATH = MODEL_DIR / 'phishing_sgd_model.pkl'
 FEEDBACK_PATH = Path(__file__).parent / 'data' / 'feedback.jsonl'
 
 # ---------------------------------------------------------------------------
-# URL / Text Heuristic Feature Constants
+# URL / Text Heuristic Feature Constants — single source: common.ml.features
 # ---------------------------------------------------------------------------
-_SUSPICIOUS_TLDS = {
-    'ru', 'cn', 'tk', 'xyz', 'ml', 'click', 'work', 'pw', 'top',
-    'loan', 'win', 'racing', 'science', 'party', 'date', 'stream',
-    'gq', 'ga', 'cf', 'men', 'download', 'bid', 'zip', 'review',
-}
-_URL_SHORTENERS = {
-    'bit.ly', 'tinyurl.com', 't.co', 'ow.ly', 'goo.gl', 'rb.gy',
-    'cutt.ly', 'is.gd', 'shorte.st', 'adf.ly', 'bc.vc', 'linktr.ee',
-}
-_URGENCY_WORDS = {
-    'urgent', 'immediately', 'expire', 'expires', 'expiring', 'suspended',
-    'suspend', 'verify', 'verification', 'confirm', 'action', 'required',
-    'limited', 'hours', 'unusual', 'unauthorized', 'locked', 'blocked',
-    'deactivated', 'overdue', 'penalty', 'legal', 'final', 'notice',
-    'warning', 'alert', 'risk', 'compromised',
-}
-_CREDENTIAL_WORDS = {
-    'password', 'username', 'login', 'credential', 'ssn', 'social',
-    'security', 'number', 'bank', 'account', 'card', 'cvv', 'pin',
-    'billing', 'payment', 'identity',
-}
+from common.ml.features import (
+    SUSPICIOUS_TLDS as _SUSPICIOUS_TLDS,
+    URL_SHORTENERS as _URL_SHORTENERS,
+    URGENCY_WORDS as _URGENCY_WORDS,
+    CREDENTIAL_WORDS as _CREDENTIAL_WORDS,
+)
 _HOMOGLYPH_MAP = str.maketrans('0123456789', 'oizeasgtbq')
 
 

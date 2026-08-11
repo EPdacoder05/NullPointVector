@@ -1,14 +1,13 @@
 """Threat mood taxonomy + spam-vs-malice tags for Signal Deck.
 
-Mood: Happy lure, Fear/urgency, Impersonation, Relationship/NSFW, Blackmail,
-Social engineering — plus coarse sentiment and spam/malice depth.
-
-Rules/lexicon — not a second hot-path LLM. Multiple tags allowed.
+Mood lexicon lives in common.mood_lexicon — not a second hot-path LLM.
 """
 from __future__ import annotations
 
 import re
 from typing import Dict, List
+
+from common import mood_lexicon as _mood
 
 
 _POS = (
@@ -20,24 +19,12 @@ _NEG = (
     "urgent", "immediately", "act now", "final notice", "legal action",
     "arrest", "warrant", "compromised", "unauthorized", "hacked",
 )
-_HAPPY = ("congrats", "congratulations", "you won", "prize", "gift card", "free reward", "selected")
-_FEAR = ("urgent", "immediately", "expires", "suspend", "locked", "verify now",
-         "act now", "final notice", "arrest", "lawsuit", "warrant", "hacked")
-_IMPERSONATE = ("paypal", "microsoft", "apple", "amazon", "irs", "bank", "netflix",
-                "google", "chase", "fedex", "ups", "chime", "slack")
-_RELATIONSHIP = ("nude", "nsfw", "lonely", "date me", "sweetheart", "honey", "sexy")
-_BLACKMAIL = ("blackmail", "expose you", "send this to", "pay or we", "embarrassing")
-_SE = ("wire transfer", "gift card", "verify your account", "click here", "confirm your identity")
 _RECRUIT = ("applied", "role", "hiring", "interview", "twic", "clearance", "soc analyst",
             "job id", "duration:", "recruiter", "cloud performance")
 _SPAM = ("unsubscribe", "opt out", "opt-out", "manage preferences", "view in browser",
          "newsletter", "% off", "shop now", "you are receiving this")
 _MALICE_MONEY = ("wire transfer", "gift card", "cash app", "zelle", "venmo me",
                  "routing number", "send bitcoin", "crypto wallet", "seed phrase")
-_ADVANCE_FEE = (
-    "pay a small fee", "processing fee", "unlock your funds", "claim your inheritance",
-    "pay to release", "clearance fee", "western union fee",
-)
 _MALICE_PII = ("ssn", "social security", "date of birth", "mother's maiden",
                "password reset", "verify your password", "full ssn", "drivers license")
 _MERGE_FRAUD = ("[[candidateemail]]", "{{candidate", "address on file is .")
@@ -61,22 +48,21 @@ def categorize_message(*, subject: str = "", body: str = "", sender: str = "") -
     if "bcc" in text or "hello all" in text:
         add("BLAST", "Mass / BCC blast")
 
-    if any(w in text for w in _HAPPY):
+    if any(w in text for w in _mood.HAPPY):
         add("HAPPY_LURE", "Happy / prize")
-    if any(w in text for w in _FEAR):
+    if any(w in text for w in _mood.URGENT) or any(w in text for w in _mood.FEAR):
         add("FEAR_URGENCY", "Fear / urgency")
-    if any(w in text for w in _IMPERSONATE) and any(
+    if any(w in text for w in _mood.IMPERSONATE) and any(
             w in text for w in ("verify", "locked", "suspend", "unusual", "confirm")):
         add("IMPERSONATION", "Brand spoof")
-    if any(w in text for w in _RELATIONSHIP):
+    if any(w in text for w in _mood.RELATIONSHIP):
         add("RELATIONSHIP_NSFW", "Romance / NSFW")
-    if any(w in text for w in _BLACKMAIL):
+    if any(w in text for w in _mood.BLACKMAIL):
         add("BLACKMAIL", "Blackmail")
-    if any(w in text for w in _SE) or len([c for c in tags if c["code"] in (
+    if any(w in text for w in _mood.SOCIAL_ENG) or len([c for c in tags if c["code"] in (
             "HAPPY_LURE", "FEAR_URGENCY", "IMPERSONATION", "RELATIONSHIP_NSFW", "BLACKMAIL")]) >= 2:
         add("SOCIAL_ENG", "Social eng")
 
-    # Spam vs malice depth (can stack with mood)
     spamish = any(w in text for w in _SPAM)
     money = any(w in text for w in _MALICE_MONEY)
     pii = any(w in text for w in _MALICE_PII)
@@ -84,7 +70,7 @@ def categorize_message(*, subject: str = "", body: str = "", sender: str = "") -
         add("SPAM_LIST", "Spam list")
     if money:
         add("MALICE_MONEY", "Money ask")
-    if any(w in text for w in _ADVANCE_FEE):
+    if any(w in text for w in _mood.ADVANCE_FEE):
         add("ADVANCE_FEE", "Advance fee")
     if pii:
         add("MALICE_PII", "PII / creds ask")

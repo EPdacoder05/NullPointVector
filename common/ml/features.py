@@ -40,11 +40,12 @@ THREAT_AUTHORITY_WORDS = {
 }
 URL_SHORTENERS = {
     "bit.ly", "tinyurl.com", "t.co", "ow.ly", "goo.gl", "rb.gy", "cutt.ly",
-    "is.gd", "shorte.st", "adf.ly", "bc.vc", "linktr.ee", "tiny.cc",
+    "is.gd", "shorte.st", "adf.ly", "bc.vc", "linktr.ee", "tiny.cc", "rebrand.ly",
 }
 SUSPICIOUS_TLDS = {
     "ru", "cn", "tk", "xyz", "ml", "click", "work", "pw", "top", "loan", "win",
     "zip", "gq", "ga", "cf", "men", "download", "bid", "review", "country",
+    "racing", "science", "party", "date", "stream", "link",
 }
 
 _URL_RE = re.compile(r'https?://[^\s<>"\']+', re.IGNORECASE)

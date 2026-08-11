@@ -37,37 +37,14 @@
         {% if row.subject %}<div class="hint">{{ row.subject[:140] }}{% if row.subject|length > 140 %}…{% endif %}</div>{% endif %}
         {% if row.why %}<div class="hint why-line">{{ row.why[:220] }}{% if row.why|length > 220 %}…{% endif %}</div>{% endif %}
       </div>
-      {% if row.tags or row.reason_codes %}
-      <div class="tag-band">
-        <div class="reason-tags">
-          {% if row.tags %}
-          {% for t in row.tags[:5] %}
-          <span class="reason-tag tag-cat" title="{{ t.code }}">{{ t.label }}</span>
-          {% endfor %}
-          {% endif %}
-          {% if row.reason_codes %}
-          {% for t in row.reason_codes[:4] %}
-          <span class="reason-tag" title="{{ t.evidence or t.code }}">{{ t.label }}</span>
-          {% endfor %}
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
-      <div class="inbox-foot">
-        <div class="inbox-actions">
-          <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
-          <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
-          <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
-        </div>
-        <button type="button" class="btn-report js-report" data-channel="email"
-          data-mid="{{ row.id }}" data-sender="{{ row.sender }}"
-          title="Tell us why this feels wrong — helps protect others">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
-          </svg>
-          Report this
-        </button>
-      </div>
+      {% set mid = row.id %}
+      {% set sender = row.sender %}
+      {% set channel = row.channel or 'email' %}
+      {% set tags = row.tags %}
+      {% set reason_codes = row.reason_codes %}
+      {% set max_tags = 5 %}
+      {% set max_reasons = 4 %}
+      {% include "_card_tags_actions.html" %}
     </div>
     {% else %}
     <div class="feed-empty">No messages in stream yet. Connect mail OAuth later — for now paste-analyze seeds the feed.</div>

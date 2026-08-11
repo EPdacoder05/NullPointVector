@@ -1,109 +1,136 @@
-import imaplib
+"""Outlook / Microsoft IMAP fetcher — same auth-header path as Yahoo/Gmail."""
+from __future__ import annotations
+
 import email
-from email.header import decode_header
-import os
-from datetime import datetime
+import imaplib
 import logging
-from typing import List, Dict, Any
+import os
+from email.header import decode_header
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
+
+from .base_fetcher import EmailFetcher
 
 logger = logging.getLogger(__name__)
 
-class OutlookDoggy:
+
+class OutlookDoggy(EmailFetcher):
     def __init__(self):
+        super().__init__()
         load_dotenv()
-        self.email = os.getenv('OUTLOOK_EMAIL')
-        self.password = os.getenv('OUTLOOK_PASSWORD')
+        self.email = os.getenv("OUTLOOK_EMAIL") or os.getenv("MICROSOFT_EMAIL")
+        self.password = os.getenv("OUTLOOK_PASSWORD") or os.getenv("MICROSOFT_PASSWORD")
         self.imap_server = "outlook.office365.com"
         self.imap_port = 993
+        if not self.email or not self.password:
+            try:
+                from common.mailbox_store import list_for_user, get_secret
+                sub = (os.getenv("NULLPOINT_INGEST_SUB") or "anonymous").strip()
+                for row in list_for_user(sub):
+                    if (row.get("provider") or "").lower() not in ("microsoft", "outlook"):
+                        continue
+                    secret = get_secret(sub, row["provider"], row["account"])
+                    if secret:
+                        self.email = row["account"]
+                        self.password = secret
+                        break
+            except Exception as e:
+                logger.error("mailbox_store outlook fallback: %s", e)
 
-    def connect(self) -> imaplib.IMAP4_SSL:
-        """Connect to Outlook IMAP server."""
+    def connect(self) -> bool:
         try:
-            imap = imaplib.IMAP4_SSL(self.imap_server, self.imap_port)
-            imap.login(self.email, self.password)
-            return imap
-        except Exception as e:
-            logger.error(f"Failed to connect to Outlook: {e}")
-            raise
-
-    def fetch_emails(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Fetch emails from Outlook using IMAP."""
-        try:
-            imap = self.connect()
-            imap.select('INBOX')
-            
-            # Search for all emails
-            _, message_numbers = imap.search(None, 'ALL')
-            email_list = []
-            
-            # Get the most recent emails
-            for num in message_numbers[0].split()[-limit:]:
-                _, msg_data = imap.fetch(num, '(RFC822)')
-                email_body = msg_data[0][1]
-                email_message = email.message_from_bytes(email_body)
-                
-                # Extract email details
-                subject = self._decode_header(email_message['subject'])
-                from_addr = self._decode_header(email_message['from'])
-                date = email_message['date']
-                
-                # Get email body
-                body = ""
-                if email_message.is_multipart():
-                    for part in email_message.walk():
-                        if part.get_content_type() == "text/plain":
-                            body = part.get_payload(decode=True).decode()
-                            break
-                else:
-                    body = email_message.get_payload(decode=True).decode()
-                
-                email_list.append({
-                    'subject': subject,
-                    'from': from_addr,
-                    'date': date,
-                    'body': body,
-                    'raw_email': email_body
-                })
-            
-            imap.close()
-            imap.logout()
-            return email_list
-            
-        except Exception as e:
-            logger.error(f"Error fetching Outlook emails: {e}")
-            raise
-
-    def _decode_header(self, header: str) -> str:
-        """Decode email header."""
-        if header is None:
-            return ""
-        decoded_header = decode_header(header)
-        return " ".join(
-            text.decode(charset or 'utf-8') if isinstance(text, bytes) else text
-            for text, charset in decoded_header
-        )
-
-    def move_to_junk(self, message_id: str) -> bool:
-        """Move an email to Junk folder."""
-        try:
-            imap = self.connect()
-            imap.select('INBOX')
-            imap.copy(message_id, 'Junk')
-            imap.store(message_id, '+FLAGS', '\\Deleted')
-            imap.expunge()
-            imap.close()
-            imap.logout()
+            self.connection = imaplib.IMAP4_SSL(self.imap_server, self.imap_port)
+            self.connection.login(self.email, self.password)
             return True
         except Exception as e:
-            logger.error(f"Error moving email to Junk: {e}")
+            logger.error("Failed to connect to Outlook: %s", e)
+            self.connection = None
             return False
 
-if __name__ == "__main__":
-    # Test the fetcher
-    fetcher = OutlookDoggy()
-    emails = fetcher.fetch_emails(limit=5)
-    for email in emails:
-        print(f"From: {email['from']}")
-        print(f"Subject: {email['subject']}")
-        print("-" * 50) 
+    def disconnect(self):
+        if not self.connection:
+            return
+        try:
+            self.connection.close()
+        except Exception:
+            pass
+        try:
+            self.connection.logout()
+        except Exception:
+            pass
+        self.connection = None
+
+    def fetch_emails(self, folder: str = "INBOX", limit: int = 100) -> List[Dict[str, Any]]:
+        if not self.connection and not self.connect():
+            return []
+        try:
+            self.connection.select(folder)
+            _, message_numbers = self.connection.search(None, "ALL")
+            email_list: List[Dict[str, Any]] = []
+            for num in message_numbers[0].split()[-limit:]:
+                _, msg_data = self.connection.fetch(num, "(RFC822)")
+                email_body = msg_data[0][1]
+                email_message = email.message_from_bytes(email_body)
+                subject = self._decode_header(email_message["subject"])
+                from_addr = self._decode_header(email_message["from"])
+                date = email_message["date"]
+                body = self.extract_body_text(email_message) if hasattr(self, "extract_body_text") else ""
+                if not body:
+                    body = self._plain_body(email_message)
+                email_list.append({
+                    "subject": subject,
+                    "from": from_addr,
+                    "date": date,
+                    "body": body,
+                    "raw_email": email_body,
+                    "headers": self.extract_auth_headers(email_message),
+                    "imap_id": num.decode() if isinstance(num, bytes) else str(num),
+                })
+            return email_list
+        except Exception as e:
+            logger.error("Error fetching Outlook emails: %s", e)
+            return []
+
+    def move_to_junk(self, email_id: str) -> bool:
+        if not self.connection and not self.connect():
+            return False
+        try:
+            # Outlook junk folder name varies; try common labels
+            for junk in ("Junk", "Junk Email", "Spam"):
+                try:
+                    typ, _ = self.connection.copy(email_id, junk)
+                    if typ == "OK":
+                        self.connection.store(email_id, "+FLAGS", "\\Deleted")
+                        self.connection.expunge()
+                        return True
+                except Exception:
+                    continue
+            return False
+        except Exception as e:
+            logger.error("Outlook move_to_junk failed: %s", e)
+            return False
+
+    def _plain_body(self, email_message) -> str:
+        try:
+            if email_message.is_multipart():
+                for part in email_message.walk():
+                    if part.get_content_type() == "text/plain":
+                        raw = part.get_payload(decode=True)
+                        return (raw or b"").decode(errors="replace")
+            raw = email_message.get_payload(decode=True)
+            return (raw or b"").decode(errors="replace")
+        except Exception:
+            return ""
+
+    def _decode_header(self, header: Optional[str]) -> str:
+        if header is None:
+            return ""
+        decoded = decode_header(header)
+        parts = []
+        for value, charset in decoded:
+            if isinstance(value, bytes):
+                parts.append(value.decode(charset or "utf-8", errors="replace"))
+            else:
+                parts.append(str(value))
+        return "".join(parts)

@@ -51,22 +51,14 @@
           {% if r.subject %}<div class="hint"><a class="msg-link" href="/app/message/{{ r.id }}">{{ r.subject[:160] }}</a></div>{% endif %}
           {% if r.body %}<div class="hint msg-preview">{{ r.body[:220] }}{% if r.body|length > 220 %}…{% endif %}</div>{% endif %}
         </div>
-        {% if r.tags or r.reason_codes %}
-        <div class="tag-band">
-          <div class="reason-tags">
-            {% if r.tags %}
-            {% for t in r.tags[:5] %}
-            <span class="reason-tag tag-cat" title="{{ t.code }}">{{ t.label }}</span>
-            {% endfor %}
-            {% endif %}
-            {% if r.reason_codes %}
-            {% for t in r.reason_codes[:6] %}
-            <span class="reason-tag" title="{{ t.evidence or t.code }}">{{ t.label }}</span>
-            {% endfor %}
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
+        {% set mid = r.id %}
+        {% set sender = r.sender %}
+        {% set channel = r.channel or 'email' %}
+        {% set tags = r.tags %}
+        {% set reason_codes = r.reason_codes %}
+        {% set max_tags = 5 %}
+        {% set max_reasons = 6 %}
+        {% include "_card_tags_actions.html" %}
         {% if r.explain %}
         <div class="inbox-extra">
           <details class="explain-panel">
@@ -87,21 +79,6 @@
           </details>
         </div>
         {% endif %}
-        <div class="inbox-foot">
-          <div class="inbox-actions">
-            <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
-            <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
-            <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
-          </div>
-          <button type="button" class="btn-report js-report" data-channel="email"
-            data-mid="{{ r.id }}" data-sender="{{ r.sender }}"
-            title="Tell us why this feels wrong — helps protect others">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/>
-            </svg>
-            Report this
-          </button>
-        </div>
       </div>
       {% endfor %}
     </div>
