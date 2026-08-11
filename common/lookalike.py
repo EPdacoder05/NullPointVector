@@ -90,7 +90,7 @@ def lookalike_brand_domain(sender_or_host: str) -> Optional[Tuple[str, str]]:
         # near-miss: 1 edit (paypa1→paypal) or contained swap
         if abs(len(slug) - len(brand)) <= 1 and _edit_distance(slug, brand) == 1:
             return brand, reg
-        if len(brand) >= 5 and brand in slug and slug != brand and len(slug) <= len(brand) + 3:
+        if len(brand) >= 5 and brand in slug and len(slug) <= len(brand) + 3:
             # paypalsecure.evil style on left label only — already handled by != goods
             if _edit_distance(slug[: len(brand) + 1], brand) <= 1:
                 return brand, reg

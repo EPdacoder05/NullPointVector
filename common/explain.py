@@ -274,7 +274,7 @@ def analyze_findings(channel: str, content: str, sender: str = "",
             add("SUSPICIOUS_RELAY", f"Sender/path looks relay-like (“{hint}”)")
             break
 
-    dm = re.match(r"\s*\"?([^\"<>]+)\"?\s*<([^>]+)>", sender)
+    dm = re.match(r'\s*"?([^"<>]{0,200})"?\s*<([^>]{1,320})>', sender)
     if dm:
         name, addr = dm.group(1).strip(), dm.group(2).strip()
         # GitHub/CI put the repo or user in the display name — not a spoof.
@@ -320,8 +320,8 @@ def analyze_findings(channel: str, content: str, sender: str = "",
             add("ADVANCE_FEE", f"Advance-fee language: “{_snip(folded, w)}”")
             break
 
-    text_only = re.sub(r"<[^>]+>", " ", content)
-    text_only = re.sub(r"\s+", " ", text_only).strip()
+    text_only = re.sub(r"<[^>]{0,500}>", " ", content)
+    text_only = re.sub(r"[ \t\r\n\f]{1,64}", " ", text_only).strip()
     img_hits = len(re.findall(r"<img\b|cid:|\[image:", content, re.I))
     if img_hits >= 1 and len(text_only) < 48:
         add("IMAGE_ONLY", f"Body is mostly image ({img_hits} img ref, {len(text_only)} text chars)")
@@ -379,8 +379,8 @@ def analyze_findings(channel: str, content: str, sender: str = "",
             or ""
         ).strip()
         if reply_raw and "@" in reply_raw and "@" in sender:
-            rm = re.search(r"([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", reply_raw)
-            sm = re.search(r"([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", sender)
+            rm = re.search(r"([\w.+-]{1,64}@[\w.-]{1,253}\.[A-Za-z]{2,24})", reply_raw)
+            sm = re.search(r"([\w.+-]{1,64}@[\w.-]{1,253}\.[A-Za-z]{2,24})", sender)
             if rm and sm:
                 r_addr, s_addr = rm.group(1).lower(), sm.group(1).lower()
                 r_dom = r_addr.split("@", 1)[-1]

@@ -76,7 +76,8 @@ KNOWN_GOOD_DOMAINS = frozenset({
     "chase.com", "bankofamerica.com", "wellsfargo.com", "citi.com", "citibank.com",
 })
 
-_EMAIL_RE = re.compile(r"[\w.+-]+@([\w.-]+\.[a-zA-Z]{2,})")
+# Bounded quantifiers — unbounded [\w.+-]+ on attacker From: is ReDoS (CodeQL).
+_EMAIL_RE = re.compile(r"[\w.+-]{1,64}@([\w.-]{1,253}\.[A-Za-z]{2,24})")
 _AUTH_VERDICT_RE = re.compile(
     r"(spf|dkim|dmarc)\s*=\s*(pass|fail|softfail|neutral|none|temperror|permerror)",
     re.IGNORECASE,
@@ -103,7 +104,7 @@ def _registered_domain(host: str) -> str:
 def _email_domain(addr: str) -> str:
     if not addr:
         return ""
-    m = re.search(r"@([A-Za-z0-9.\-]+)", addr)
+    m = re.search(r"@([A-Za-z0-9.\-]{1,253})", addr)
     if m:
         return _registered_domain(m.group(1))
     return ""
@@ -162,7 +163,6 @@ def sender_auth_verdict(email_data: Optional[Dict[str, Any]]) -> Tuple[bool, boo
     rp_dom = _email_domain(return_path)
     auth_present = bool(ar or spf_hdr or dkim_sig)
     spf_pass = verdicts["spf"] == "pass"
-    dkim_pass = verdicts["dkim"] == "pass"
     dmarc_pass = verdicts["dmarc"] == "pass"
     spf_fail = verdicts["spf"] in ("fail", "softfail")
     dkim_fail = verdicts["dkim"] == "fail"

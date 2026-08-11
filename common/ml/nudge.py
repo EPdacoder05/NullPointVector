@@ -78,20 +78,16 @@ def apply_nudge(channel: str, record: dict, is_threat: bool) -> dict:
     try:
         det = _get_detector(channel)
     except Exception as e:
-        return {"ok": False, "error": str(e), "deltas": []}
+        logger.error("nudge detector unavailable [%s]: %s", channel, e)
+        return {"ok": False, "error": "detector_unavailable", "deltas": []}
 
     before = snapshot_coef(det)
     try:
-        if channel == "phishing":
-            det.learn_from_feedback(record, is_phishing=is_threat)
-        else:
-            det.learn_from_feedback(record, is_threat=is_threat)
-    except TypeError:
-        # older signature
+        # Positional 2nd arg: PhishDetector.is_phishing / ChannelDetector.is_threat.
         det.learn_from_feedback(record, is_threat)
     except Exception as e:
         logger.error("nudge failed [%s]: %s", channel, e)
-        return {"ok": False, "error": str(e), "deltas": []}
+        return {"ok": False, "error": "nudge_failed", "deltas": []}
 
     after = snapshot_coef(det)
     deltas = word_weight_deltas(det, before, after)

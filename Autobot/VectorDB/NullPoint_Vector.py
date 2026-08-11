@@ -740,7 +740,6 @@ def get_vish_directory(limit: int = 5000):
         meta = metadata or {}
         if isinstance(meta, str):
             try:
-                import json
                 meta = json.loads(meta)
             except Exception:
                 meta = {}
@@ -1201,7 +1200,7 @@ def get_message_detail(msg_id: int):
                 "label": label,
             }
     except Exception as e:
-        logger.error(f"Error loading message {msg_id}: {e}")
+        logger.error("Error loading message %s: %s", msg_id, e)
         return None
     finally:
         release_conn(conn)

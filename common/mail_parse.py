@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-_EMAIL_AT = re.compile(r"@([A-Za-z0-9.\-]+)")
+_EMAIL_AT = re.compile(r"@([A-Za-z0-9.\-]{1,253})")
 
 
 def sender_domain(sender: Optional[str]) -> str:

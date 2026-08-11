@@ -411,7 +411,8 @@ async def ui_checkout_post(request: Request,
         want_trial=trial in ("1", "true", "yes"),
     )
     if not result.get("ok"):
-        return JSONResponse(result, status_code=400)
+        safe = {k: v for k, v in result.items() if k != "detail"}
+        return JSONResponse(safe, status_code=400)
     accept = request.headers.get("accept") or ""
     if "application/json" in accept:
         resp = JSONResponse({**result, "data_class": "confidential"})
