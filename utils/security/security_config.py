@@ -206,16 +206,36 @@ class SecurityConfig:
     # Hashing (Argon2) - Use this for Passwords/API Keys
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _pepper(secret: str) -> str:
+        """Apply a server-side PEPPER before hashing (defense in depth).
+
+        Argon2 already salts per-hash (the salt is embedded in the digest), which
+        defeats rainbow tables and makes identical secrets hash differently. The
+        pepper adds a SECOND, server-held secret (env PASSWORD_PEPPER) that is NOT
+        stored with the hash — so a stolen database alone is useless without also
+        compromising the application secret. HMAC-SHA256 binds the secret to the
+        pepper. No-op (returns the secret unchanged) when PASSWORD_PEPPER is unset,
+        so existing hashes keep verifying.
+        """
+        pepper = os.getenv("PASSWORD_PEPPER", "")
+        if not pepper:
+            return secret
+        import hashlib
+        import hmac
+        return hmac.new(pepper.encode(), secret.encode(), hashlib.sha256).hexdigest()
+
     def hash_secret(self, secret: str) -> str:
         """
-        Hash a secret using Argon2 (Memory-hard hashing).
-        NEVER encrypt passwords; always hash them.
+        Hash a secret using Argon2 (memory-hard) over a peppered input.
+        Salting is automatic (Argon2 embeds a random per-hash salt); the pepper
+        adds a server-side secret on top. NEVER encrypt passwords; always hash.
         """
-        return argon2.hash(secret)
+        return argon2.hash(self._pepper(secret))
 
     def verify_secret(self, secret: str, hash_str: str) -> bool:
-        """Verify a secret against an Argon2 hash."""
-        return argon2.verify(secret, hash_str)
+        """Verify a secret against an Argon2 hash (peppered to match hash_secret)."""
+        return argon2.verify(self._pepper(secret), hash_str)
 
     # -------------------------------------------------------------------------
     # Config Getters

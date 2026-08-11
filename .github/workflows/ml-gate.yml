@@ -1,0 +1,56 @@
+name: ML Quality Gate
+
+# Enforces the model's golden-eval thresholds and the anti-poisoning guarantee
+# on every push/PR. A change that drops accuracy < 90%, raises FPR > 10%, lets a
+# pump-fake through, or would let poisoned feedback get promoted → CI fails.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "PhishGuard/**"
+      - "common/**"
+      - "api/**"
+      - "requirements.txt"
+      - ".github/workflows/ml-gate.yml"
+  pull_request:
+    paths:
+      - "PhishGuard/**"
+      - "common/**"
+      - "api/**"
+
+jobs:
+  ml-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install httpx pytest
+
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      - name: Model golden-eval gate
+        run: pytest -q test/test_model_gate.py
+
+      - name: Anti-poisoning trainer gate
+        run: pytest -q test/test_trainer_gate.py
+
+      - name: API smoke (auth, RBAC, rate limit, idempotency)
+        env:
+          JWT_SECRET_KEY: ci-secret
+          API_ADMIN_PASSWORD: changeme
+        run: pytest -q test/test_api_smoke.py

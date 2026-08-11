@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-06-29T01:04:21.656198+00:00",
+  "stack": {
+    "sklearn": "1.9.0",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1"
+  },
+  "channels": {
+    "phishing": {
+      "feature_version": 27,
+      "stack": {
+        "sklearn": "1.9.0",
+        "numpy": "2.4.6",
+        "scipy": "1.17.1"
+      },
+      "artifact": "PhishGuard/phish_mlm/models/phishing_sgd_model.pkl",
+      "sha256": "b241c8faca53fbe13ccfc2f0def2f302d3c6b9b6fac8cd09cec0d7cff3c0fef0",
+      "bytes": 549624,
+      "golden": {
+        "n": 40,
+        "accuracy": 0.975,
+        "recall": 1.0,
+        "fpr": 0.0476,
+        "confusion": {
+          "tp": 19,
+          "tn": 20,
+          "fp": 1,
+          "fn": 0
+        },
+        "gate_pass": true
+      }
+    },
+    "smishing": {
+      "feature_version": 18,
+      "stack": {
+        "sklearn": "1.9.0",
+        "numpy": "2.4.6",
+        "scipy": "1.17.1"
+      },
+      "artifact": "SmishGuard/smish_mlm/models/smishing_sgd_model.pkl",
+      "sha256": "c5ae95d2d96a596ff23460146d8ad738003fe8dccd0a91fdb92839e4c0d3a5d4",
+      "bytes": 293327,
+      "golden": {
+        "n": 16,
+        "accuracy": 1.0,
+        "recall": 1.0,
+        "fpr": 0.0,
+        "confusion": {
+          "tp": 8,
+          "tn": 8,
+          "fp": 0,
+          "fn": 0
+        },
+        "gate_pass": true
+      }
+    },
+    "vishing": {
+      "feature_version": 14,
+      "stack": {
+        "sklearn": "1.9.0",
+        "numpy": "2.4.6",
+        "scipy": "1.17.1"
+      },
+      "artifact": "VishGuard/vish_mlm/models/vishing_sgd_model.pkl",
+      "sha256": "0946e6568b9ca806819f4557f769d7a07586bfb06b82c219da8bf47eb1e76dd4",
+      "bytes": 309314,
+      "golden": {
+        "n": 16,
+        "accuracy": 0.9375,
+        "recall": 0.875,
+        "fpr": 0.0,
+        "confusion": {
+          "tp": 7,
+          "tn": 8,
+          "fp": 0,
+          "fn": 1
+        },
+        "gate_pass": true
+      }
+    }
+  }
+}

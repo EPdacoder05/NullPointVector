@@ -459,7 +459,10 @@ class EmailIngestionEngine:
                     try:
                         msg_id = insert_message(
                             conn=conn,
-                            message_type='email',
+                            # Normalized channel taxonomy: phishing/smishing/vishing.
+                            # Email ingestion is the phishing channel — keep this in
+                            # sync with /analyze so KPI/channel aggregates don't split.
+                            message_type='phishing',
                             sender=email.get('from', 'unknown'),
                             raw_content=email.get('body', ''),
                             preprocessed_text=email.get('body', ''),
@@ -469,7 +472,11 @@ class EmailIngestionEngine:
                             is_threat=is_threat,
                             confidence=confidence,
                             metadata=full_metadata,
-                            label=1 if is_threat else 0
+                            # label stays NULL: that column is reserved for HUMAN
+                            # verdicts (quarantine grading). Writing the model's own
+                            # prediction here would train the model on its own
+                            # guesses (self-poisoning) and empty the review queue.
+                            label=None
                         )
                         # Real-time logging of DB persistence with geo info
                         if msg_id:

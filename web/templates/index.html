@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% set ch = channels[active] %}
+{% block title %}{{ ch.label }} — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>{{ ch.label }}</h1>
+    <div class="desc">{{ ch.blurb }}</div>
+  </div>
+  <div class="topbar-actions">
+    {% if active == 'vishing' %}
+    <div class="mode-switch" id="vish-mode" role="group" aria-label="Vishing mode">
+      <button type="button" class="mode-opt active" data-mode="paste">Paste</button>
+      <button type="button" class="mode-opt" data-mode="screen">Call screen</button>
+    </div>
+    {% endif %}
+    <a class="btn secondary" href="/app/pricing">Pricing</a>
+  </div>
+</div>
+
+<div class="grid">
+  <section class="card">
+    <div class="hd"><h2>Analyze</h2></div>
+    <div class="bd">
+      {% if active == 'smishing' %}
+      <div class="sms-preview" id="sms-preview">
+        <div class="sms-header">
+          <span class="sms-from" id="sms-from-display">Unknown sender</span>
+          <span class="sms-time">now</span>
+        </div>
+        <div class="sms-bubble" id="sms-bubble">Paste SMS body to preview the thread.</div>
+      </div>
+      {% endif %}
+
+      {# Same paste path for phishing / smishing / vishing #}
+      <div id="panel-paste" class="panel-manual">
+        <form id="analyze-form" class="stack" action="/app/analyze" method="post">
+          <input type="hidden" name="channel" value="{{ active }}">
+          {% if active == 'smishing' %}
+          <div class="fld">
+            <label for="sender">Sender number</label>
+            <input id="sender" name="sender" type="text" class="input" placeholder="+1 555 0100" autocomplete="off">
+          </div>
+          {% elif active == 'vishing' %}
+          <div class="fld">
+            <label for="sender">Caller ID (optional)</label>
+            <input id="sender" name="sender" type="text" class="input" placeholder="+1 800 555 0199" autocomplete="off">
+          </div>
+          {% endif %}
+          <div class="fld">
+            <label for="content">
+              {% if active == 'phishing' %}Email body
+              {% elif active == 'smishing' %}Message body
+              {% else %}Call transcript / voicemail{% endif %}
+            </label>
+            <textarea id="content" name="content" class="input" rows="8" placeholder="{{ ch.placeholder }}" required></textarea>
+          </div>
+          <button type="submit" class="btn">Analyze</button>
+          <div class="hint">Cmd+Enter · same ML path as email and SMS</div>
+        </form>
+        <div id="result" class="result-slot"></div>
+      </div>
+
+      {% if active == 'vishing' %}
+      {# Hybrid CallKit path — reputation on number + optional transcript #}
+      <div id="panel-screen" class="panel-live" hidden>
+        <form id="screen-form" class="stack" action="/app/screen" method="post">
+          <div class="fld">
+            <label for="caller_id">Caller ID</label>
+            <input id="caller_id" name="caller_id" type="text" class="input" placeholder="+1 800 555 0199" required autocomplete="off">
+          </div>
+          <div class="fld">
+            <label for="transcript">Voicemail / transcript (optional)</label>
+            <textarea id="transcript" name="transcript" class="input" rows="5" placeholder="{{ ch.placeholder }}"></textarea>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" name="contact_known" value="true">
+            <span>Caller is in my contacts</span>
+          </label>
+          <button type="submit" class="btn">Screen call</button>
+          <div class="hint">Reputation + transcript fusion for CallKit actions</div>
+        </form>
+        <div id="screen-result" class="result-slot"></div>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd feed-hd">
+      <h2>Live detections</h2>
+      <div class="feed-filters" id="feed-filters">
+        <button type="button" class="feed-filter active" data-filter="all">All</button>
+        <button type="button" class="feed-filter" data-filter="threat">Threats</button>
+        <button type="button" class="feed-filter" data-filter="clear">Clear</button>
+      </div>
+    </div>
+    <div class="bd feed" id="feed">
+      <div class="feed-empty"><span class="spin"></span>&nbsp; Loading…</div>
+    </div>
+  </section>
+</div>
+{% endblock %}

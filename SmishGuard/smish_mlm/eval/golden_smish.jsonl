@@ -1,0 +1,16 @@
+{"label": 1, "tags": ["url", "bank", "smish"], "body": "Your card ending 4421 was charged $499 at BestBuy. Not you? Cancel: http://card-dispute.help", "from": "+18335550901"}
+{"label": 1, "tags": ["url", "bank", "smish"], "body": "WELLS FARGO: account access restricted. Restore now: http://wf-secure-login.xyz", "from": "WELLSFARGO"}
+{"label": 1, "tags": ["url", "prize", "smish"], "body": "You've been selected for a $500 Target eGift. Claim: http://tgt-rewards.win", "from": "+18445550902"}
+{"label": 1, "tags": ["url", "warranty", "smish"], "body": "Final reminder: your auto warranty expires today. Renew: http://warranty-now.top", "from": "+13055550903"}
+{"label": 1, "tags": ["url", "payment", "smish"], "body": "Venmo: a $300 payment to UNKNOWN is pending. Cancel: http://venmo-cancel.cf", "from": "+19255550904"}
+{"label": 1, "tags": ["url", "delivery", "smish"], "body": "Your parcel is held at customs, pay 1.99 duty: http://dhl-customs.click", "from": "DHL"}
+{"label": 1, "tags": ["url", "gov", "smish"], "body": "We tried to deliver your SSA benefits. Verify SSN: http://ssa-verify.men", "from": "+12025550905"}
+{"label": 1, "tags": ["otp_theft", "smish"], "body": "Hi, this is your bank. Reply with the 6-digit code we sent to confirm it's you.", "from": "+18005550906"}
+{"label": 0, "tags": ["otp", "legit"], "body": "Your verification code is 558213. It expires in 10 minutes.", "from": "GOOGLE"}
+{"label": 0, "tags": ["delivery", "legit"], "body": "Order #5521 shipped! Track your package at ups.com/track", "from": "+18005550907"}
+{"label": 0, "tags": ["appointment", "legit"], "body": "Reminder: your appointment with Dr. Patel is tomorrow at 11am.", "from": "+15551239001"}
+{"label": 0, "tags": ["personal", "legit"], "body": "Hey, are we still on for the movie tonight?", "from": "+15551239002"}
+{"label": 0, "tags": ["reservation", "legit"], "body": "Your table for 4 at 7:30pm is confirmed. See you tonight!", "from": "OPENTABLE"}
+{"label": 0, "tags": ["personal", "legit"], "body": "Mom: call me when you land, love you", "from": "+15551239003"}
+{"label": 0, "tags": ["billing", "legit"], "body": "Your monthly statement is ready to view in the app.", "from": "AMEX"}
+{"label": 0, "tags": ["personal", "legit"], "body": "Practice is at 5 today, field 3. Bring water.", "from": "+15551239004"}

@@ -1,0 +1,16 @@
+{"label": 1, "tags": ["impersonation", "card", "vish"], "body": "This is Amazon security. We blocked a $1,200 order. Press 1 to cancel and verify your card.", "from": "+18005551001"}
+{"label": 1, "tags": ["tech_support", "vish"], "body": "Your computer has a virus. This is Windows support. Grant remote access to remove it now.", "from": "+18005551002"}
+{"label": 1, "tags": ["authority", "giftcard", "vish"], "body": "This is the county sheriff. You missed jury duty. Pay the fine by gift card to avoid arrest.", "from": "+13105551003"}
+{"label": 1, "tags": ["authority", "ssn", "vish"], "body": "Hello, your social security number was used in a crime in Texas. Press 1 to speak to an officer.", "from": "SSA"}
+{"label": 1, "tags": ["bank", "vish"], "body": "Your bank account is compromised. Move your money to the safe account I give you immediately.", "from": "+18005551004"}
+{"label": 1, "tags": ["prize", "card", "vish"], "body": "Congratulations, you won a cruise! Just provide your credit card to cover the port fees.", "from": "+18885551005"}
+{"label": 1, "tags": ["authority", "giftcard", "vish"], "body": "This is the IRS automated line. You owe taxes. Pay with iTunes cards within one hour.", "from": "IRS"}
+{"label": 1, "tags": ["authority", "card", "vish"], "body": "We're calling about a lawsuit against you. Settle now over the phone with your card number.", "from": "+12025551006"}
+{"label": 0, "tags": ["pharmacy", "legit"], "body": "Hi, this is the pharmacy, your prescription is ready for pickup.", "from": "+15551231001"}
+{"label": 0, "tags": ["personal", "legit"], "body": "Hey it's Jordan, call me back when you get a chance, no rush.", "from": "+15551231002"}
+{"label": 0, "tags": ["service", "legit"], "body": "This is the dealership, your car is ready and the total is about 120 dollars.", "from": "+15551231003"}
+{"label": 0, "tags": ["reservation", "legit"], "body": "Hello, confirming your reservation for two at 8pm tonight.", "from": "+15551231004"}
+{"label": 0, "tags": ["personal", "legit"], "body": "It's grandpa, happy birthday kiddo, give us a call later.", "from": "+15551231005"}
+{"label": 0, "tags": ["appointment", "legit"], "body": "This is the clinic confirming your appointment Tuesday at 9.", "from": "+15551231006"}
+{"label": 0, "tags": ["work", "legit"], "body": "Hey, the meeting moved to 3pm, talk soon.", "from": "+15551231007"}
+{"label": 0, "tags": ["delivery", "legit"], "body": "Your package will arrive today between 2 and 4pm.", "from": "+15551231008"}

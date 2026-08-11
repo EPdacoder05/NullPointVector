@@ -1,0 +1,32 @@
+---
+description: NullPoint session handoff — read the checkpoint first, honor locked decisions
+alwaysApply: true
+---
+
+# NullPoint — start-of-session protocol
+
+1. **Read `docs/AI_DEV_CHECKPOINT.md` before doing anything else.** It contains the
+   current state, locked decisions, bounded specs for open work, and verify commands.
+   Update its "Last updated" state section at the end of every working session.
+
+# Locked decisions — do not re-litigate or undo
+
+- Product: **NullPoint**; console: **Signal Deck**; channels labeled Phishing / Smishing / Vishing.
+- UI: gold/brass + forest green (`web/static/app.css`). NEVER purple, NEVER emojis in UI,
+  NEVER npm/Node/CDN — server-rendered Jinja + hand-written CSS/JS only.
+- CallKit path is **hybrid** (reputation always + optional transcript) per
+  `docs/CALLKIT_DATA_CONTRACT.md`. No Twilio.
+- Credit/OSINT is **outsourced** (Plaid / Array / IPQS / HIBP). Never build DIY credit
+  bureaus or dark-web scrapers.
+- Reputation/vendor calls **fail open** — a vendor error must never block a verdict.
+
+# Operational rules
+
+- UI lives at `http://localhost:8088/app` (nginx). Restart the app container after adding
+  routes (`docker compose restart app`); the bind mount does not hot-reload.
+- Never commit `.env`; only edit `.env.example` (names, no values). Treat all current
+  secrets as burned — they must be rotated before any shared deploy.
+- Model promotion goes through the golden-eval gate
+  (`common/ml/training/channel_trainer.py`). Never bypass a failing gate.
+- Before claiming anything works, verify it with curl/pytest (commands in the checkpoint §1/§8).
+- Do not key Jinja template dicts with names shadowing dict methods (`clear`, `items`, `keys`).

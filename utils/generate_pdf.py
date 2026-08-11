@@ -109,8 +109,10 @@ class PDFGenerator:
                 extensions=['extra', 'codehilite', 'tables', 'fenced_code']
             )
 
-            # Create HTML template
-            template = """
+            # Render the document with an explicit timestamp so no placeholder
+            # token survives into the final PDF output.
+            generated_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            html = f"""
             <!DOCTYPE html>
             <html>
             <head>
@@ -119,20 +121,13 @@ class PDFGenerator:
                 <link rel="stylesheet" href="style.css">
             </head>
             <body>
-                {{ content }}
+                {html_content}
                 <div class="footer">
-                    Generated on: {{ generated_date }}
+                    Generated on: {generated_date}
                 </div>
             </body>
             </html>
             """
-
-            # Render template
-            template = jinja2.Template(template)
-            html = template.render(
-                content=html_content,
-                generated_date=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            )
 
             # Create CSS file
             css_file = self.create_css_file()

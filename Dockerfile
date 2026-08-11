@@ -26,6 +26,14 @@ FROM python:3.11-slim
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Set working directory
+WORKDIR /app
+
+# Harden pip against flaky networks (the big wheels were timing out mid-build).
+ENV PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5 \
+    PIP_NO_CACHE_DIR=1
+
 # Install runtime system dependencies only
 RUN apt-get update && apt-get install -y \
     curl \
@@ -37,8 +45,6 @@ RUN groupadd -r appuser && useradd -r -g appuser -u 1001 appuser
 
 # Upgrade vulnerable Python packages in system Python
 RUN pip install --no-cache-dir "wheel>=0.46.2" "jaraco.context>=6.1.0"
-
-WORKDIR /app
 
 # Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -59,9 +65,11 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH=/opt/venv/bin:$PATH
 
-# Healthcheck — verify both API and UI services are responsive
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/docs || curl -f http://localhost:8050/ || exit 1
+# Add healthcheck. /health is a cheap liveness probe that returns 200 while the
+# API process is up (it reports DB status in the body without failing), so a
+# transient DB outage does NOT flap the container — only a dead API does.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD curl -f http://localhost:8000/health || curl -f http://localhost:8050/ || exit 1
 
 # Expose ports
 EXPOSE 8050 8000

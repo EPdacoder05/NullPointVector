@@ -1,0 +1,69 @@
+{
+  "version": "v1",
+  "created_at": 1780104439.6344042,
+  "created_at_iso": "2026-05-29T21:27:19",
+  "feature_version": 26,
+  "calibrated": true,
+  "metrics": {
+    "n": 40,
+    "accuracy": 0.95,
+    "precision": 0.9473684210526315,
+    "recall": 0.9473684210526315,
+    "specificity": 0.9523809523809523,
+    "fpr": 0.047619047619047616,
+    "f1": 0.9473684210526315,
+    "confusion": {
+      "tp": 18,
+      "tn": 20,
+      "fp": 1,
+      "fn": 1
+    },
+    "pump_fake_recall": 1.0,
+    "per_tag": {
+      "2fa": 1.0,
+      "auth_fail": 1.0,
+      "auth_pass": 1.0,
+      "bec": 0.0,
+      "brand": 1.0,
+      "credential": 1.0,
+      "crypto": 1.0,
+      "devops": 1.0,
+      "ip": 1.0,
+      "leet": 1.0,
+      "malware": 1.0,
+      "marketing": 1.0,
+      "personal": 1.0,
+      "prize": 1.0,
+      "pump_fake": 1.0,
+      "shortener": 1.0,
+      "spear": 0.5,
+      "transactional": 0.75,
+      "url": 1.0,
+      "work": 1.0
+    },
+    "failures": [
+      {
+        "expected": 1,
+        "pred": 0,
+        "conf": 0.69,
+        "tags": [
+          "spear",
+          "bec"
+        ],
+        "text": "Quick favor | Are you at your desk? I need you to purchase four 100 dollar Apple gift card"
+      },
+      {
+        "expected": 0,
+        "pred": 1,
+        "conf": 0.791,
+        "tags": [
+          "transactional"
+        ],
+        "text": "Flight confirmation | Your booking is confirmed: SFO to SEA on March 4, seat 14C. Check in"
+      }
+    ]
+  },
+  "n_train": 151,
+  "data_hash": "09a2c404961b02c3",
+  "promoted": true
+}

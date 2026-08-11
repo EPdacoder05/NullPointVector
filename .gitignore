@@ -32,6 +32,9 @@ env/
 ENV/
 .venv/
 .ENV/
+.env
+.env.local
+.env.docker
 
 # IDE
 .vscode/
@@ -180,4 +183,6 @@ data/geo_cache.json
 data/sender_profiles.json
 data/threat_actions.json
 data/warned_senders.json
+data/threat_cache.json
+data/url_cache/
 data/reports/

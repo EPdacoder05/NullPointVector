@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Inbox stream — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Inbox stream</h1>
+    <div class="desc">Batch and stream triage for email (and channel feeds). Allow · Quarantine · Archive — not a clone of consumer unroll tools.</div>
+  </div>
+  <div class="topbar-actions">
+    <div class="mode-switch" id="stream-mode">
+      <button type="button" class="mode-opt active" data-stream="live">Live</button>
+      <button type="button" class="mode-opt" data-stream="batch">Batch</button>
+    </div>
+    <a class="btn secondary" href="/app?channel=phishing">Analyze one</a>
+  </div>
+</div>
+
+<div class="inbox-toolbar panel">
+  <input type="search" class="input inbox-search" id="inbox-search" placeholder="Search sender or domain…" />
+  <div class="inbox-tabs" id="inbox-tabs">
+    <button type="button" class="inbox-tab active" data-tab="all">All <span class="kbd">{{ counts.all }}</span></button>
+    <button type="button" class="inbox-tab" data-tab="threat">Threats <span class="kbd">{{ counts.threat }}</span></button>
+    <button type="button" class="inbox-tab" data-tab="clear">Clear <span class="kbd">{{ counts.cleared }}</span></button>
+  </div>
+</div>
+
+<section class="card" style="margin-top:16px;">
+  <div class="hd"><h2>Feed</h2><span class="kbd" id="stream-label">live</span></div>
+  <div class="bd inbox-list" id="inbox-list">
+    {% for row in rows %}
+    <div class="inbox-row" data-threat="{{ 1 if row.threat else 0 }}" data-q="{{ (row.sender or '')|lower }}" data-mid="{{ row.id }}">
+      <span class="inbox-avatar {{ 'threat' if row.threat else '' }}">{{ (row.sender or '?')[0]|upper }}</span>
+      <div class="inbox-main">
+        <div class="inbox-title">{{ row.sender or 'unknown sender' }}</div>
+        <div class="inbox-sub">{{ row.channel }} · {{ row.ts }} · score {{ row.score }}</div>
+      </div>
+      <div class="inbox-actions">
+        <button type="button" class="act-block js-grade" data-kind="message" data-verdict="block">Block &amp; Report</button>
+        <button type="button" class="act-unsure js-grade" data-kind="message" data-verdict="unsure">Needs review</button>
+        <button type="button" class="act-safe js-grade" data-kind="message" data-verdict="safe">Mark as safe</button>
+      </div>
+    </div>
+    {% else %}
+    <div class="feed-empty">No messages in stream yet. Connect mail OAuth later — for now paste-analyze seeds the feed.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="connect-note">
+  <strong>Connectors next:</strong> Gmail / Microsoft OAuth for email ingest.
+  SMS and voice stay harder (carrier + CallKit) — iOS Message Filter and Call Directory cover device-side; this inbox is the operator triage surface.
+</div>
+{% endblock %}
