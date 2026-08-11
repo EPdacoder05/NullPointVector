@@ -29,4 +29,5 @@ jobs:
           image-ref: nullpointvector:main
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          trivyignores: '.trivyignore'
           exit-code: 0

@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (CodeQL: bound ReDoS regexes; nudge no longer leaks str(e); unused import/var)
+_Last updated: 2026-08-11 (container: multi-stage image, PyJWT, cryptography 48.0.1, .trivyignore unfixed OS)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |

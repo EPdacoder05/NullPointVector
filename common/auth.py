@@ -7,7 +7,7 @@ JWT authentication + RBAC for FastAPI.
 - `require_role(...)` enforces hierarchical RBAC.
 
 Adapted from System-Design-Engineering-Universal-Reference/security/auth_framework.py.
-Install: pip install "python-jose[cryptography]" passlib[bcrypt]
+Install: pip install "PyJWT[crypto]" passlib[bcrypt]
 """
 import os
 from datetime import datetime, timedelta, timezone
@@ -17,7 +17,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 try:
-    from jose import JWTError, jwt
+    import jwt
+    from jwt import InvalidTokenError as JWTError
 except ImportError:  # pragma: no cover - dependency guard
     JWTError = Exception
     jwt = None
@@ -67,7 +68,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 # --------------------------------------------------------------------- tokens
 def _encode(data: dict, expires: Optional[timedelta], token_type: str) -> str:
     if jwt is None:
-        raise RuntimeError('python-jose not installed: pip install "python-jose[cryptography]"')
+        raise RuntimeError('PyJWT not installed: pip install "PyJWT[crypto]"')
     now = datetime.now(timezone.utc)
     payload = {**data, "iat": now, "type": token_type}
     if expires is not None and expires.total_seconds() > 0:
