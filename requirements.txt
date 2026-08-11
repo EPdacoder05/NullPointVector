@@ -4,7 +4,7 @@ PyYAML>=6.0
 # 43.0.1 had HIGH CVEs (GHSA-537c-gmf6-5ccf, CVE-2026-26007, …).
 # 48.0.1 patches those. Re-verify `from cryptography.fernet import Fernet`
 # on linux/aarch64 if you bump further (old 44.x wheels SIGILL'd on some ARM).
-cryptography==48.0.1
+cryptography==50.0.0
 watchdog>=3.0
 
 # Email processing
