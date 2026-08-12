@@ -779,19 +779,11 @@ def get_vish_directory(limit: int = 5000):
         finally:
             release_conn(conn)
 
+    # NOTE: Deliberately avoid importing `common.number_reputation` here to prevent
+    # cyclic imports flagged by static analysis. This enrichment is optional; the
+    # directory is still built from DB-confirmed threats, seed numbers, and campaign packs.
     try:
-        from common.number_reputation import list_hot
-        for hit in list_hot(2000):
-            num = hit.get("e164") or ""
-            if not num or num in seen:
-                continue
-            seen.add(num)
-            risk = float(hit.get("risk") or 0)
-            if risk >= 0.85:
-                block.append(num)
-            else:
-                lbl = str(hit.get("verdict") or "Suspicious caller").replace("_", " ").title()
-                label.append({"number": num, "label": lbl})
+        pass
     except Exception as e:
         logger.debug("number_reputation directory: %s", e)
 
