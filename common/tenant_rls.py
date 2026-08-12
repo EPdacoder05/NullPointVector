@@ -39,12 +39,12 @@ _TABLE_POLICIES: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
-# Exported for unit tests (shape check).
-_POLICY_SQL = (
-    f"FORCE ROW LEVEL SECURITY; SET LOCAL ROLE {_RLS_ROLE}; "
-    "app.rls_bypass; app.account_sub; "
-    + ", ".join(t[0] for t in _TABLE_POLICIES)
-)
+# Exported for unit tests (shape check): describes the tables and GUCs protected by RLS.
+POLICY_SUMMARY = {
+    "role": _RLS_ROLE,
+    "gucs": ["app.rls_bypass", "app.account_sub"],
+    "tables": [t[0] for t in _TABLE_POLICIES],
+}
 
 
 def _table_exists(cur, name: str) -> bool:
@@ -140,6 +140,7 @@ def ensure_rls(conn) -> None:
             conn.rollback()
         except Exception as rollback_err:
             logger.warning("ensure_rls rollback failed: %s", rollback_err)
+        raise
 
 
 def set_tenant(conn, account_sub: Optional[str] = None, *, bypass: bool = False) -> None:
@@ -167,8 +168,10 @@ def clear_tenant(conn) -> None:
             cur.execute("SELECT set_config('app.rls_bypass', '', true)")
             cur.execute("SELECT set_config('app.account_sub', '', true)")
             cur.execute("RESET ROLE")
-    except Exception:
+        conn.rollback()
+    except Exception as e:
+        logger.warning("clear_tenant failed: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_err:
+            logger.warning("clear_tenant rollback failed: %s", rollback_err)
