@@ -4,7 +4,7 @@ name: GitHub Pages
 
 on:
   push:
-    branches: [main, protect/trade-secrets]
+    branches: [main, protect/trade-secrets, pages/analyze-demo]
     paths:
       - "pages/**"
       - ".github/workflows/pages.yml"

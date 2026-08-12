@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (GitHub Pages demo in pages/; do not rewrite git history for leaked blobs)
+_Last updated: 2026-08-11 (Pages Analyze playground + first-person README/TRADE_SECRETS; do not rewrite git history; rotate burned pilot/Funnel secrets)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |
