@@ -1,7 +1,7 @@
 import Foundation
 
 /// Local pilot credentials. Keep empty in git. Copy values from
-/// `PilotSecrets.example.swift` on your machine — never commit real passwords.
+/// `ios/PilotSecrets.example.swift` on your machine — never commit real passwords.
 enum PilotSecrets {
     static let username: String = ""
     static let password: String = ""
