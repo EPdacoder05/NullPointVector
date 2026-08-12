@@ -141,6 +141,117 @@ def list_for_user(account_sub: str) -> list[dict[str, Any]]:
         release_conn(conn)
 
 
+def list_all() -> list[dict[str, Any]]:
+    """All saved mailboxes (ingest polls every friend, not just .env)."""
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT account_sub, provider, account_email, mode, updated_at
+                FROM user_mailboxes
+                ORDER BY updated_at DESC
+                """
+            )
+            out = []
+            for sub, provider, account_email, mode, updated in cur.fetchall():
+                out.append({
+                    "account_sub": sub,
+                    "provider": provider,
+                    "account": account_email,
+                    "mode": mode,
+                    "updated_at": updated.isoformat() if updated else None,
+                })
+            return out
+    except Exception as e:
+        logger.error("list_all mailboxes: %s", e)
+        return []
+    finally:
+        from Autobot.VectorDB.NullPoint_Vector import release_conn
+        release_conn(conn)
+
+
+def upsert_oauth(*, account_sub: str, provider: str, account_email: str,
+                 refresh_token: str, access_token: str = "") -> dict[str, Any]:
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return {"ok": False, "error": "db_unavailable"}
+    provider = (provider or "").strip().lower()
+    account_email = (account_email or "").strip()
+    account_sub = (account_sub or "").strip() or "anonymous"
+    if provider not in ("gmail", "microsoft", "outlook"):
+        return {"ok": False, "error": "bad_provider"}
+    if "@" not in account_email or not (refresh_token or "").strip():
+        return {"ok": False, "error": "need_email_and_refresh"}
+    try:
+        blob = _enc(json.dumps({
+            "refresh_token": refresh_token.strip(),
+            "access_token": (access_token or "").strip(),
+        }))
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO user_mailboxes (account_sub, provider, account_email, secret_enc, mode)
+                VALUES (%s, %s, %s, %s, 'oauth')
+                ON CONFLICT (account_sub, provider, account_email)
+                DO UPDATE SET secret_enc = EXCLUDED.secret_enc,
+                              mode = 'oauth',
+                              updated_at = NOW()
+                RETURNING id
+                """,
+                (account_sub, provider, account_email, blob),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return {"ok": True, "id": row[0] if row else None, "account": account_email, "provider": provider}
+    except Exception as e:
+        logger.error("upsert oauth mailbox: %s", e)
+        try:
+            conn.rollback()
+        except Exception as rollback_error:
+            logger.warning("rollback failed in upsert_oauth: %s", rollback_error)
+        return {"ok": False, "error": "save_failed"}
+    finally:
+        from Autobot.VectorDB.NullPoint_Vector import release_conn
+        release_conn(conn)
+
+
+def get_oauth(account_sub: str, provider: str, account_email: str) -> Optional[dict[str, str]]:
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT secret_enc FROM user_mailboxes
+                WHERE account_sub = %s AND provider = %s AND account_email = %s
+                  AND mode = 'oauth'
+                LIMIT 1
+                """,
+                (account_sub, provider, account_email),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        data = json.loads(_dec(row[0]))
+        return {
+            "refresh_token": str(data.get("refresh_token") or ""),
+            "access_token": str(data.get("access_token") or ""),
+        }
+    except Exception as e:
+        logger.error("get_oauth: %s", e)
+        return None
+    finally:
+        from Autobot.VectorDB.NullPoint_Vector import release_conn
+        release_conn(conn)
+
+
 def get_secret(account_sub: str, provider: str, account_email: str) -> Optional[str]:
     """Return plaintext app password for ingest (caller must not log it)."""
     conn = _conn()

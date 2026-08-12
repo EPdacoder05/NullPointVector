@@ -15,7 +15,7 @@
 </div>
 
 {% if request.query_params.get('ok') %}
-<div class="connect-note"><strong>Connected.</strong> OAuth token saved for this process. App passwords are Fernet-encrypted in Postgres under your account.</div>
+<div class="connect-note"><strong>Connected.</strong> OAuth refresh token is Fernet-encrypted under your account (survives restart). App passwords too.</div>
 {% endif %}
 {% if request.query_params.get('err') %}
 <div class="auth-error" style="margin-bottom:16px;">Connector error: {{ request.query_params.get('err') }}</div>

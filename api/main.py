@@ -360,7 +360,7 @@ async def screen_call_endpoint(
 
 @app.get("/api/v1/vish/directory")
 async def vish_directory_endpoint(
-    user: Dict = Depends(require_role("analyst")),
+    user: Dict = Depends(require_role("customer")),
     _rl: None = Depends(rate_limit()),
 ):
     """Call Directory block/label sync payload for iOS CallKit extension."""

@@ -176,6 +176,13 @@ def _env_users() -> Dict[str, Dict]:
 
 
 def authenticate_user(username: str, password: str) -> Optional[Dict]:
+    try:
+        from common.accounts import verify_login
+        db_user = verify_login(username, password)
+        if db_user:
+            return db_user
+    except Exception:
+        pass
     user = _env_users().get(username)
     if not user or not verify_password(password, user["password_hash"]):
         return None

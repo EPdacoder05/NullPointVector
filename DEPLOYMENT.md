@@ -130,6 +130,19 @@ A public URL means the **whole internet** can hit it.
 
 ---
 
+## Stage 2.5 — Friends-and-family (Fly / Railway)
+
+Checklist: [`docs/PILOT_SHIP.md`](docs/PILOT_SHIP.md).
+
+- **Railway:** deploy `docker-compose.prod.yml` (no source bind-mount). Public port **8088**.
+- **Fly.io:** `fly.toml` ships the app on `:8000`. Attach Fly Postgres + Redis, then
+  `fly secrets set` `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`, `SIGNUP_OPEN=true`,
+  `PUBLIC_BASE_URL=https://<app>.fly.dev`.
+- Open signup, Google OAuth redirect `…/app/connectors/callback/gmail`, IPQS key,
+  internal TestFlight with the same public HTTPS host.
+
+---
+
 ## Stage 3 — Cloud (production shape)
 
 The app is already cloud-ready because it's **stateless containers behind one

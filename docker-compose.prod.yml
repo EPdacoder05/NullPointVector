@@ -1,0 +1,95 @@
+# Friends-and-family / Railway / VPS. No source bind-mount.
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Only :8088 is public. Fill .env (JWT_SECRET_KEY, DB_*, SIGNUP_OPEN, PUBLIC_BASE_URL).
+
+services:
+  app:
+    build: .
+    volumes:
+      - app_logs:/app/logs
+      - app_ingestion:/app/data/ingestion
+      - app_dlq:/app/data/dlq
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
+      - USE_GUNICORN=${USE_GUNICORN:-true}
+      - API_WORKERS=${API_WORKERS:-1}
+      - ENABLE_MESSAGE_EMBEDDINGS=${ENABLE_MESSAGE_EMBEDDINGS:-0}
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru",
+              "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  db:
+    image: pgvector/pgvector:pg15
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DB_USER} -d $${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - POOL_MODE=transaction
+      - AUTH_TYPE=scram-sha-256
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=20
+      - IGNORE_STARTUP_PARAMETERS=extra_float_digits
+      - ADMIN_USERS=${DB_USER}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "8088:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  app_logs:
+  app_ingestion:
+  app_dlq:
+  redis_data:

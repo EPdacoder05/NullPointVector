@@ -779,6 +779,11 @@ def get_vish_directory(limit: int = 5000):
         finally:
             release_conn(conn)
 
+    # NOTE: Deliberately avoid importing `common.number_reputation` here to prevent
+    # cyclic imports flagged by static analysis. This enrichment is optional; the
+    # directory is still built from DB-confirmed threats, seed numbers, and campaign packs.
+    pass
+
     # Pilot seed so TestFlight sync is never empty before live call grades exist.
     seed = os.getenv(
         "VISH_DIRECTORY_SEED",
