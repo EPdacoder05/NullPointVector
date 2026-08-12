@@ -1,73 +1,88 @@
 # NullPoint
 
-I built NullPoint to catch phishing, smishing, and vishing before they hit grandma — and to let an operator **grade** what the model got wrong without silently poisoning production.
+Multi-channel phishing / smishing / vishing detection. Operator console: **Signal Deck**.
 
-Console: **Signal Deck** (brass + forest, Jinja + hand CSS/JS, no purple, no emoji UI, no npm).
-
-**Try it:** [epdacoder05.github.io/NullPointVector](https://epdacoder05.github.io/NullPointVector/) — paste a message, see tags + a verdict. Paste-analyze uses the same public policy/lexicon layer as production. Champion SGD weights stay private.
-
-I’d rather hold a borderline message than miss a threat. False positives annoy people; false negatives empty accounts. The golden gate still budgets FPR so we don’t become a spam filter that cries wolf.
-
-## What I locked (on purpose)
-
+Locked product surface (do not re-litigate):
 - Channels labeled Phishing / Smishing / Vishing
-- Call path: Call Directory + Message Filter. I will not become a telecom (no Twilio / SIP / Telnyx product track)
+- UI: gold/brass + forest green; Jinja + hand-written CSS/JS only (no npm/CDN, no purple, no emoji UI)
+- Call path: Call Directory + Message Filter (+ optional Live Caller ID later). No Twilio / SIP / Telnyx product track
 - Credit/OSINT outsourced (Plaid / Array / IPQS / HIBP); vendor errors **fail open**
-- Known-good = domain **+ auth_pass always**. Spoofed Cap1/PayPal still hits ML
 - Model promotion only through the golden-eval gate
 
-Internal state lives in [`docs/AI_DEV_CHECKPOINT.md`](docs/AI_DEV_CHECKPOINT.md). What I keep off git: [`docs/TRADE_SECRETS.md`](docs/TRADE_SECRETS.md).
+**Source of truth for state and open work:** [`docs/AI_DEV_CHECKPOINT.md`](docs/AI_DEV_CHECKPOINT.md)
 
-## Run it locally
+## Public demo
+
+Static Signal Deck (no models, fictional senders):
+[epdacoder05.github.io/NullPointVector](https://epdacoder05.github.io/NullPointVector/)
+
+## Quick start
 
 ```bash
-cp .env.example .env   # fill secrets — never commit .env
+cp .env.example .env   # fill secrets locally — never commit .env
 docker compose up -d --build
 ```
 
 | URL | What |
 |-----|------|
-| http://localhost:8088/app | Signal Deck |
-| http://localhost:8088/docs | API |
+| http://localhost:8088/app | Signal Deck (nginx ingress — use this) |
+| http://localhost:8088/docs | API OpenAPI |
 | http://localhost:8088/health | Liveness |
 
-After adding routes: `docker compose restart app` (bind mount does not hot-reload Python).
+Restart the app container after adding routes (`docker compose restart app`); the bind mount does not hot-reload Python.
 
-## How it thinks
+## Architecture (pilot)
 
 ```
 browser / iOS Guard
         │
-   nginx :8088  ─── /app → Signal Deck
-                 └─ /api → REST
+   nginx :8088  ─── /app → FastAPI Signal Deck
+                 └─ /api → FastAPI REST
         │
-   Postgres + pgvector · Redis
+   Postgres + pgvector · Redis (rate limit / idempotency)
         │
-   policy (malice → known-good+auth → marketing) → TF-IDF + SGD
+   PhishGuard · SmishGuard · VishGuard  (TF-IDF + SGD + structural features)
+        │
+   policy_pipeline → known-good (domain + auth_pass) → marketing cap → ML
 ```
 
-Grade in the Deck → Postgres + feedback buffer → ephemeral `partial_fit` (toast Δw only) → nightly gated retrain. GATE FAIL keeps the old champion.
+Legacy Dash (`:8050`) was removed. Single ingress is `:8088`.
 
-## Tests I actually run
+## Feedback loop
+
+1. Grade in Signal Deck → Postgres `label` + `feedback.jsonl`
+2. Ephemeral `partial_fit` for toast Δw only
+3. Nightly gated retrain promotes champion only on GATE PASS
+
+## Verify
 
 ```bash
 pytest -q test/test_pills.py test/test_message_tags.py test/test_policy_pipeline.py \
   test/test_user_reports.py test/test_safe_domains.py test/test_account_delete.py \
   test/test_new_tags.py
+# ML gate (heavier):
 pytest -q test/test_model_gate.py test/test_trainer_gate.py
 ```
 
-## Layout
+## Repo layout
 
 | Path | Role |
 |------|------|
-| `web/` | Signal Deck |
-| `api/` | FastAPI |
-| `common/` | Policy, grading, features |
+| `web/` | Signal Deck (Jinja + static) |
+| `api/` | FastAPI REST |
+| `common/` | Shared policy, grading, ML features, mail helpers |
 | `PhishGuard/` `SmishGuard/` `VishGuard/` | Channel detectors + golden eval |
-| `Autobot/` | IMAP ingest |
-| `ios/` | NullPoint Guard |
-| `pages/` | Public GitHub Pages demo |
-| `docs/AI_DEV_CHECKPOINT.md` | Resume anchor for me / agents |
+| `Autobot/` | IMAP ingest / stream monitor |
+| `ios/` | NullPoint Guard (Call Directory + SMS Filter) |
+| `scripts/` | One-shot backfill / benchmarks / nightly |
+| `docs/AI_DEV_CHECKPOINT.md` | Resume anchor |
 
-LAN / ngrok / cloud: [`DEPLOYMENT.md`](DEPLOYMENT.md).
+`archive/` (hackbook labs) was retired — do not resurrect CI jobs that build it.
+
+## Private artifacts (not in git)
+
+Trained models, real `feedback.jsonl`, and live vishing campaign packs are **trade secrets**. CI cold-starts from the seed corpus if `*.pkl` are missing. See [`docs/TRADE_SECRETS.md`](docs/TRADE_SECRETS.md).
+
+## Deploy notes
+
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for LAN / ngrok / cloud ingress. Production shape is unchanged: one proxy in front of the app container.

@@ -1,36 +1,49 @@
-# What I publish vs what I keep
+# What stays private vs public
 
-I made NullPoint **source-available** so you can read how Signal Deck works. I did **not** open-source the product’s crown jewels.
+This repo is **source-available**. Product IP is not.
 
-| You can clone | Stays on my machine |
+| Public (git) | Private (local / not git) |
 |---|---|
-| Detectors, Signal Deck UI, policy, CI | Champion `*.pkl`, anomaly IF, registry |
-| Golden eval jsonl (held-out gate) | Real `feedback.jsonl` (labeled mail) |
-| `data/vish_campaigns/example.json` | Live campaign packs |
-| `.env.example` (names only) | `.env`, PilotSecrets, Funnel host |
-| Gate metrics I choose to show | Internal process dumps |
+| Detectors, Signal Deck, policy, CI workflows | Champion `*.pkl` + anomaly IF + registry |
+| Golden eval jsonl (held-out gate, synthetic-style) | `feedback.jsonl` (real labeled mail) |
+| `data/vish_campaigns/example.json` | Real campaign packs (`tax_resolution.json`, …) |
+| `.env.example` (names only) | `.env`, PilotSecrets values, Funnel host |
+| Gate *metrics* you choose to publish | Unpublished process dumps |
 
-## If you clone this to run it
+## Local restore
 
-Drop your own models next to the tree (same paths). If a pkl is missing, the detector cold-starts from the seed corpus — fine for CI, not my production champion.
+Copy private artifacts next to the public tree (same paths as before). Detectors **cold-start** from the seed corpus if a pkl is missing — good enough for CI, not your production champion.
 
 ```bash
+# models (gitignored)
 PhishGuard/phish_mlm/models/phishing_sgd_model.pkl
 SmishGuard/smish_mlm/models/smishing_sgd_model.pkl
 VishGuard/vish_mlm/models/vishing_sgd_model.pkl
-data/vish_campaigns/tax_resolution.json   # yours, not in git
+
+# campaigns
+data/vish_campaigns/tax_resolution.json   # not committed
 ```
 
-iOS: copy `ios/PilotSecrets.example.swift` → `ios/Sources/NullPointGuard/PilotSecrets.swift` and fill `username`, `password`, and `apiBaseURL`. Don’t commit real values.
+iOS: copy `ios/PilotSecrets.example.swift` → `ios/Sources/NullPointGuard/PilotSecrets.swift` and fill username/password/apiBaseURL. Do not commit real values.
 
-## Old commits
+## History warning
 
-Untracking a file does not erase history. Anything that hit `main` while the repo was public, I treat as burned: I rotate pilot passwords and hosts, and I keep new champions off git. Making the repo private is the only way to stop fresh clones of those old commits.
+Making files gitignored does **not** erase them from `main` history. If this GitHub repo is public, treat those blobs as burned: rotate pilot passwords, rotate Funnel/host names, keep real champions off git going forward. Making the GitHub repo **private** is the only way to stop anonymous clones of old commits.
 
-I am **not** rewriting git history. Filter-repo / BFG + force-push would not un-leak clones, and it would smash SHAs, PRs, and Actions. Local pkls stay if you only `git rm --cached`.
+## Do not rewrite git history (unless you accept the blast radius)
 
-## Demo
+`git filter-repo` / BFG + force-push **will not un-steal** anything already cloned. It **will**:
 
-Walk the console (fictional senders, no weights):
+- rewrite every commit SHA (PRs, Actions caches, Dependabot, citation links die)
+- force every clone to reset
+- risk dropping local untracked `*.pkl` if someone runs a sloppy `git clean`
+
+Local artifacts on disk stay if you only `git rm --cached`. **Do not history-rewrite to “fix” the leak.** Rotate secrets. Keep models local. Use the static demo for resume.
+
+## Public resume demo (GitHub Pages)
+
+Static Signal Deck UI (fictional data, no weights): `pages/` → after Pages is enabled:
 
 https://epdacoder05.github.io/NullPointVector/
+
+Enable once: GitHub → Settings → Pages → Source = **GitHub Actions**.

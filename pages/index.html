@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NullPoint — Signal Deck</title>
-  <meta name="description" content="I built NullPoint Signal Deck to triage phishing, smishing, and vishing. Static demo — paste a message, see tags. No live mailboxes or model weights." />
+  <meta name="description" content="NullPoint Signal Deck demo: phishing, smishing, and vishing triage. Static resume demo — no live mailboxes or model weights." />
   <link rel="stylesheet" href="./deck.css" />
 </head>
 <body>
@@ -19,7 +19,6 @@
     </div>
     <div class="nav-label">Command</div>
     <a class="nav-item active" href="./index.html"><span class="dot"></span>Dashboard</a>
-    <a class="nav-item" href="./analyze.html"><span class="dot"></span>Analyze</a>
     <a class="nav-item" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
     <div class="nav-label">Learn</div>
     <a class="nav-item" href="./loop.html"><span class="dot"></span>Feedback loop</a>
@@ -27,13 +26,12 @@
     <a class="nav-item" href="./ios.html"><span class="dot"></span>iOS Guard</a>
   </aside>
   <main class="main">
-    <div class="kicker">I built this</div>
+    <div class="kicker">Public demo</div>
     <h1>Signal Deck</h1>
     <p class="lede">
-      Multi-channel phishing / smishing / vishing. This walkthrough uses fictional senders.
-      I do not publish champion weights, live campaign packs, or mailboxes.
-      <strong>Paste a real-looking lure</strong> on Analyze — same policy layer I run before ML.
-      I’d rather hold a borderline message than miss a threat.
+      Multi-channel phishing / smishing / vishing console. This page is a
+      <strong>static walkthrough</strong> of the operator UI — fictional senders only.
+      Champion model weights, live campaign packs, and mailboxes are not published.
     </p>
     <div class="metrics">
       <div class="metric">
@@ -56,17 +54,14 @@
       </div>
     </div>
     <p class="lede">
-      Known-good requires <strong>domain + auth_pass always</strong>. Vendors fail open.
-      I only promote a model through the golden-eval gate. Call path is Call Directory + Message Filter — not a telecom.
+      Policy: known-good requires <strong>domain + auth_pass always</strong>.
+      Vendors fail open. Model promotion only through the golden-eval gate.
+      Call path is Call Directory + Message Filter — not a telecom.
     </p>
-    <p>
-      <a href="./analyze.html">Paste a message →</a>
-      &nbsp;·&nbsp;
-      <a href="./quarantine.html">Quarantine triage →</a>
-    </p>
+    <p><a href="./quarantine.html">Open quarantine triage →</a></p>
     <p class="footer-links">
       Source: <a href="https://github.com/EPdacoder05/NullPointVector">github.com/EPdacoder05/NullPointVector</a>
-      · What I keep private: <a href="https://github.com/EPdacoder05/NullPointVector/blob/main/docs/TRADE_SECRETS.md">TRADE_SECRETS.md</a>
+      · Trade secrets: <a href="https://github.com/EPdacoder05/NullPointVector/blob/main/docs/TRADE_SECRETS.md">TRADE_SECRETS.md</a>
     </p>
   </main>
 </div>
