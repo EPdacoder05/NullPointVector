@@ -611,7 +611,7 @@ async def ui_auth_oauth_start(provider: str, next: str = "/app/dashboard"):
 
 
 @router.get("/app/auth/callback/{provider}")
-async def ui_auth_oauth_callback(provider: str, code: str = "", state: str = "",
+async def ui_auth_oauth_callback(request: Request, provider: str, code: str = "", state: str = "",
                                  error: str = ""):
     from fastapi.responses import RedirectResponse
     from urllib.parse import quote
@@ -628,7 +628,7 @@ async def ui_auth_oauth_callback(provider: str, code: str = "", state: str = "",
     resp = RedirectResponse(dest, status_code=303)
     resp.set_cookie(
         "np_access", result["token"], httponly=True, samesite="lax",
-        secure=True,  # OAuth only completes on HTTPS public hosts
+        secure=_request_is_https(request),
         max_age=12 * 3600, path="/",
     )
     return resp

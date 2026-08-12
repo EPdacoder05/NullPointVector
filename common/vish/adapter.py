@@ -153,10 +153,6 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
     verdict = rep.verdict.value if rep.verdict != Verdict.UNKNOWN else (
         "fraud" if risk >= _BLOCK_AT else "spam" if risk >= _LABEL_AT else "unknown")
     action = _action_for(risk, contact_known=event.contact_known)
-    # Voice alone must never escalate to BLOCK (adversarial / zero-day room).
-    if action == CallKitAction.BLOCK and voice_risk >= risk and rep_risk < _BLOCK_AT and content_risk < _BLOCK_AT:
-        action = CallKitAction.SILENCE
-        reasons.append("Synthetic-voice cue held for review — not auto-blocked alone.")
     is_threat = action in (CallKitAction.BLOCK, CallKitAction.SILENCE)
 
     if not reasons:

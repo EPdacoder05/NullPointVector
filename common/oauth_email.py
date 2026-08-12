@@ -25,7 +25,8 @@ _STATE_TTL_S = 900  # 15 minutes — abandoned OAuth starts must not leak foreve
 def _prune_oauth_state(now: Optional[float] = None) -> None:
     """Drop expired CSRF states. Called on start/finish; O(n) but n stays tiny."""
     ts_now = time.time() if now is None else now
-    dead = [k for k, v in _STATE.items() if ts_now - float(v.get("ts") or 0) > _STATE_TTL_S]
+    snapshot = list(_STATE.items())
+    dead = [k for k, v in snapshot if ts_now - float(v.get("ts") or 0) > _STATE_TTL_S]
     for k in dead:
         _STATE.pop(k, None)
 
