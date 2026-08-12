@@ -553,9 +553,13 @@ async def ui_signup_post(request: Request,
         expires=timedelta(hours=8),
     )
     resp = RedirectResponse(url=dest, status_code=303)
+    _is_https = (
+        request.headers.get("x-forwarded-proto", "").lower() == "https"
+        or request.url.scheme == "https"
+    )
     resp.set_cookie(
         "np_access", token, httponly=True, samesite="lax",
-        secure=(request.url.scheme == "https"),
+        secure=_is_https,
         max_age=60 * 60 * 8, path="/",
     )
     return resp
@@ -618,9 +622,13 @@ async def ui_auth_oauth_callback(provider: str, code: str = "", state: str = "",
         return RedirectResponse(f"/app/login?next={nxt}&error={err}", status_code=303)
     dest = result.get("next") or "/app/dashboard"
     resp = RedirectResponse(dest, status_code=303)
+    _is_https = (
+        request.headers.get("x-forwarded-proto", "").lower() == "https"
+        or request.url.scheme == "https"
+    )
     resp.set_cookie(
         "np_access", result["token"], httponly=True, samesite="lax",
-        max_age=12 * 3600, path="/",
+        secure=_is_https, max_age=12 * 3600, path="/",
     )
     return resp
 
@@ -645,8 +653,13 @@ async def ui_login_post(request: Request,
     token = create_access_token(user, expires=timedelta(hours=8))  # console session
     dest = next if (next or "").startswith("/app") else "/app/dashboard"
     resp = RedirectResponse(url=dest, status_code=303)
+    _is_https = (
+        request.headers.get("x-forwarded-proto", "").lower() == "https"
+        or request.url.scheme == "https"
+    )
     resp.set_cookie(
-        "np_access", token, httponly=True, samesite="lax", max_age=60 * 60 * 8, path="/",
+        "np_access", token, httponly=True, samesite="lax",
+        secure=_is_https, max_age=60 * 60 * 8, path="/",
     )
     return resp
 
