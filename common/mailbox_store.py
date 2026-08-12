@@ -221,6 +221,7 @@ def upsert_oauth(*, account_sub: str, provider: str, account_email: str,
 
 
 def get_oauth(account_sub: str, provider: str, account_email: str) -> Optional[dict[str, str]]:
+    ensure_table()
     conn = _conn()
     if not conn:
         return None
