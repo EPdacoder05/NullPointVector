@@ -28,7 +28,11 @@ _MODEL_PATH = Path(__file__).resolve().parent / "models" / "voice_spoof_et.pkl"
 
 
 def _load_wav_mono(path: str) -> tuple[Optional[np.ndarray], int, Optional[str]]:
-    """Load audio as float32 mono. Returns (samples, sr, error_code)."""
+    """Load audio as float32 mono. Returns (samples, sr, error_code).
+
+    Duration is checked *before* allocating a full decode buffer when metadata
+    is available (soundfile.info / wave headers). Fail open on decode errors.
+    """
     p = Path(path)
     try:
         if not p.is_file():
@@ -36,32 +40,20 @@ def _load_wav_mono(path: str) -> tuple[Optional[np.ndarray], int, Optional[str]]
         size = p.stat().st_size
         if size <= 44 or size > _MAX_BYTES:
             return None, 0, "bad_size"
-        # Prefer soundfile; fall back to wave for PCM wav only.
+
+        # Metadata-first path (optional dependency).
         try:
-            import soundfile as sf
-            data, sr = sf.read(str(p), always_2d=False)
-        except Exception:
-            import wave
-            with wave.open(str(p), "rb") as w:
-                if w.getnchannels() < 1 or w.getsampwidth() not in (1, 2, 3, 4):
-                    return None, 0, "bad_format"
-                sr = int(w.getframerate() or 0)
-                n = w.getnframes()
-                if sr <= 0 or n <= 0:
-                    return None, 0, "bad_format"
-                if n / float(sr) > _MAX_SECONDS:
-                    return None, 0, "too_long"
-                raw = w.readframes(n)
-                sw = w.getsampwidth()
-                if sw == 1:
-                    data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
-                elif sw == 2:
-                    data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-                else:
-                    return None, 0, "bad_format"
-                if w.getnchannels() > 1:
-                    data = data.reshape(-1, w.getnchannels()).mean(axis=1)
-        else:
+            import soundfile as sf  # type: ignore[import-not-found]
+            info = sf.info(str(p))
+            sr_meta = int(getattr(info, "samplerate", 0) or 0)
+            frames = int(getattr(info, "frames", 0) or 0)
+            if sr_meta <= 0 or frames <= 0:
+                return None, 0, "bad_format"
+            if frames / float(sr_meta) > _MAX_SECONDS:
+                return None, 0, "too_long"
+            # Cap frames read even if metadata lied.
+            max_frames = int(_MAX_SECONDS * sr_meta) + 1
+            data, sr = sf.read(str(p), always_2d=False, frames=max_frames)
             data = np.asarray(data, dtype=np.float32)
             if data.ndim > 1:
                 data = data.mean(axis=1)
@@ -69,6 +61,28 @@ def _load_wav_mono(path: str) -> tuple[Optional[np.ndarray], int, Optional[str]]
                 return None, 0, "bad_format"
             if data.size / float(sr) > _MAX_SECONDS:
                 return None, 0, "too_long"
+            return data.astype(np.float32, copy=False), int(sr), None
+        except Exception:
+            pass
+
+        import wave
+        with wave.open(str(p), "rb") as w:
+            if w.getnchannels() < 1 or w.getsampwidth() not in (1, 2):
+                return None, 0, "bad_format"
+            sr = int(w.getframerate() or 0)
+            n = w.getnframes()
+            if sr <= 0 or n <= 0:
+                return None, 0, "bad_format"
+            if n / float(sr) > _MAX_SECONDS:
+                return None, 0, "too_long"
+            raw = w.readframes(n)
+            sw = w.getsampwidth()
+            if sw == 1:
+                data = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+            else:
+                data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            if w.getnchannels() > 1:
+                data = data.reshape(-1, w.getnchannels()).mean(axis=1)
         return data.astype(np.float32, copy=False), int(sr), None
     except Exception as e:
         logger.warning("voice_spoof load failed: %s", e)

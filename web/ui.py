@@ -479,6 +479,14 @@ async def ui_benchmarks(request: Request):
              ops=ops, assist=assist, max_lat_ms=max_lat, snapshot_stale=stale))
 
 
+def _request_is_https(request: Request) -> bool:
+    """True when the client connection is HTTPS (direct or via proxy)."""
+    if (request.url.scheme or "").lower() == "https":
+        return True
+    xf = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return xf == "https"
+
+
 def _safe_app_redirect_target(target: str, fallback: str = "/app/dashboard") -> str:
     from starlette.datastructures import URL
 
@@ -555,7 +563,7 @@ async def ui_signup_post(request: Request,
     resp = RedirectResponse(url=dest, status_code=303)
     resp.set_cookie(
         "np_access", token, httponly=True, samesite="lax",
-        secure=(request.url.scheme == "https"),
+        secure=_request_is_https(request),
         max_age=60 * 60 * 8, path="/",
     )
     return resp
@@ -648,7 +656,7 @@ async def ui_login_post(request: Request,
     resp = RedirectResponse(url=dest, status_code=303)
     resp.set_cookie(
         "np_access", token, httponly=True, samesite="lax",
-        secure=(request.url.scheme == "https"),
+        secure=_request_is_https(request),
         max_age=60 * 60 * 8, path="/",
     )
     return resp

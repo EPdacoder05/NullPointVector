@@ -13,8 +13,10 @@ import bcrypt
 
 logger = logging.getLogger("accounts")
 
-_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s.]+\.[^@\s]{2,24}$")
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s.]+\.[^@\s]{2,64}$")
 _MIN_PASSWORD = 10
+# Apple Hide My Email (iCloud Private Relay) is a real mailbox — always allow.
+_APPLE_RELAY = "privaterelay.appleid.com"
 
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS deck_accounts (
@@ -35,7 +37,19 @@ def normalize_email(raw: str) -> str:
 
 
 def valid_email(raw: str) -> bool:
-    return bool(_EMAIL_RE.match(normalize_email(raw)))
+    """Shape check only — not disposable-blocklist, not MX verify.
+
+    Apple Hide My Email (`*@privaterelay.appleid.com`) must pass: iOS-heavy pilot.
+    Fake generators (instaddr-style) still look like emails; blocking those is a
+    later allow/deny list, not this regex.
+    """
+    email = normalize_email(raw)
+    if not _EMAIL_RE.match(email):
+        return False
+    # Explicit allow so a future disposable blocklist never kills Apple relay.
+    if email.endswith("@" + _APPLE_RELAY):
+        return True
+    return True
 
 
 def _hash_password(password: str) -> str:

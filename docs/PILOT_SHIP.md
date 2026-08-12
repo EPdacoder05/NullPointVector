@@ -23,7 +23,7 @@ API_ADMIN_USER=<you>
 API_ADMIN_PASSWORD=<long>
 ```
 
-Friends go to `/app/signup` (email + 10+ char password, pbkdf2). Role = `customer`. Your admin/pilot env users still work. Close the gate later with `SIGNUP_OPEN=false`.
+Friends go to `/app/signup` (email + 10+ char password, bcrypt). Role = `customer`. Your admin/pilot env users still work. Close the gate later with `SIGNUP_OPEN=false`.
 
 ## 3. Google OAuth (Gmail actually connects)
 

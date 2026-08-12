@@ -12,6 +12,8 @@ def test_valid_email():
     assert valid_email("nope") is False
     assert valid_email("") is False
     assert valid_email("a@b.c") is False
+    # Apple Hide My Email (iCloud Private Relay) — required for iOS pilot.
+    assert valid_email("abc123@privaterelay.appleid.com") is True
 
 
 def test_signup_closed_by_default(monkeypatch):
