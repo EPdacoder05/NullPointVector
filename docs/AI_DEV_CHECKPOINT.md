@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (pilot/friends-family: signup, OAuth persist+XOAUTH2, /privacy, IPQS enrich cron, Fly/Railway compose, TestFlight notes; Pages deploy main-only; WET deferred)
+_Last updated: 2026-08-12 (PR#19 A+ polish; voice_spoof path; privacy plain English; Sign in single nav; WET deferred)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |

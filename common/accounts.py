@@ -42,12 +42,25 @@ def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+def _check_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            password_hash.encode("utf-8") if isinstance(password_hash, str) else password_hash,
+        )
+    except Exception:
+        return False
+
+
 def _reserved_usernames() -> set[str]:
+    """Full emails and local-parts of env users (admin@x.com and admin)."""
     out = {"admin", "anonymous", "anon", "root"}
     for key in ("API_ADMIN_USER", "API_PILOT_USER", "API_CUSTOMER_USER", "API_ENTERPRISE_USER"):
         val = (os.getenv(key) or "").strip().lower()
-        if val:
-            out.add(val)
+        if not val:
+            continue
+        out.add(val)
+        out.add(val.split("@", 1)[0])
     return out
 
 
@@ -133,7 +146,6 @@ def verify_login(email: str, password: str) -> Optional[dict[str, str]]:
     if not conn:
         return None
     try:
-        from common.auth import verify_password
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT email, password_hash, role FROM deck_accounts WHERE email = %s",
@@ -143,7 +155,7 @@ def verify_login(email: str, password: str) -> Optional[dict[str, str]]:
         if not row:
             return None
         stored_email, pw_hash, role = row
-        if not verify_password(password, pw_hash):
+        if not _check_password(password, pw_hash):
             return None
         return {"sub": stored_email, "role": role or "customer"}
     except Exception as e:

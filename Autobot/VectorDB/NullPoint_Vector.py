@@ -779,10 +779,39 @@ def get_vish_directory(limit: int = 5000):
         finally:
             release_conn(conn)
 
-    # NOTE: Deliberately avoid importing `common.number_reputation` here to prevent
-    # cyclic imports flagged by static analysis. This enrichment is optional; the
-    # directory is still built from DB-confirmed threats, seed numbers, and campaign packs.
-    pass
+    # Hot vendor numbers (IPQS enrich cron). Raw SQL only — no import of
+    # common.number_reputation (avoids Autobot↔common cycle).
+    if conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT to_regclass('public.number_reputation')
+                    """
+                )
+                if cursor.fetchone()[0]:
+                    cursor.execute(
+                        """
+                        SELECT e164, risk, verdict
+                        FROM number_reputation
+                        WHERE risk >= 0.4
+                        ORDER BY risk DESC
+                        LIMIT 2000
+                        """
+                    )
+                    for e164, risk, verdict in cursor.fetchall():
+                        num = normalize_number(str(e164 or ""))
+                        if not num or num in seen:
+                            continue
+                        seen.add(num)
+                        r = float(risk or 0)
+                        if r >= 0.85:
+                            block.append(num)
+                        else:
+                            lbl = str(verdict or "Suspicious caller").replace("_", " ").title()
+                            label.append({"number": num, "label": lbl})
+        except Exception as e:
+            logger.debug("number_reputation directory sql: %s", e)
 
     # Pilot seed so TestFlight sync is never empty before live call grades exist.
     seed = os.getenv(

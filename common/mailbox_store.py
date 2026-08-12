@@ -254,6 +254,7 @@ def get_oauth(account_sub: str, provider: str, account_email: str) -> Optional[d
 
 def get_secret(account_sub: str, provider: str, account_email: str) -> Optional[str]:
     """Return plaintext app password for ingest (caller must not log it)."""
+    ensure_table()
     conn = _conn()
     if not conn:
         return None

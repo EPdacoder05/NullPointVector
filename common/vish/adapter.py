@@ -115,11 +115,35 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
             for r in content["reasons"][:3]:
                 reasons.append(r)
 
+    # --- voice spoof path (voicemail file only; never solo-BLOCK) ---
+    voice_risk = 0.0
+    voice = None
+    try:
+        from VishGuard.vish_mlm.voice_spoof import score_event_audio
+        voice = score_event_audio(event.raw)
+    except Exception as e:
+        logger.debug("voice spoof path skipped: %s", e)
+        voice = None
+    if voice and voice.get("ok"):
+        paths.append("voice")
+        voice_risk = float(voice.get("risk") or 0.0)
+        # Cap: voice alone may lift into LABEL/SILENCE band, not BLOCK.
+        voice_risk = min(voice_risk, _SILENCE_AT + 0.05)
+        for code in voice.get("codes") or []:
+            if code == "SYNTHETIC_VOICE_SUSPECTED":
+                reasons.append("Voicemail audio looks synthetic (cloned / TTS cues).")
+            elif code == "VOICE_SILENCE_PAD":
+                reasons.append("Voicemail is mostly silence — possible pad/evasion.")
+            elif code == "VOICE_FLAT_SPECTRUM":
+                reasons.append("Voicemail spectrum is unusually flat for a phone recording.")
+
     # --- fuse ---
-    risk = max(rep_risk, content_risk)
+    risk = max(rep_risk, content_risk, voice_risk)
     # agreement bump: both independent paths see danger → more certain
     if rep_risk >= _LABEL_AT and content_risk >= _LABEL_AT:
         risk = min(1.0, risk + 0.08)
+    if voice_risk >= _LABEL_AT and (rep_risk >= _LABEL_AT or content_risk >= _LABEL_AT):
+        risk = min(1.0, risk + 0.05)
     # trust adjustments
     if event.carrier_verified is True:        # STIR/SHAKEN attested → slightly trust
         risk = max(0.0, risk - 0.05)
@@ -129,6 +153,10 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
     verdict = rep.verdict.value if rep.verdict != Verdict.UNKNOWN else (
         "fraud" if risk >= _BLOCK_AT else "spam" if risk >= _LABEL_AT else "unknown")
     action = _action_for(risk, contact_known=event.contact_known)
+    # Voice alone must never escalate to BLOCK (adversarial / zero-day room).
+    if action == CallKitAction.BLOCK and voice_risk >= risk and rep_risk < _BLOCK_AT and content_risk < _BLOCK_AT:
+        action = CallKitAction.SILENCE
+        reasons.append("Synthetic-voice cue held for review — not auto-blocked alone.")
     is_threat = action in (CallKitAction.BLOCK, CallKitAction.SILENCE)
 
     if not reasons:
@@ -139,6 +167,9 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
         reasons.append("Number is in your contacts — not blocked.")
 
     label = _label_for(verdict, rep.categories) if is_threat or action == CallKitAction.LABEL else ""
+    if voice and voice.get("ok") and "SYNTHETIC_VOICE_SUSPECTED" in (voice.get("codes") or []):
+        if not label:
+            label = "Possible cloned voice"
 
     return ScreenResult(
         action=action, is_threat=is_threat, risk=risk, verdict=verdict, label=label,
