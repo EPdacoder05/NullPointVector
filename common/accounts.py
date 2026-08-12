@@ -13,8 +13,10 @@ import bcrypt
 
 logger = logging.getLogger("accounts")
 
-_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s.]+\.[^@\s]{2,24}$")
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s.]+\.[^@\s]{2,64}$")
 _MIN_PASSWORD = 10
+# Apple Hide My Email (iCloud Private Relay) is a real mailbox — always allow.
+_APPLE_RELAY = "privaterelay.appleid.com"
 
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS deck_accounts (
@@ -35,19 +37,44 @@ def normalize_email(raw: str) -> str:
 
 
 def valid_email(raw: str) -> bool:
-    return bool(_EMAIL_RE.match(normalize_email(raw)))
+    """Shape check only — not disposable-blocklist, not MX verify.
+
+    Apple Hide My Email (`*@privaterelay.appleid.com`) must pass: iOS-heavy pilot.
+    Fake generators (instaddr-style) still look like emails; blocking those is a
+    later allow/deny list, not this regex.
+    """
+    email = normalize_email(raw)
+    if not _EMAIL_RE.match(email):
+        return False
+    # Explicit allow so a future disposable blocklist never kills Apple relay.
+    if email.endswith("@" + _APPLE_RELAY):
+        return True
+    return True
 
 
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+def _check_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            password_hash.encode("utf-8") if isinstance(password_hash, str) else password_hash,
+        )
+    except Exception:
+        return False
+
+
 def _reserved_usernames() -> set[str]:
+    """Full emails and local-parts of env users (admin@x.com and admin)."""
     out = {"admin", "anonymous", "anon", "root"}
     for key in ("API_ADMIN_USER", "API_PILOT_USER", "API_CUSTOMER_USER", "API_ENTERPRISE_USER"):
         val = (os.getenv(key) or "").strip().lower()
-        if val:
-            out.add(val)
+        if not val:
+            continue
+        out.add(val)
+        out.add(val.split("@", 1)[0])
     return out
 
 
@@ -133,7 +160,6 @@ def verify_login(email: str, password: str) -> Optional[dict[str, str]]:
     if not conn:
         return None
     try:
-        from common.auth import verify_password
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT email, password_hash, role FROM deck_accounts WHERE email = %s",
@@ -143,7 +169,7 @@ def verify_login(email: str, password: str) -> Optional[dict[str, str]]:
         if not row:
             return None
         stored_email, pw_hash, role = row
-        if not verify_password(password, pw_hash):
+        if not _check_password(password, pw_hash):
             return None
         return {"sub": stored_email, "role": role or "customer"}
     except Exception as e:

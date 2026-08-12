@@ -4,20 +4,45 @@
 <div class="topbar">
   <div>
     <h1>Privacy</h1>
-    <div class="desc">What I collect, why, how long I keep it, and how you delete it.</div>
+    <div class="desc">Last updated: August 2026 · Pilot draft</div>
   </div>
 </div>
 <section class="card">
   <div class="bd stack" style="max-width:42rem;line-height:1.55">
-    <p><strong>Who I am.</strong> I built NullPoint (Signal Deck) to catch phishing, smishing, and vishing. I am not a carrier. I do not place or intercept phone calls.</p>
-    <p><strong>What I collect.</strong> The email you use to sign in; mailbox credentials you choose to connect (encrypted at rest); message metadata and content needed to score threats; grades and reports you submit; optional phone numbers you add for Call Directory.</p>
-    <p><strong>Why.</strong> To score threats for you, learn from grades through a gated retrain (not a silent poison path), sync Call Directory / Message Filter lists, and process billing if you subscribe.</p>
-    <p><strong>Sharing.</strong> I do not sell personal data. Vendor lookups (IPQS phone/breach, HIBP, Safe Browsing when keyed) are consent-gated where required and <strong>fail open</strong> if the vendor is down. Fleet intel is aggregates and campaign fingerprints — not your whole inbox dumped to other users.</p>
-    <p><strong>Retention (pilot).</strong> I may purge raw message bodies after 90 days. Grades, report aggregates, and campaign fingerprints can stay longer so the next person is safer. You can delete your account anytime.</p>
-    <p><strong>Deletion.</strong> Account → Delete account, or email me. That wipes mailboxes, personal reports, and your signup row. Env operator users cannot be deleted from process memory.</p>
-    <p><strong>Kids.</strong> This pilot is not for children under 13.</p>
-    <p><strong>Contact.</strong> Signal Deck → Account, or the operator who invited you.</p>
-    <p class="hint">Last updated: 2026-08-11 · Pilot draft. I will edit this before any App Store listing.</p>
+    <h2 style="font-size:15px;margin:0 0 6px">Who I am</h2>
+    <p>I'm Ellis, and I built NullPoint to help people catch scam emails, texts, and phone calls before they do damage. NullPoint is not a phone carrier, email provider, or bank. I do not place calls, read your mail without permission, or share your data with advertisers.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">What I collect and why</h2>
+    <p><strong>Your account:</strong> email address and password (hashed — I can never see your actual password) so you can log in.</p>
+    <p><strong>Mailbox credentials:</strong> if you connect Gmail, Yahoo, or Outlook, I store your app password or OAuth token, encrypted. I need it to read your incoming mail and check it for threats. I never read mail unless you've connected a mailbox.</p>
+    <p><strong>Message content:</strong> subject lines, sender addresses, and body text from mail you've connected. I use this to score threats. I do not forward your emails anywhere. Raw message content may be deleted after 90 days.</p>
+    <p><strong>Your grades and reports:</strong> when you mark something safe or block it, I remember that. It helps the system get smarter for you and for everyone else over time.</p>
+    <p><strong>Phone numbers:</strong> if you add numbers to your Call Directory, I store those to sync your block/label list to your phone. I do not access your call history or listen to calls.</p>
+    <p><strong>Billing:</strong> if you subscribe, Stripe handles your card. I never see your card number.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">What I don't do</h2>
+    <p>I don't sell your data. Ever.</p>
+    <p>I don't share your inbox with other users. Threat patterns (like "this scam campaign uses these numbers") are shared anonymously — not your emails.</p>
+    <p>I don't use your data to train models for other companies.</p>
+    <p>I don't track you across other websites.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">Third-party lookups</h2>
+    <p>When you run a phone or email lookup in the Identity tab, I send that identifier to a vendor (like IPQS or Have I Been Pwned) to check for known scams or data breaches. I only do this when you ask. Those vendors have their own privacy policies.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">How long I keep your data</h2>
+    <p>Raw email content: up to 90 days, then purged.</p>
+    <p>Your grades and block decisions: kept to improve detection.</p>
+    <p>Your account info: until you delete your account.</p>
+    <p>Billing records: as long as legally required.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">Your rights</h2>
+    <p>You can delete your account at any time from <a href="/app/account">Account → Delete account</a>. This removes your login, connected mailboxes, and personal data. Under GDPR and CCPA you can also ask to see, correct, or export what I hold.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">Kids</h2>
+    <p>NullPoint is not for children under 13. If you believe a child has signed up, contact me and I'll remove the account.</p>
+
+    <h2 style="font-size:15px;margin:18px 0 6px">Changes</h2>
+    <p>I'll update this page as the product grows. The date at the top shows when it last changed.</p>
   </div>
 </section>
 {% endblock %}

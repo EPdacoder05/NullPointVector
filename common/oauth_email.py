@@ -19,6 +19,16 @@ logger = logging.getLogger(__name__)
 
 _STATE: dict[str, dict] = {}  # oauth CSRF state → meta
 _CONNECTIONS: dict[str, dict] = {}  # provider → connection status (process-local)
+_STATE_TTL_S = 900  # 15 minutes — abandoned OAuth starts must not leak forever
+
+
+def _prune_oauth_state(now: Optional[float] = None) -> None:
+    """Drop expired CSRF states. Called on start/finish; O(n) but n stays tiny."""
+    ts_now = time.time() if now is None else now
+    snapshot = list(_STATE.items())
+    dead = [k for k, v in snapshot if ts_now - float(v.get("ts") or 0) > _STATE_TTL_S]
+    for k in dead:
+        _STATE.pop(k, None)
 
 
 def _public_base() -> str:
@@ -66,6 +76,7 @@ def connector_status() -> list[dict[str, Any]]:
 
 def start_oauth(provider: str, account_sub: str = "") -> dict[str, Any]:
     """Return authorize URL for Gmail or Microsoft."""
+    _prune_oauth_state()
     state = secrets.token_urlsafe(24)
     redirect = f"{_public_base()}/app/connectors/callback/{provider}"
     _STATE[state] = {
@@ -115,8 +126,12 @@ def start_oauth(provider: str, account_sub: str = "") -> dict[str, Any]:
 
 
 def finish_oauth(provider: str, code: str, state: str) -> dict[str, Any]:
+    _prune_oauth_state()
     meta = _STATE.pop(state, None)
     if not meta or meta.get("provider") != provider:
+        return {"error": "invalid_state"}
+    # Expired after prune+pop race: reject stale starts explicitly.
+    if time.time() - float(meta.get("ts") or 0) > _STATE_TTL_S:
         return {"error": "invalid_state"}
     redirect = f"{_public_base()}/app/connectors/callback/{provider}"
 

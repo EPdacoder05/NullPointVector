@@ -201,6 +201,8 @@ SmishGuard/smish_mlm/models/feedback.jsonl
 VishGuard/vish_mlm/models/feedback.jsonl
 data/vish_campaigns/*.json
 !data/vish_campaigns/example.json
+data/voice_spoof/**
+!data/voice_spoof/README.md
 docs/NULLPOINT_FEEDBACK_LOOP.html
 docs/private/
 

@@ -479,6 +479,14 @@ async def ui_benchmarks(request: Request):
              ops=ops, assist=assist, max_lat_ms=max_lat, snapshot_stale=stale))
 
 
+def _request_is_https(request: Request) -> bool:
+    """True when the client connection is HTTPS (direct or via proxy)."""
+    if (request.url.scheme or "").lower() == "https":
+        return True
+    xf = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return xf == "https"
+
+
 def _safe_app_redirect_target(target: str, fallback: str = "/app/dashboard") -> str:
     from starlette.datastructures import URL
 
@@ -555,7 +563,7 @@ async def ui_signup_post(request: Request,
     resp = RedirectResponse(url=dest, status_code=303)
     resp.set_cookie(
         "np_access", token, httponly=True, samesite="lax",
-        secure=(request.url.scheme == "https"),
+        secure=_request_is_https(request),
         max_age=60 * 60 * 8, path="/",
     )
     return resp
@@ -603,7 +611,7 @@ async def ui_auth_oauth_start(provider: str, next: str = "/app/dashboard"):
 
 
 @router.get("/app/auth/callback/{provider}")
-async def ui_auth_oauth_callback(provider: str, code: str = "", state: str = "",
+async def ui_auth_oauth_callback(request: Request, provider: str, code: str = "", state: str = "",
                                  error: str = ""):
     from fastapi.responses import RedirectResponse
     from urllib.parse import quote
@@ -616,10 +624,11 @@ async def ui_auth_oauth_callback(provider: str, code: str = "", state: str = "",
         nxt = quote(result.get("next") or "/app/dashboard", safe="")
         err = result.get("error") or "oauth_exchange_failed"
         return RedirectResponse(f"/app/login?next={nxt}&error={err}", status_code=303)
-    dest = result.get("next") or "/app/dashboard"
+    dest = _safe_app_redirect_target(result.get("next") or "/app/dashboard")
     resp = RedirectResponse(dest, status_code=303)
     resp.set_cookie(
         "np_access", result["token"], httponly=True, samesite="lax",
+        secure=_request_is_https(request),
         max_age=12 * 3600, path="/",
     )
     return resp
@@ -633,20 +642,22 @@ async def ui_login_post(request: Request,
                         _rl: None = Depends(rate_limit())):
     from fastapi.responses import RedirectResponse
     from common.auth import authenticate_user, create_access_token
+    dest = _safe_app_redirect_target(next)
     user = authenticate_user(username.strip(), password)
     if not user:
         return templates.TemplateResponse(
             request, "login.html",
             {"channels": CHANNELS, "active": "login",
              "error": "Invalid credentials", "username": username,
-             "next": next if (next or "").startswith("/app") else "/app/dashboard"},
+             "next": dest},
             status_code=401)
     from datetime import timedelta
     token = create_access_token(user, expires=timedelta(hours=8))  # console session
-    dest = next if (next or "").startswith("/app") else "/app/dashboard"
     resp = RedirectResponse(url=dest, status_code=303)
     resp.set_cookie(
-        "np_access", token, httponly=True, samesite="lax", max_age=60 * 60 * 8, path="/",
+        "np_access", token, httponly=True, samesite="lax",
+        secure=_request_is_https(request),
+        max_age=60 * 60 * 8, path="/",
     )
     return resp
 

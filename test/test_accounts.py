@@ -12,6 +12,8 @@ def test_valid_email():
     assert valid_email("nope") is False
     assert valid_email("") is False
     assert valid_email("a@b.c") is False
+    # Apple Hide My Email (iCloud Private Relay) — required for iOS pilot.
+    assert valid_email("abc123@privaterelay.appleid.com") is True
 
 
 def test_signup_closed_by_default(monkeypatch):
@@ -45,3 +47,19 @@ def test_register_short_password(monkeypatch):
     out = register("friend@example.com", "short")
     assert out["ok"] is False
     assert out["error"] == "short_password"
+
+
+def test_reserved_blocks_local_part(monkeypatch):
+    monkeypatch.setenv("SIGNUP_OPEN", "true")
+    monkeypatch.setenv("API_ADMIN_USER", "admin")
+    from common.accounts import register
+    out = register("admin@example.com", "longenoughpassword")
+    assert out["ok"] is False
+    assert out["error"] == "reserved"
+
+
+def test_safe_redirect_rejects_external():
+    from web.ui import _safe_app_redirect_target
+    assert _safe_app_redirect_target("https://evil.test/phish") == "/app/dashboard"
+    assert _safe_app_redirect_target("//evil.test") == "/app/dashboard"
+    assert _safe_app_redirect_target("/app/connectors") == "/app/connectors"
