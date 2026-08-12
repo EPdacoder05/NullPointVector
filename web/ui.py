@@ -537,6 +537,7 @@ async def ui_signup_post(request: Request,
     resp = RedirectResponse(url=dest, status_code=303)
     resp.set_cookie(
         "np_access", token, httponly=True, samesite="lax",
+        secure=(request.url.scheme == "https"),
         max_age=60 * 60 * 8, path="/",
     )
     return resp
