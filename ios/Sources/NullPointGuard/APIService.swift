@@ -111,7 +111,7 @@ final class APIService {
     /// Auto-connect — requires PilotSecrets (or env-backed) credentials. No baked password.
     func pilotConnect() async throws {
         let user = PilotSecrets.username.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pass = PilotSecrets.password
+        let pass = PilotSecrets.password.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !user.isEmpty, !pass.isEmpty else {
             throw APIError.message("PilotSecrets username/password not set")
         }
