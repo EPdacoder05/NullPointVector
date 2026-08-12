@@ -74,6 +74,10 @@ pytest -q test/test_model_gate.py test/test_trainer_gate.py
 
 `archive/` (hackbook labs) was retired — do not resurrect CI jobs that build it.
 
+## Private artifacts (not in git)
+
+Trained models, real `feedback.jsonl`, and live vishing campaign packs are **trade secrets**. CI cold-starts from the seed corpus if `*.pkl` are missing. See [`docs/TRADE_SECRETS.md`](docs/TRADE_SECRETS.md).
+
 ## Deploy notes
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md) for LAN / ngrok / cloud ingress. Production shape is unchanged: one proxy in front of the app container.

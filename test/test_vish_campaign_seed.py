@@ -16,7 +16,7 @@ def test_extract_callback_tfns():
 
 
 def test_tax_campaign_pack_loads():
-    pack = Path(__file__).resolve().parents[1] / "data" / "vish_campaigns" / "tax_resolution.json"
+    pack = Path(__file__).resolve().parents[1] / "data" / "vish_campaigns" / "example.json"
     assert pack.is_file()
     import json
     data = json.loads(pack.read_text())

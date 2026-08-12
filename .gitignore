@@ -190,10 +190,19 @@ data/url_cache/
 data/reports/data/benchmark_snapshot.json
 
 .ios_pilot_auth
-
 .ios_pilot_token
-# PilotSecrets is committed with Internal TestFlight defaults (noadmin).
-# Do not put production secrets here.
+
+# --- Trade secrets (keep local / private storage; never push) ---
+**/*.pkl
+**/models/registry/CHAMPION
+**/models/registry/**/meta.json
+PhishGuard/phish_mlm/data/feedback.jsonl
+SmishGuard/smish_mlm/models/feedback.jsonl
+VishGuard/vish_mlm/models/feedback.jsonl
+data/vish_campaigns/*.json
+!data/vish_campaigns/example.json
+docs/NULLPOINT_FEEDBACK_LOOP.html
+docs/private/
 
 # Never commit crash dumps or Xcode per-user state
 /core

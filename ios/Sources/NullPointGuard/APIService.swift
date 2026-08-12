@@ -4,8 +4,8 @@ import Foundation
 final class APIService {
     static let shared = APIService()
 
-    /// Phone / TestFlight default (Tailscale Funnel). Mac uses localhost in App.init.
-    var baseURL = URL(string: "https://elliss-macbook-pro.tail199a91.ts.net")!
+    /// Default API host. Phone uses PilotSecrets.apiBaseURL if set; else localhost.
+    var baseURL = URL(string: "http://127.0.0.1:8088")!
 
     var accessToken: String? = nil
     var refreshToken: String? = nil
@@ -21,17 +21,17 @@ final class APIService {
         if isRunningOnMac {
             return "http://127.0.0.1:8088"
         }
-        return "https://elliss-macbook-pro.tail199a91.ts.net"
+        let custom = PilotSecrets.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !custom.isEmpty { return custom }
+        return "http://127.0.0.1:8088"
     }
 
     /// Alternate hosts if the preferred one fails (Funnel vs tailnet).
     static func candidateBaseURLs() -> [String] {
-        if isRunningOnMac {
-            return ["http://127.0.0.1:8088", "http://localhost:8088"]
-        }
-        return [
-            "https://elliss-macbook-pro.tail199a91.ts.net",
-        ]
+        var urls = ["http://127.0.0.1:8088", "http://localhost:8088"]
+        let custom = PilotSecrets.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !custom.isEmpty { urls.insert(custom, at: 0) }
+        return urls
     }
 
     @discardableResult
@@ -108,10 +108,13 @@ final class APIService {
         applySession(access: tok.access_token, refresh: tok.refresh_token)
     }
 
-    /// Auto-connect — always has hardcoded pilot fallback so Archive never ships empty.
+    /// Auto-connect — requires PilotSecrets (or env-backed) credentials. No baked password.
     func pilotConnect() async throws {
-        let user = PilotSecrets.username.isEmpty ? "noadmin" : PilotSecrets.username
-        let pass = PilotSecrets.password.isEmpty ? "thepasswordispoo" : PilotSecrets.password
+        let user = PilotSecrets.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pass = PilotSecrets.password
+        guard !user.isEmpty, !pass.isEmpty else {
+            throw APIError.message("PilotSecrets username/password not set")
+        }
 
         var lastError: Error?
         for base in Self.candidateBaseURLs() {
