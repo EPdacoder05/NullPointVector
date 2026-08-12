@@ -68,6 +68,8 @@ def ensure_user_reports_table(conn) -> None:
             """
         )
     conn.commit()
+    from common.tenant_rls import ensure_rls
+    ensure_rls(conn)
 
 
 def submit_user_report(
@@ -111,6 +113,8 @@ def submit_user_report(
         return out
     try:
         ensure_user_reports_table(conn)
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, (account_sub or "anon")[:128])
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -149,12 +153,17 @@ def submit_user_report(
 
 
 def check_fleet_promotion(conn, *, sender_key: str, channel: str = "email") -> dict[str, Any]:
-    """Distinct reporters in 30d → review flag or auto fleet key (capped conf)."""
+    """Distinct reporters in 30d → review flag or auto fleet key (capped conf).
+
+    Cross-tenant count + promote requires deliberate RLS bypass.
+    """
     result = {"status": "none", "count": 0, "sender_key": sender_key}
     if not sender_key:
         return result
     since = datetime.now(timezone.utc) - timedelta(days=30)
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, bypass=True)
         with conn.cursor() as cur:
             cur.execute(
                 """

@@ -36,6 +36,8 @@ def ensure_table() -> bool:
         with conn.cursor() as cur:
             cur.execute(_TABLE_SQL)
         conn.commit()
+        from common.tenant_rls import ensure_rls
+        ensure_rls(conn)
         return True
     except Exception as e:
         logger.error("ensure user_mailboxes: %s", e)
@@ -78,6 +80,8 @@ def upsert_app_password(*, account_sub: str, provider: str,
     if "@" not in account_email or len(app_password) < 8:
         return {"ok": False, "error": "need_email_and_app_password"}
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, account_sub)
         blob = _enc(json.dumps({"password": app_password}))
         with conn.cursor() as cur:
             cur.execute(
@@ -113,6 +117,8 @@ def list_for_user(account_sub: str) -> list[dict[str, Any]]:
     if not conn:
         return []
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, account_sub)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -142,12 +148,17 @@ def list_for_user(account_sub: str) -> list[dict[str, Any]]:
 
 
 def list_all() -> list[dict[str, Any]]:
-    """All saved mailboxes (ingest polls every friend, not just .env)."""
+    """All saved mailboxes (ingest polls every friend, not just .env).
+
+    Deliberate RLS bypass — ingest is operator-scoped, not a user session.
+    """
     ensure_table()
     conn = _conn()
     if not conn:
         return []
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, bypass=True)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -188,6 +199,8 @@ def upsert_oauth(*, account_sub: str, provider: str, account_email: str,
     if "@" not in account_email or not (refresh_token or "").strip():
         return {"ok": False, "error": "need_email_and_refresh"}
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, account_sub)
         blob = _enc(json.dumps({
             "refresh_token": refresh_token.strip(),
             "access_token": (access_token or "").strip(),
@@ -226,6 +239,8 @@ def get_oauth(account_sub: str, provider: str, account_email: str) -> Optional[d
     if not conn:
         return None
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, account_sub)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -259,6 +274,8 @@ def get_secret(account_sub: str, provider: str, account_email: str) -> Optional[
     if not conn:
         return None
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, account_sub)
         with conn.cursor() as cur:
             cur.execute(
                 """

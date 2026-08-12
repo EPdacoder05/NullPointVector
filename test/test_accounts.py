@@ -33,12 +33,27 @@ def test_register_closed(monkeypatch):
     assert out["error"] == "signup_closed"
 
 
+def test_register_disposable(monkeypatch):
+    monkeypatch.setenv("SIGNUP_OPEN", "true")
+    from common.accounts import register
+    out = register("foo@mailinator.com", "longenoughpassword")
+    assert out["ok"] is False
+    assert out["error"] == "disposable"
+
+
 def test_register_bad_email(monkeypatch):
     monkeypatch.setenv("SIGNUP_OPEN", "true")
     from common.accounts import register
     out = register("not-an-email", "longenoughpassword")
     assert out["ok"] is False
     assert out["error"] == "bad_email"
+
+
+def test_apple_relay_not_disposable():
+    from common.disposable_domains import is_disposable_email
+    assert is_disposable_email("abc123@privaterelay.appleid.com") is False
+    assert is_disposable_email("x@instaddr.ch") is True
+    assert is_disposable_email("x@yopmail.com") is True
 
 
 def test_register_short_password(monkeypatch):

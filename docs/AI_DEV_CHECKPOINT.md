@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-12 (PR#20 clean rebase: Copilot secure-cookie/proxy, voice DoS guard, OAuth state TTL, Apple Hide My Email; voice never solo-BLOCK)
+_Last updated: 2026-08-12 (Closed duplicate #21; #22 on main. Shipping disposable-email deny-list + real FORCE RLS via `nullpoint_rls` SET LOCAL ROLE — superuser pool alone does not enforce RLS.)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |

@@ -177,7 +177,11 @@ def release_conn(conn):
     """Release a connection back to the pool."""
     if conn is None:
         return
-    
+    try:
+        from common.tenant_rls import clear_tenant
+        clear_tenant(conn)
+    except Exception:
+        pass
     pool_instance = _init_pool()
     if pool_instance is not None:
         try:
