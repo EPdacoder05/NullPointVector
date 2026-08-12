@@ -109,8 +109,8 @@ def register(email: str, password: str) -> dict[str, Any]:
         logger.error("register failed: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning("register rollback failed: %s", rollback_error)
         return {"ok": False, "error": "save_failed"}
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn
@@ -165,8 +165,8 @@ def delete_account(email: str) -> int:
         logger.error("delete_account: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning("delete_account rollback failed: %s", rollback_error)
         return 0
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn
