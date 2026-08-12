@@ -217,8 +217,8 @@ def _microsoft_email(access_token: str, id_token: Any) -> str:
             email = str(payload.get("email") or payload.get("preferred_username") or "").strip()
             if email:
                 return email
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("microsoft id_token parse failed: %s", e)
     if not access_token:
         return ""
     try:
