@@ -138,8 +138,8 @@ def ensure_rls(conn) -> None:
         logger.error("ensure_rls failed: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_err:
+            logger.warning("ensure_rls rollback failed: %s", rollback_err)
 
 
 def set_tenant(conn, account_sub: Optional[str] = None, *, bypass: bool = False) -> None:
