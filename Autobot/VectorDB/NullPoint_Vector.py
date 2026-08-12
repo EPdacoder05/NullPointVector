@@ -180,8 +180,8 @@ def release_conn(conn):
     try:
         from common.tenant_rls import clear_tenant
         clear_tenant(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to clear tenant context before releasing connection: {e}")
     pool_instance = _init_pool()
     if pool_instance is not None:
         try:
