@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NullPoint Guard — iOS</title>
+  <link rel="stylesheet" href="./deck.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">N</div>
+      <div><div class="name">NullPoint</div><div class="sub">Signal Deck</div></div>
+    </div>
+    <div class="nav-label">Command</div>
+    <a class="nav-item" href="./index.html"><span class="dot"></span>Dashboard</a>
+    <a class="nav-item" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
+    <div class="nav-label">Learn</div>
+    <a class="nav-item" href="./loop.html"><span class="dot"></span>Feedback loop</a>
+    <a class="nav-item" href="./glossary.html"><span class="dot"></span>Glossary</a>
+    <a class="nav-item active" href="./ios.html"><span class="dot"></span>iOS Guard</a>
+  </aside>
+  <main class="main">
+    <div class="kicker">NullPoint Guard</div>
+    <h1>Call Directory + SMS Filter</h1>
+    <p class="lede">
+      Apple does not emit carrier Recents to third-party apps. Guard sells a fat backend
+      directory + on-device Message Filter. Live Caller ID Lookup is optional later.
+      No Twilio. No SIP. No “we became a telecom.”
+    </p>
+    <div class="phone">
+      <h3>Recents (illustration)</h3>
+      <div class="call-row"><span class="who">+1 555 555 0101</span><span class="lab">Scam likely</span></div>
+      <div class="call-row"><span class="who">+1 555 555 0102</span><span class="lab">Tax script</span></div>
+      <div class="call-row"><span class="who">Mom</span><span class="lab" style="color:#3a8c5c">Allowed</span></div>
+    </div>
+    <p class="note" style="margin-top:16px">
+      Enable: Settings → Phone → Call Blocking &amp; Identification → Guard Directory.
+      Settings → Messages → Unknown &amp; Spam → SMS Filter.
+    </p>
+    <p class="note">Xcode project stays in the source repo; this page is the public pitch, not a binary.</p>
+  </main>
+</div>
+</body>
+</html>

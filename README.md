@@ -11,6 +11,11 @@ Locked product surface (do not re-litigate):
 
 **Source of truth for state and open work:** [`docs/AI_DEV_CHECKPOINT.md`](docs/AI_DEV_CHECKPOINT.md)
 
+## Public demo
+
+Static Signal Deck (no models, fictional senders):
+[epdacoder05.github.io/NullPointVector](https://epdacoder05.github.io/NullPointVector/)
+
 ## Quick start
 
 ```bash
