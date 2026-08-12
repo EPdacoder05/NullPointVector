@@ -479,6 +479,69 @@ async def ui_benchmarks(request: Request):
              ops=ops, assist=assist, max_lat_ms=max_lat, snapshot_stale=stale))
 
 
+@router.get("/app/signup", response_class=HTMLResponse)
+async def ui_signup_get(request: Request, next: str = "/app/dashboard", error: str = ""):
+    from common.accounts import signup_open
+    if _current_user(request):
+        from fastapi.responses import RedirectResponse
+        dest = next if next.startswith("/app") else "/app/dashboard"
+        return RedirectResponse(url=dest, status_code=303)
+    err = error or None
+    if not signup_open():
+        err = err or "Signup is closed. Ask the operator, or use an existing account."
+    return templates.TemplateResponse(
+        request, "signup.html",
+        {"channels": CHANNELS, "active": "login", "error": err, "email": "",
+         "next": next if next.startswith("/app") else "/app/dashboard",
+         "signup_open": signup_open()})
+
+
+@router.post("/app/signup", response_class=HTMLResponse)
+async def ui_signup_post(request: Request,
+                         email: str = Form(...),
+                         password: str = Form(...),
+                         next: str = Form("/app/dashboard"),
+                         _rl: None = Depends(rate_limit())):
+    from fastapi.responses import RedirectResponse
+    from common.accounts import register, signup_open
+    from common.auth import create_access_token
+    dest = next if (next or "").startswith("/app") else "/app/dashboard"
+    if not signup_open():
+        return templates.TemplateResponse(
+            request, "signup.html",
+            {"channels": CHANNELS, "active": "login",
+             "error": "Signup is closed.", "email": email, "next": dest,
+             "signup_open": False},
+            status_code=403)
+    result = register(email, password)
+    if not result.get("ok"):
+        msgs = {
+            "bad_email": "Use a real email address.",
+            "short_password": "Password must be at least 10 characters.",
+            "email_taken": "That email already has an account — sign in.",
+            "reserved": "That name is reserved.",
+            "db_unavailable": "Database is down — try again in a minute.",
+            "signup_closed": "Signup is closed.",
+        }
+        err = msgs.get(result.get("error"), "Could not create the account.")
+        return templates.TemplateResponse(
+            request, "signup.html",
+            {"channels": CHANNELS, "active": "login", "error": err,
+             "email": email, "next": dest, "signup_open": True},
+            status_code=400)
+    from datetime import timedelta
+    token = create_access_token(
+        {"sub": result["sub"], "role": result["role"]},
+        expires=timedelta(hours=8),
+    )
+    resp = RedirectResponse(url=dest, status_code=303)
+    resp.set_cookie(
+        "np_access", token, httponly=True, samesite="lax",
+        max_age=60 * 60 * 8, path="/",
+    )
+    return resp
+
+
 @router.get("/app/login", response_class=HTMLResponse)
 async def ui_login_get(request: Request, next: str = "/app/dashboard", error: str = ""):
     if _current_user(request):  # already signed in → straight to the portal
@@ -1176,10 +1239,13 @@ async def ui_connectors_request_provider(
 
 
 @router.get("/app/connectors/oauth/{provider}")
-async def ui_connectors_oauth_start(provider: str):
+async def ui_connectors_oauth_start(provider: str, request: Request):
     from fastapi.responses import JSONResponse, RedirectResponse
     from common.oauth_email import start_oauth
-    result = start_oauth(provider)
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/app/login?next=/app/connectors", status_code=303)
+    result = start_oauth(provider, account_sub=str(user.get("sub") or ""))
     if result.get("authorize_url"):
         return RedirectResponse(result["authorize_url"])
     return JSONResponse(result, status_code=400)

@@ -44,7 +44,7 @@
   }
   function paymentSpoof(text, from) {
     var hs = hosts(text, from);
-    var ask = PAY_ASK.some(function (a) { return text.indexOf(a) >= 0; }) || text.indexOf("locked out") >= 0;
+    var ask = PAY_ASK.some(function (a) { return text.indexOf(a) >= 0; });
     for (var i = 0; i < PAY_BRANDS.length; i++) {
       var b = PAY_BRANDS[i];
       if (text.indexOf(b.brand) < 0) continue;
@@ -101,7 +101,9 @@
         why.push("Link host “" + h + "” uses a frequently abused TLD.");
       }
       SHORT.forEach(function (s) {
-        if (h.indexOf(s) >= 0) tags.push({ code: "SHORT_LINK", label: "Shortener hides destination", danger: true });
+        if (h === s || h.slice(-(s.length + 1)) === "." + s) {
+          tags.push({ code: "SHORT_LINK", label: "Shortener hides destination", danger: true });
+        }
       });
     });
     if (TFN.test(subject + " " + body)) {

@@ -46,6 +46,12 @@ def delete_account_data(account_sub: str) -> dict[str, Any]:
                 (sub,),
             )
             out["reports"] = cur.rowcount or 0
+        try:
+            from common.accounts import delete_account as _delete_deck
+            out["deck_accounts"] = _delete_deck(sub)
+        except Exception:
+            out["deck_accounts"] = 0
+        with conn.cursor() as cur:
             # Optional table from provider-request form
             cur.execute(
                 """

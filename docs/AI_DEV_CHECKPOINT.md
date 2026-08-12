@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (Pages Analyze playground + first-person README/TRADE_SECRETS; do not rewrite git history; rotate burned pilot/Funnel secrets)
+_Last updated: 2026-08-11 (pilot/friends-family: signup, OAuth persist+XOAUTH2, /privacy, IPQS enrich cron, Fly/Railway compose, TestFlight notes; Pages deploy main-only; WET deferred)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |
@@ -85,13 +85,13 @@ Do **not** mark these done until verified with curl/device.
 
 | Gap | Reality |
 |---|---|
-| OAuth tokens → ingest | Callbacks process-local; **IMAP app-password path wired**; OAuth mail fetch still open |
+| OAuth tokens → ingest | **HALF** — refresh tokens persist in `user_mailboxes`; Gmail IMAP XOAUTH2 + app-password ingest across all subs. Microsoft oauth persist yes; XOAUTH2 IMAP still password-first |
 | Personal phone allow/block | **Not built** (no namespaced UI/API) |
 | Polling interval by plan | **Not built** (fixed ~5 min batch) |
 | IMAP IDLE / push | **Not built** |
-| Vendor enrich cron (A) | **Not built** — Identity fail-open stubs |
+| Vendor enrich cron (A) | **OK code** `scripts/enrich_directory.py` → `number_reputation` → Call Directory. Needs `IPQS_API_KEY` |
 | Live Caller ID Lookup (C) | **Not built** — user ready; no PIR server/extension |
-| Account signup DB users | Still env JWT users — **no self-register table** |
+| Account signup DB users | **OK code** `deck_accounts` + `/app/signup` behind `SIGNUP_OPEN` |
 | Stripe live | **Still `BILLING_MOCK`** |
 | iOS device sync | Source passwordless; Funnel+Archive still operator-fragile |
 | Secrets in chat | Burned — rotate before shared deploy |
@@ -189,9 +189,9 @@ Older line “Mark Safe cascades automatically” is **STALE** — now **asks** 
 ### Remaining (ordered — still open)
 | # | Item | Status |
 |---|---|---|
-| 1 | Wire `user_mailboxes` / OAuth tokens into `email_ingestion` + personal phone allow/block namespaced | **Gap** — store UI exists; ingest still .env |
+| 1 | Wire `user_mailboxes` / OAuth tokens into `email_ingestion` + personal phone allow/block namespaced | **HALF** — Gmail XOAUTH2 + all-sub ingest; phone allow/block still open |
 | 2 | IMAP move-to-junk on Block (so Yahoo inbox matches NullPoint) | **Not built** |
-| 3 | **A** Vendor enrich cron → directory growth | **Not built** |
+| 3 | **A** Vendor enrich cron → directory growth | **OK code** — `scripts/enrich_directory.py` + IPQS key |
 | 4 | IMAP IDLE / push | **Not built** |
 | 5 | **C** Live Caller ID Lookup (iOS 18 PIR) | **Not built** — user ready with Apple + public HTTPS |
 | 6 | SIP/Telnyx | **Deferred** |

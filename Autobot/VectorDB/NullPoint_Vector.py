@@ -779,6 +779,22 @@ def get_vish_directory(limit: int = 5000):
         finally:
             release_conn(conn)
 
+    try:
+        from common.number_reputation import list_hot
+        for hit in list_hot(2000):
+            num = hit.get("e164") or ""
+            if not num or num in seen:
+                continue
+            seen.add(num)
+            risk = float(hit.get("risk") or 0)
+            if risk >= 0.85:
+                block.append(num)
+            else:
+                lbl = str(hit.get("verdict") or "Suspicious caller").replace("_", " ").title()
+                label.append({"number": num, "label": lbl})
+    except Exception as e:
+        logger.debug("number_reputation directory: %s", e)
+
     # Pilot seed so TestFlight sync is never empty before live call grades exist.
     seed = os.getenv(
         "VISH_DIRECTORY_SEED",

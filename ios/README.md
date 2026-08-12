@@ -157,6 +157,16 @@ account (signup / Sign in with Apple is a later product slice — not paste-JWT)
 
 ---
 
+## Internal TestFlight (you + 2 friends)
+
+1. Public HTTPS API (Fly/Railway/`docker-compose.prod.yml` — see `docs/PILOT_SHIP.md`). Not localhost. Not a changing tunnel hostname.
+2. Bake it: `API_BASE_URL` in `project.yml` + Info.plist → `https://YOUR_HOST`. `xcodegen generate`.
+3. Archive → App Store Connect → **Internal Testing** (your Apple ID + two testers). External review can wait.
+4. Each friend creates a Signal Deck account at `https://YOUR_HOST/app/signup` (`SIGNUP_OPEN=true`). Same email/password in Guard → Sign in. Directory sync is **customer+**.
+5. Settings → Phone → Call Blocking & Identification → Directory. Messages → Unknown & Spam → SMS Filter. Force-quit both apps.
+
+I cannot upload the binary without your Apple ID. Team stays `KX3P7M3B6L` until you change it.
+
 ## Device after TestFlight
 
 1. Open Guard → **Sign in** (once) → wait for “Synced N blocks…”

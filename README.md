@@ -18,6 +18,8 @@ I’d rather hold a borderline message than miss a threat. False positives annoy
 
 Internal state lives in [`docs/AI_DEV_CHECKPOINT.md`](docs/AI_DEV_CHECKPOINT.md). What I keep off git: [`docs/TRADE_SECRETS.md`](docs/TRADE_SECRETS.md).
 
+Friends-and-family ship (public URL, signup, Gmail OAuth, IPQS, TestFlight): [`docs/PILOT_SHIP.md`](docs/PILOT_SHIP.md). Privacy: `/app/privacy`.
+
 ## Run it locally
 
 ```bash

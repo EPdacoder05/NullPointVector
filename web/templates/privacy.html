@@ -4,19 +4,20 @@
 <div class="topbar">
   <div>
     <h1>Privacy</h1>
-    <div class="desc">What we collect, why, how long we keep it, and how you delete it.</div>
+    <div class="desc">What I collect, why, how long I keep it, and how you delete it.</div>
   </div>
 </div>
 <section class="card">
   <div class="bd stack" style="max-width:42rem;line-height:1.55">
-    <p><strong>Product.</strong> NullPoint (Signal Deck) helps you detect phishing, smishing, and vishing. It is not a carrier and does not place or intercept phone calls.</p>
-    <p><strong>What we collect.</strong> Account identifiers you use to sign in; mailbox credentials you voluntarily connect (encrypted at rest); message metadata and content needed to score threats; grades and reports you submit; optional phone numbers you add to Call Directory lists.</p>
-    <p><strong>Why.</strong> To score threats, improve the model via gated retraining, sync Call Directory / Message Filter lists, and process billing if you subscribe.</p>
-    <p><strong>Retention (pilot).</strong> Raw message bodies may be purged after 90 days. Grades, report aggregates, and campaign fingerprints may be kept longer to protect other users. You can request full account deletion at any time.</p>
-    <p><strong>Deletion.</strong> Use <a href="/app/account">Account</a> → Delete account, or email the operator. We wipe mailboxes, personal reports, and session data tied to your account subject.</p>
-    <p><strong>Sharing.</strong> We do not sell personal data. Vendor reputation lookups (e.g. phone/breach signals) are consent-gated and fail open if the vendor is down.</p>
-    <p><strong>Contact.</strong> Use Signal Deck → Connectors → request a provider, or your pilot operator contact.</p>
-    <p class="hint">Last updated: 2026-08-11 · Pilot draft — edit before public App Store listing.</p>
+    <p><strong>Who I am.</strong> I built NullPoint (Signal Deck) to catch phishing, smishing, and vishing. I am not a carrier. I do not place or intercept phone calls.</p>
+    <p><strong>What I collect.</strong> The email you use to sign in; mailbox credentials you choose to connect (encrypted at rest); message metadata and content needed to score threats; grades and reports you submit; optional phone numbers you add for Call Directory.</p>
+    <p><strong>Why.</strong> To score threats for you, learn from grades through a gated retrain (not a silent poison path), sync Call Directory / Message Filter lists, and process billing if you subscribe.</p>
+    <p><strong>Sharing.</strong> I do not sell personal data. Vendor lookups (IPQS phone/breach, HIBP, Safe Browsing when keyed) are consent-gated where required and <strong>fail open</strong> if the vendor is down. Fleet intel is aggregates and campaign fingerprints — not your whole inbox dumped to other users.</p>
+    <p><strong>Retention (pilot).</strong> I may purge raw message bodies after 90 days. Grades, report aggregates, and campaign fingerprints can stay longer so the next person is safer. You can delete your account anytime.</p>
+    <p><strong>Deletion.</strong> Account → Delete account, or email me. That wipes mailboxes, personal reports, and your signup row. Env operator users cannot be deleted from process memory.</p>
+    <p><strong>Kids.</strong> This pilot is not for children under 13.</p>
+    <p><strong>Contact.</strong> Signal Deck → Account, or the operator who invited you.</p>
+    <p class="hint">Last updated: 2026-08-11 · Pilot draft. I will edit this before any App Store listing.</p>
   </div>
 </section>
 {% endblock %}

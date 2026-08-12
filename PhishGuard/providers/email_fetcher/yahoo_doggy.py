@@ -25,12 +25,15 @@ class YahooDoggy(EmailFetcher):
         if self.username and self.password:
             return
         try:
-            from common.mailbox_store import list_for_user, get_secret
-            sub = (os.getenv("NULLPOINT_INGEST_SUB") or "anonymous").strip()
-            for row in list_for_user(sub):
+            from common.mailbox_store import list_all, list_for_user, get_secret
+            rows = list_all()
+            if not rows:
+                sub = (os.getenv("NULLPOINT_INGEST_SUB") or "anonymous").strip()
+                rows = [{**r, "account_sub": sub} for r in list_for_user(sub)]
+            for row in rows:
                 if (row.get("provider") or "").lower() not in ("yahoo",):
                     continue
-                secret = get_secret(sub, "yahoo", row["account"])
+                secret = get_secret(row.get("account_sub") or "anonymous", "yahoo", row["account"])
                 if secret:
                     self.username = row["account"]
                     self.password = secret
