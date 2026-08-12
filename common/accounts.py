@@ -9,6 +9,8 @@ import os
 import re
 from typing import Any, Optional
 
+import bcrypt
+
 logger = logging.getLogger("accounts")
 
 _EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s.]+\.[^@\s]{2,24}$")
@@ -34,6 +36,10 @@ def normalize_email(raw: str) -> str:
 
 def valid_email(raw: str) -> bool:
     return bool(_EMAIL_RE.match(normalize_email(raw)))
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def _reserved_usernames() -> set[str]:
@@ -83,13 +89,12 @@ def register(email: str, password: str) -> dict[str, Any]:
         return {"ok": False, "error": "reserved"}
     if len(password) < _MIN_PASSWORD:
         return {"ok": False, "error": "short_password"}
-    from common.auth import hash_password
     ensure_table()
     conn = _conn()
     if not conn:
         return {"ok": False, "error": "db_unavailable"}
     try:
-        pw_hash = hash_password(password)
+        pw_hash = _hash_password(password)
         with conn.cursor() as cur:
             cur.execute(
                 """
