@@ -24,7 +24,7 @@ VishGuard/vish_mlm/models/vishing_sgd_model.pkl
 data/vish_campaigns/tax_resolution.json   # not committed
 ```
 
-iOS: copy `ios/PilotSecrets.example.swift` → `ios/Sources/NullPointGuard/PilotSecrets.swift` and fill username/password/apiBase. Do not commit real values.
+iOS: copy `ios/PilotSecrets.example.swift` → `ios/Sources/NullPointGuard/PilotSecrets.swift` and fill username/password/apiBaseURL. Do not commit real values.
 
 ## History warning
 
