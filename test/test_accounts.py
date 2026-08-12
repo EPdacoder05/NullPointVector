@@ -1,5 +1,4 @@
 """Signup validation — no DB required."""
-import os
 
 from common.accounts import normalize_email, signup_open, valid_email
 
