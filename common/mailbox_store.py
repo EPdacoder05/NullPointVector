@@ -212,8 +212,8 @@ def upsert_oauth(*, account_sub: str, provider: str, account_email: str,
         logger.error("upsert oauth mailbox: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning("rollback failed in upsert_oauth: %s", rollback_error)
         return {"ok": False, "error": "save_failed"}
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn
