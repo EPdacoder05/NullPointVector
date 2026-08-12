@@ -138,8 +138,8 @@ class GmailDoggy(EmailFetcher):
                 if conn:
                     try:
                         conn.logout()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Failed to logout IMAP connection for %s: %s", account.get("email"), e)
         return emails
 
     def move_to_junk(self, email_id: str) -> bool:
