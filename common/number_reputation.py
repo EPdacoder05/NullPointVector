@@ -37,8 +37,8 @@ def ensure_table() -> bool:
         logger.error("ensure number_reputation: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning("ensure number_reputation rollback failed: %s", rollback_error)
         return False
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn
@@ -76,8 +76,8 @@ def upsert(e164: str, *, risk: float, verdict: str = "", source: str = "ipqs",
         logger.error("upsert number_reputation: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning("upsert number_reputation rollback failed: %s", rollback_error)
         return False
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn
