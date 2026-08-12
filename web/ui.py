@@ -583,10 +583,12 @@ async def ui_login_get(request: Request, next: str = "/app/dashboard", error: st
         err = "OAuth failed — try again or use password."
     elif err == "provider_pending":
         err = "That provider’s buttons are live; token exchange still needs keys wired."
+    from common.accounts import signup_open
+    dest = next if next.startswith("/app") else "/app/dashboard"
     return templates.TemplateResponse(
         request, "login.html",
         {"channels": CHANNELS, "active": "login", "error": err, "username": "",
-         "next": next if next.startswith("/app") else "/app/dashboard"})
+         "next": dest, "signup_open": signup_open()})
 
 
 @router.get("/app/auth/oauth/{provider}")
@@ -646,11 +648,12 @@ async def ui_login_post(request: Request,
     dest = _safe_app_redirect_target(next)
     user = authenticate_user(username.strip(), password)
     if not user:
+        from common.accounts import signup_open
         return templates.TemplateResponse(
             request, "login.html",
             {"channels": CHANNELS, "active": "login",
              "error": "Invalid credentials", "username": username,
-             "next": dest},
+             "next": dest, "signup_open": signup_open()},
             status_code=401)
     from datetime import timedelta
     token = create_access_token(user, expires=timedelta(hours=8))  # console session

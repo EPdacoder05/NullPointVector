@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sign in — NullPoint</title>
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="stylesheet" href="/static/app.css?v=20260812-auth1" />
 </head>
 <body class="auth-body" data-theme="deck">
   <div class="auth-shell">
@@ -32,7 +32,13 @@
           </div>
           <button type="submit" class="btn">Continue</button>
         </form>
-        <div class="hint">New here? Create an account on this same flow — <a href="/app/signup?next={{ next_path|urlencode }}">Sign up</a>. Operator accounts still use <code>API_ADMIN_*</code> / <code>API_PILOT_*</code> in <code>.env</code>.</div>
+        <a class="btn secondary" href="/app/signup?next={{ next_path|urlencode }}">Sign up</a>
+        {% if signup_open %}
+        <div class="hint">New here? Create an account, then connect Gmail or Microsoft on Connectors.</div>
+        {% else %}
+        <div class="hint">Signup is closed on this host until <code>SIGNUP_OPEN=true</code>.</div>
+        {% endif %}
+        <div class="hint">Operator accounts still use <code>API_ADMIN_*</code> / <code>API_PILOT_*</code> in <code>.env</code>.</div>
         <a class="auth-back" href="/app">Back to console</a>
       </div>
     </div>

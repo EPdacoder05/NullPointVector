@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-12 (Closed duplicate #21; #22 on main. Shipping disposable-email deny-list + real FORCE RLS via `nullpoint_rls` SET LOCAL ROLE — superuser pool alone does not enforce RLS.)
+_Last updated: 2026-08-12 (Login card has a Sign up button; SIGNUP_OPEN=true for friends-and-family pilot. X/IG are later OSINT connectors, not account login.)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |
