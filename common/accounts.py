@@ -69,8 +69,8 @@ def ensure_table() -> bool:
         logger.error("ensure deck_accounts: %s", e)
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as rollback_error:
+            logger.warning("rollback failed in ensure_table: %s", rollback_error, exc_info=True)
         return False
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn
