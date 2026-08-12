@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NullPoint — Analyze</title>
+  <link rel="stylesheet" href="./deck.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">N</div>
+      <div><div class="name">NullPoint</div><div class="sub">Signal Deck</div></div>
+    </div>
+    <div class="nav-label">Command</div>
+    <a class="nav-item" href="./index.html"><span class="dot"></span>Dashboard</a>
+    <a class="nav-item active" href="./analyze.html"><span class="dot"></span>Analyze</a>
+    <a class="nav-item" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
+    <div class="nav-label">Learn</div>
+    <a class="nav-item" href="./loop.html"><span class="dot"></span>Feedback loop</a>
+    <a class="nav-item" href="./glossary.html"><span class="dot"></span>Glossary</a>
+    <a class="nav-item" href="./ios.html"><span class="dot"></span>iOS Guard</a>
+  </aside>
+  <main class="main">
+    <div class="kicker">Paste anything</div>
+    <h1>Analyze</h1>
+    <p class="lede">
+      This is the explainable layer I run <em>before</em> ML: malice, payment-brand spoof,
+      known-good + auth_pass, abused TLDs, toll-free callbacks. I’d rather hold a borderline
+      note than miss a wire. The gated SGD champion is not on this page — I don’t publish weights.
+    </p>
+    <p class="examples">
+      Try:
+      <button type="button" class="ex" data-ex="paypal">PayPal spoof</button>
+      <button type="button" class="ex" data-ex="cap1">Cap1 + auth pass</button>
+      <button type="button" class="ex" data-ex="cap1fail">Cap1 + auth fail</button>
+      <button type="button" class="ex" data-ex="sms">IRS smish</button>
+      <button type="button" class="ex" data-ex="vish">Vish callback</button>
+    </p>
+    <form id="f" class="analyze-form">
+      <label>From
+        <input id="from" type="text" placeholder='PayPal Security &lt;alerts@evil.tk&gt;' />
+      </label>
+      <label>Subject
+        <input id="subject" type="text" placeholder="Unusual activity" />
+      </label>
+      <label>Body / SMS / transcript
+        <textarea id="body" rows="7" placeholder="Paste the message…"></textarea>
+      </label>
+      <label class="chk">
+        <input id="auth" type="checkbox" /> Sender auth passed (SPF/DKIM/DMARC aligned)
+      </label>
+      <button type="submit" class="btn-primary">Run policy layer</button>
+    </form>
+    <div id="out" hidden>
+      <div class="card">
+        <div class="hd">
+          <div class="sender"><span id="o-from"></span> <span id="o-badge" class="badge"></span></div>
+          <div class="meta">host <span id="o-host"></span> · confidence <span id="o-conf"></span></div>
+        </div>
+        <div class="body">
+          <div class="subj" id="o-verdict"></div>
+          <ul class="why" id="o-why"></ul>
+        </div>
+        <div class="tags" id="o-tags"></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="./analyzer.js"></script>
+<script>
+var EX = {
+  paypal: {
+    from: '"PayPal Security" <alerts@secure-paypal.tk>',
+    subject: "Your account is limited",
+    body: "Unusual activity. Pay now with PayPal or you will be locked out. Confirm at https://secure-paypal.tk/login",
+    auth: false
+  },
+  cap1: {
+    from: '"Capital One" <capitalone@notification.capitalone.com>',
+    subject: "Your credit score has changed",
+    body: "Access your newest report. Sign in to your account. Help prevent fraud on the card ending 1234.",
+    auth: true
+  },
+  cap1fail: {
+    from: '"Capital One" <capitalone@notification.capitalone.com>',
+    subject: "Your credit score has changed",
+    body: "Access your newest report. Sign in to your account immediately.",
+    auth: false
+  },
+  sms: {
+    from: "IRS-TIP",
+    subject: "",
+    body: "Your refund is on hold. Call 1-855-555-0199 immediately or face penalty.",
+    auth: false
+  },
+  vish: {
+    from: "+15555550101",
+    subject: "",
+    body: "This is Officer Hale with the IRS. There is a warrant. Call me at 833-555-0100 to avoid arrest.",
+    auth: false
+  }
+};
+document.querySelectorAll(".ex").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var x = EX[b.getAttribute("data-ex")];
+    document.getElementById("from").value = x.from;
+    document.getElementById("subject").value = x.subject;
+    document.getElementById("body").value = x.body;
+    document.getElementById("auth").checked = x.auth;
+    document.getElementById("f").requestSubmit();
+  });
+});
+document.getElementById("f").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var r = NullPointAnalyze.analyze({
+    from: document.getElementById("from").value,
+    subject: document.getElementById("subject").value,
+    body: document.getElementById("body").value,
+    authPass: document.getElementById("auth").checked
+  });
+  document.getElementById("out").hidden = false;
+  document.getElementById("o-from").textContent = document.getElementById("from").value || "(no sender)";
+  document.getElementById("o-host").textContent = r.host;
+  document.getElementById("o-conf").textContent = Math.round(r.confidence * 100) + "%";
+  document.getElementById("o-verdict").textContent = r.verdict;
+  var badge = document.getElementById("o-badge");
+  badge.textContent = r.tone === "safe" ? "LIKELY SAFE" : r.tone === "danger" ? "HOLD" : "REVIEW";
+  badge.className = "badge" + (r.tone === "safe" ? " safe" : "");
+  var tags = document.getElementById("o-tags");
+  tags.innerHTML = "";
+  r.tags.forEach(function (t) {
+    var s = document.createElement("span");
+    s.className = "pill";
+    s.textContent = t.label;
+    tags.appendChild(s);
+  });
+  var ul = document.getElementById("o-why");
+  ul.innerHTML = "";
+  r.why.forEach(function (w) {
+    var li = document.createElement("li");
+    li.textContent = w;
+    ul.appendChild(li);
+  });
+});
+</script>
+</body>
+</html>
