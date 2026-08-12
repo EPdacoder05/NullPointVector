@@ -85,7 +85,9 @@ def register(email: str, password: str) -> dict[str, Any]:
     password = password or ""
     if not valid_email(email):
         return {"ok": False, "error": "bad_email"}
-    if email in _reserved_usernames():
+    reserved = _reserved_usernames()
+    local = email.split("@", 1)[0]
+    if email in reserved or local in reserved:
         return {"ok": False, "error": "reserved"}
     if len(password) < _MIN_PASSWORD:
         return {"ok": False, "error": "short_password"}
