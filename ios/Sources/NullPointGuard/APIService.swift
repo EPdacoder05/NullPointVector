@@ -4,7 +4,7 @@ import Foundation
 final class APIService {
     static let shared = APIService()
 
-    /// Default API host. Phone uses PilotSecrets.apiBaseURL if set; else localhost.
+    /// Default API host (overridden at app startup via PilotSecrets/Info.plist).
     var baseURL = URL(string: "http://127.0.0.1:8088")!
 
     var accessToken: String? = nil
