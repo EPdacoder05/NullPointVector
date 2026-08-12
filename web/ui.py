@@ -482,17 +482,21 @@ async def ui_benchmarks(request: Request):
 @router.get("/app/signup", response_class=HTMLResponse)
 async def ui_signup_get(request: Request, next: str = "/app/dashboard", error: str = ""):
     from common.accounts import signup_open
+    from starlette.datastructures import URL
+
+    parsed_next = URL(next.replace("\\", "/"))
+    safe_next = next if (not parsed_next.scheme and not parsed_next.hostname and next.startswith("/app")) else "/app/dashboard"
+
     if _current_user(request):
         from fastapi.responses import RedirectResponse
-        dest = next if next.startswith("/app") else "/app/dashboard"
-        return RedirectResponse(url=dest, status_code=303)
+        return RedirectResponse(url=safe_next, status_code=303)
     err = error or None
     if not signup_open():
         err = err or "Signup is closed. Ask the operator, or use an existing account."
     return templates.TemplateResponse(
         request, "signup.html",
         {"channels": CHANNELS, "active": "login", "error": err, "email": "",
-         "next": next if next.startswith("/app") else "/app/dashboard",
+         "next": safe_next,
          "signup_open": signup_open()})
 
 
