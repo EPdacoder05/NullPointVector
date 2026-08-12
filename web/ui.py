@@ -479,13 +479,27 @@ async def ui_benchmarks(request: Request):
              ops=ops, assist=assist, max_lat_ms=max_lat, snapshot_stale=stale))
 
 
+def _safe_app_redirect_target(target: str, fallback: str = "/app/dashboard") -> str:
+    from starlette.datastructures import URL
+
+    value = (target or "").replace("\\", "/")
+    parsed = URL(value)
+    if parsed.scheme or parsed.hostname:
+        return fallback
+    if not value.startswith("/"):
+        return fallback
+    if value.startswith("//"):
+        return fallback
+    if not value.startswith("/app"):
+        return fallback
+    return value
+
+
 @router.get("/app/signup", response_class=HTMLResponse)
 async def ui_signup_get(request: Request, next: str = "/app/dashboard", error: str = ""):
     from common.accounts import signup_open
-    from starlette.datastructures import URL
 
-    parsed_next = URL(next.replace("\\", "/"))
-    safe_next = next if (not parsed_next.scheme and not parsed_next.hostname and next.startswith("/app")) else "/app/dashboard"
+    safe_next = _safe_app_redirect_target(next)
 
     if _current_user(request):
         from fastapi.responses import RedirectResponse
@@ -509,7 +523,7 @@ async def ui_signup_post(request: Request,
     from fastapi.responses import RedirectResponse
     from common.accounts import register, signup_open
     from common.auth import create_access_token
-    dest = next if (next or "").startswith("/app") else "/app/dashboard"
+    dest = _safe_app_redirect_target(next)
     if not signup_open():
         return templates.TemplateResponse(
             request, "signup.html",
