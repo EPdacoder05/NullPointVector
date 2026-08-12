@@ -1,9 +1,11 @@
 import Foundation
 
-/// Pilot credentials — committed on purpose for Internal TestFlight.
-/// Rotate / remove before public App Store. No Sign-in UI.
+/// Local pilot credentials. Keep empty in git. Copy values from
+/// `ios/PilotSecrets.example.swift` on your machine — never commit real passwords.
 enum PilotSecrets {
-    static let username: String = "noadmin"
-    static let password: String = "thepasswordispoo"
+    static let username: String = ""
+    static let password: String = ""
     static let accessToken: String? = nil
+    /// Optional Funnel / public API host (https://…). Empty → localhost.
+    static let apiBaseURL: String = ""
 }

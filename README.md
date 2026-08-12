@@ -11,6 +11,11 @@ Locked product surface (do not re-litigate):
 
 **Source of truth for state and open work:** [`docs/AI_DEV_CHECKPOINT.md`](docs/AI_DEV_CHECKPOINT.md)
 
+## Public demo
+
+Static Signal Deck (no models, fictional senders):
+[epdacoder05.github.io/NullPointVector](https://epdacoder05.github.io/NullPointVector/)
+
 ## Quick start
 
 ```bash
@@ -73,6 +78,10 @@ pytest -q test/test_model_gate.py test/test_trainer_gate.py
 | `docs/AI_DEV_CHECKPOINT.md` | Resume anchor |
 
 `archive/` (hackbook labs) was retired — do not resurrect CI jobs that build it.
+
+## Private artifacts (not in git)
+
+Trained models, real `feedback.jsonl`, and live vishing campaign packs are **trade secrets**. CI cold-starts from the seed corpus if `*.pkl` are missing. See [`docs/TRADE_SECRETS.md`](docs/TRADE_SECRETS.md).
 
 ## Deploy notes
 

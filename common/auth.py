@@ -164,9 +164,10 @@ def _env_users() -> Dict[str, Dict]:
         users[user] = {"password_hash": pw_hash, "role": role}
 
     _add("API_ADMIN_USER", "API_ADMIN_PASSWORD", "admin", "admin", "changeme")
-    # Pilot device app (NullPoint Guard) — simple defaults so TestFlight needs no typing.
-    # Override via API_PILOT_* in .env; rotate before any public/shared deploy.
-    _add("API_PILOT_USER", "API_PILOT_PASSWORD", "analyst", "noadmin", "thepasswordispoo")
+    # Pilot device user — only if both env vars are set (no baked-in password).
+    if os.getenv("API_PILOT_USER") and (os.getenv("API_PILOT_PASSWORD") or os.getenv("API_PILOT_PASSWORD_HASH")):
+        _add("API_PILOT_USER", "API_PILOT_PASSWORD", "analyst",
+             os.environ["API_PILOT_USER"], os.getenv("API_PILOT_PASSWORD", ""))
     if os.getenv("API_CUSTOMER_USER") or os.getenv("API_CUSTOMER_PASSWORD"):
         _add("API_CUSTOMER_USER", "API_CUSTOMER_PASSWORD", "customer", "customer", "changeme")
     if os.getenv("API_ENTERPRISE_USER") or os.getenv("API_ENTERPRISE_PASSWORD"):

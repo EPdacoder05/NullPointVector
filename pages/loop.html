@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NullPoint — Feedback loop</title>
+  <link rel="stylesheet" href="./deck.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">N</div>
+      <div><div class="name">NullPoint</div><div class="sub">Signal Deck</div></div>
+    </div>
+    <div class="nav-label">Command</div>
+    <a class="nav-item" href="./index.html"><span class="dot"></span>Dashboard</a>
+    <a class="nav-item" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
+    <div class="nav-label">Learn</div>
+    <a class="nav-item active" href="./loop.html"><span class="dot"></span>Feedback loop</a>
+    <a class="nav-item" href="./glossary.html"><span class="dot"></span>Glossary</a>
+    <a class="nav-item" href="./ios.html"><span class="dot"></span>iOS Guard</a>
+  </aside>
+  <main class="main">
+    <div class="kicker">How it learns</div>
+    <h1>Feedback loop</h1>
+    <p class="lede">
+      One click never silently rewires production. Toast Δw is ephemeral.
+      Champion weights promote only on GATE PASS.
+    </p>
+    <div class="flow">ingest / screen
+   → predict (live champion)
+   → Inbox / Quarantine / Call log
+   → human grades: Safe | Block | Needs review
+   → Postgres label (0 / 1 / NULL)
+   → durable feedback buffer
+   → ephemeral partial_fit (toast Δw — this process only)
+   → nightly trainer + held-out golden eval
+   → GATE PASS → promote champion
+   → GATE FAIL → keep old champion</div>
+    <div class="term-grid">
+      <div class="term-name">Ephemeral nudge</div>
+      <div class="term-body">One SGD step via partial_fit. Proves the wire. Restart discards it. Not the production champion.</div>
+      <div class="term-name">Durable champion</div>
+      <div class="term-body">Nightly full refit + golden gate (accuracy / FPR / recall). Anti-poison: bad labels cannot promote.</div>
+      <div class="term-name">Known-good</div>
+      <div class="term-body">Domain match is never enough. SPF/DKIM/DMARC must pass. Spoofed brand From still hits ML.</div>
+      <div class="term-name">Report vs grade</div>
+      <div class="term-body">Report this is a personal flag + fleet signal. Block / Needs review / Safe still own the label.</div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NullPoint — Signal Deck</title>
+  <meta name="description" content="NullPoint Signal Deck demo: phishing, smishing, and vishing triage. Static resume demo — no live mailboxes or model weights." />
+  <link rel="stylesheet" href="./deck.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">N</div>
+      <div>
+        <div class="name">NullPoint</div>
+        <div class="sub">Signal Deck</div>
+      </div>
+    </div>
+    <div class="nav-label">Command</div>
+    <a class="nav-item active" href="./index.html"><span class="dot"></span>Dashboard</a>
+    <a class="nav-item" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
+    <div class="nav-label">Learn</div>
+    <a class="nav-item" href="./loop.html"><span class="dot"></span>Feedback loop</a>
+    <a class="nav-item" href="./glossary.html"><span class="dot"></span>Glossary</a>
+    <a class="nav-item" href="./ios.html"><span class="dot"></span>iOS Guard</a>
+  </aside>
+  <main class="main">
+    <div class="kicker">Public demo</div>
+    <h1>Signal Deck</h1>
+    <p class="lede">
+      Multi-channel phishing / smishing / vishing console. This page is a
+      <strong>static walkthrough</strong> of the operator UI — fictional senders only.
+      Champion model weights, live campaign packs, and mailboxes are not published.
+    </p>
+    <div class="metrics">
+      <div class="metric">
+        <h3>Phishing</h3>
+        <div class="big">97.5%</div>
+        <span class="gate">GATE PASS</span>
+        <div class="sub">held-out golden · FPR 4.8%</div>
+      </div>
+      <div class="metric">
+        <h3>Smishing</h3>
+        <div class="big">100%</div>
+        <span class="gate">GATE PASS</span>
+        <div class="sub">held-out golden · FPR 0%</div>
+      </div>
+      <div class="metric">
+        <h3>Vishing</h3>
+        <div class="big">93.8%</div>
+        <span class="gate">GATE PASS</span>
+        <div class="sub">number reputation + packs</div>
+      </div>
+    </div>
+    <p class="lede">
+      Policy: known-good requires <strong>domain + auth_pass always</strong>.
+      Vendors fail open. Model promotion only through the golden-eval gate.
+      Call path is Call Directory + Message Filter — not a telecom.
+    </p>
+    <p><a href="./quarantine.html">Open quarantine triage →</a></p>
+    <p class="footer-links">
+      Source: <a href="https://github.com/EPdacoder05/NullPointVector">github.com/EPdacoder05/NullPointVector</a>
+      · Trade secrets: <a href="https://github.com/EPdacoder05/NullPointVector/blob/main/docs/TRADE_SECRETS.md">TRADE_SECRETS.md</a>
+    </p>
+  </main>
+</div>
+</body>
+</html>

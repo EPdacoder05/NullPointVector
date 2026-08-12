@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NullPoint — Quarantine</title>
+  <link rel="stylesheet" href="./deck.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">N</div>
+      <div><div class="name">NullPoint</div><div class="sub">Signal Deck</div></div>
+    </div>
+    <div class="nav-label">Command</div>
+    <a class="nav-item" href="./index.html"><span class="dot"></span>Dashboard</a>
+    <a class="nav-item active" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
+    <div class="nav-label">Learn</div>
+    <a class="nav-item" href="./loop.html"><span class="dot"></span>Feedback loop</a>
+    <a class="nav-item" href="./glossary.html"><span class="dot"></span>Glossary</a>
+    <a class="nav-item" href="./ios.html"><span class="dot"></span>iOS Guard</a>
+  </aside>
+  <main class="main">
+    <div class="kicker">Demo data</div>
+    <h1>Quarantine</h1>
+    <p class="lede">
+      High-confidence holds. Triage owns the grade (Block / Needs review / Safe).
+      <strong>Report this</strong> is a separate flag for fleet intel — not a grade.
+    </p>
+
+    <div class="card" id="card-1">
+      <div class="hd">
+        <div class="sender">"PayPal Security" &lt;alerts@paypal-secure.example&gt; <span class="badge">QUARANTINED</span></div>
+        <div class="meta">phishing · fictional · confidence 91%</div>
+      </div>
+      <div class="body">
+        <div class="subj">Unusual activity — confirm your wallet</div>
+        <div class="prev">Verify at https://paypal-secure.example/login or funds will be frozen within 15 minutes.</div>
+      </div>
+      <div class="tags">
+        <span class="pill">Payment brand spoof</span>
+        <span class="pill">Urgency / fear</span>
+        <span class="pill">Suspicious TLD</span>
+      </div>
+      <div class="foot">
+        <div class="triage">
+          <button type="button" class="btn btn-block js-grade" data-v="block">Block &amp; Report</button>
+          <button type="button" class="btn btn-review js-grade" data-v="unsure">Needs review</button>
+          <button type="button" class="btn btn-safe js-grade" data-v="safe">Mark as safe</button>
+        </div>
+        <button type="button" class="btn-report" onclick="openModal()">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/></svg>
+          Report this
+        </button>
+      </div>
+    </div>
+
+    <div class="card" id="card-2">
+      <div class="hd">
+        <div class="sender">IRS-TIP &lt;sms&gt; <span class="badge">QUARANTINED</span></div>
+        <div class="meta">smishing · fictional · confidence 88%</div>
+      </div>
+      <div class="body">
+        <div class="subj">Text message</div>
+        <div class="prev">Your refund is on hold. Call +1-555-555-0199 immediately or face penalty.</div>
+      </div>
+      <div class="tags">
+        <span class="pill">Toll-free callback</span>
+        <span class="pill">Authority pressure</span>
+      </div>
+      <div class="foot">
+        <div class="triage">
+          <button type="button" class="btn btn-block js-grade" data-v="block">Block &amp; Report</button>
+          <button type="button" class="btn btn-review js-grade" data-v="unsure">Needs review</button>
+          <button type="button" class="btn btn-safe js-grade" data-v="safe">Mark as safe</button>
+        </div>
+        <button type="button" class="btn-report" onclick="openModal()">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h10l-2 4 2 4H3V2z"/><line x1="3" y1="14" x2="3" y2="2"/></svg>
+          Report this
+        </button>
+      </div>
+    </div>
+
+    <p class="note" id="toast"></p>
+  </main>
+</div>
+
+<div id="npr-overlay" onclick="if(event.target===this)closeModal()">
+  <div id="npr-modal">
+    <div class="npr-header">
+      <div>
+        <div class="npr-title" id="modal-title">Did you expect this?</div>
+        <div class="npr-step" id="modal-step-label">Step 1 of 3</div>
+      </div>
+      <button type="button" class="npr-close" onclick="closeModal()" aria-label="Close">x</button>
+    </div>
+    <div class="npr-body">
+      <div class="steps">
+        <div class="step-dot active" id="dot-1"></div>
+        <div class="step-dot" id="dot-2"></div>
+        <div class="step-dot" id="dot-3"></div>
+      </div>
+      <div class="step-panel active" id="step-1">
+        <div class="question">Were you expecting this?</div>
+        <div class="subq">Report is a flag — it does not grade the message by itself.</div>
+        <div class="yn-row">
+          <button type="button" class="btn-yn" id="yn-yes" onclick="selectYN('yes')">Yes, I was expecting it</button>
+          <button type="button" class="btn-yn" id="yn-no" onclick="selectYN('no')">No, it came out of nowhere</button>
+        </div>
+      </div>
+      <div class="step-panel" id="step-2">
+        <div class="question">What made you suspicious?</div>
+        <div class="subq">Pick everything that applies. Helps protect others.</div>
+        <div class="reason-chip" onclick="toggleReason(this,'unsolicited')"><div class="chip-icon"></div><div>I did not ask for this</div></div>
+        <div class="reason-chip" onclick="toggleReason(this,'credential')"><div class="chip-icon"></div><div>Trying to get money or personal info</div></div>
+        <div class="reason-chip" onclick="toggleReason(this,'impersonation')"><div class="chip-icon"></div><div>Pretending to be someone I trust</div></div>
+        <div class="reason-chip" onclick="toggleReason(this,'pressure')"><div class="chip-icon"></div><div>Urgency or panic to make me act fast</div></div>
+      </div>
+      <div class="step-panel" id="step-3">
+        <div class="question">Anything else? (optional)</div>
+        <div class="subq">Demo only — nothing is sent to a server.</div>
+        <textarea id="report-detail" maxlength="400" placeholder="Optional detail…"></textarea>
+      </div>
+      <div class="step-panel" id="step-success">
+        <div class="success-title">Report recorded (demo)</div>
+        <div class="success-sub">In production this hits user_reports + fleet promotion (review at 3 reporters / auto at 8, confidence cap 0.75). Triage buttons still own the grade.</div>
+      </div>
+    </div>
+    <div class="npr-footer" id="modal-footer">
+      <button type="button" class="btn-back" id="btn-back" onclick="goBack()" style="visibility:hidden">Back</button>
+      <button type="button" class="btn-primary" id="btn-next" onclick="goNext()" disabled>Continue</button>
+    </div>
+  </div>
+</div>
+<script>
+document.querySelectorAll(".js-grade").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var card = b.closest(".card");
+    card.querySelectorAll(".js-grade").forEach(function (x) { x.classList.add("done"); });
+    var t = document.getElementById("toast");
+    t.textContent = "Graded " + b.getAttribute("data-v") + " (demo — not persisted).";
+  });
+});
+var currentStep = 1, selectedYN = null, reasons = 0;
+function openModal() {
+  currentStep = 1; selectedYN = null; reasons = 0;
+  document.querySelectorAll(".btn-yn").forEach(function (x) { x.classList.remove("selected"); });
+  document.querySelectorAll(".reason-chip").forEach(function (x) { x.classList.remove("selected"); });
+  document.getElementById("report-detail").value = "";
+  showStep(1);
+  document.getElementById("npr-overlay").classList.add("open");
+}
+function closeModal() { document.getElementById("npr-overlay").classList.remove("open"); }
+function showStep(n) {
+  currentStep = n;
+  document.querySelectorAll(".step-panel").forEach(function (p) { p.classList.remove("active"); });
+  if (n === "success") {
+    document.getElementById("step-success").classList.add("active");
+    document.getElementById("modal-title").textContent = "Thanks for reporting";
+    document.getElementById("modal-step-label").textContent = "Done";
+    document.getElementById("modal-footer").style.display = "none";
+    ["dot-1","dot-2","dot-3"].forEach(function (id) { document.getElementById(id).className = "step-dot complete"; });
+    return;
+  }
+  document.getElementById("step-" + n).classList.add("active");
+  document.getElementById("modal-footer").style.display = "flex";
+  for (var i = 1; i <= 3; i++) {
+    var d = document.getElementById("dot-" + i);
+    d.className = "step-dot" + (i < n ? " complete" : i === n ? " active" : "");
+  }
+  document.getElementById("modal-title").textContent = n === 1 ? "Did you expect this?" : n === 2 ? "What made you suspicious?" : "Anything else?";
+  document.getElementById("modal-step-label").textContent = "Step " + n + " of 3";
+  document.getElementById("btn-back").style.visibility = n > 1 ? "visible" : "hidden";
+  document.getElementById("btn-next").textContent = n === 3 ? "Submit report" : "Continue";
+  updateNext();
+}
+function updateNext() {
+  var n = document.getElementById("btn-next");
+  n.disabled = currentStep === 1 ? selectedYN === null : currentStep === 2 ? reasons === 0 : false;
+}
+function selectYN(v) {
+  selectedYN = v;
+  document.getElementById("yn-yes").classList.toggle("selected", v === "yes");
+  document.getElementById("yn-no").classList.toggle("selected", v === "no");
+  updateNext();
+}
+function toggleReason(el) {
+  el.classList.toggle("selected");
+  reasons = document.querySelectorAll(".reason-chip.selected").length;
+  updateNext();
+}
+function goNext() { if (currentStep === 3) showStep("success"); else showStep(currentStep + 1); }
+function goBack() { if (currentStep > 1) showStep(currentStep - 1); }
+</script>
+</body>
+</html>

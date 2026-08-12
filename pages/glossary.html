@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NullPoint — Glossary</title>
+  <link rel="stylesheet" href="./deck.css" />
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">N</div>
+      <div><div class="name">NullPoint</div><div class="sub">Signal Deck</div></div>
+    </div>
+    <div class="nav-label">Command</div>
+    <a class="nav-item" href="./index.html"><span class="dot"></span>Dashboard</a>
+    <a class="nav-item" href="./quarantine.html"><span class="dot"></span>Quarantine</a>
+    <div class="nav-label">Learn</div>
+    <a class="nav-item" href="./loop.html"><span class="dot"></span>Feedback loop</a>
+    <a class="nav-item active" href="./glossary.html"><span class="dot"></span>Glossary</a>
+    <a class="nav-item" href="./ios.html"><span class="dot"></span>iOS Guard</a>
+  </aside>
+  <main class="main">
+    <div class="kicker">Terms</div>
+    <h1>Glossary</h1>
+    <p class="lede">Public vocabulary for the demo. Internal process dumps stay off this site.</p>
+    <input class="search" id="search" type="search" placeholder="Search terms…" />
+    <div class="term-grid" id="terms">
+      <div class="term-name">Phishing</div>
+      <div class="term-body">Email fraud. IMAP / OAuth ingest. Policy then ML.</div>
+      <div class="term-name">Smishing</div>
+      <div class="term-body">SMS fraud. Best real-time path: iOS Message Filter on-device.</div>
+      <div class="term-name">Vishing</div>
+      <div class="term-body">Voice fraud. Pre-ring number only: Call Directory + reputation. No SIP / Twilio product track.</div>
+      <div class="term-name">Signal Deck</div>
+      <div class="term-body">Operator console. Brass + forest. Jinja + hand CSS/JS. No purple, no emoji UI, no npm.</div>
+      <div class="term-name">auth_pass</div>
+      <div class="term-body">SPF/DKIM/DMARC aligned pass. Required for every known-good domain, including banks.</div>
+      <div class="term-name">FPR</div>
+      <div class="term-body">False positive rate — safe mail wrongly flagged. Gate budget, not a vanity score.</div>
+      <div class="term-name">Golden eval</div>
+      <div class="term-body">Held-out labeled set the model was not trained on. CI fails if accuracy / FPR / pump-fake recall regress.</div>
+      <div class="term-name">Fail open</div>
+      <div class="term-body">Vendor / OSINT errors never block a verdict. Missing IPQS does not freeze triage.</div>
+      <div class="term-name">Call Directory</div>
+      <div class="term-body">iOS extension that labels or silences numbers before ring. Apple does not send carrier Recents to third-party apps.</div>
+      <div class="term-name">Message Filter</div>
+      <div class="term-body">iOS SMS filter extension. True on-device RTI for smish.</div>
+    </div>
+  </main>
+</div>
+<script>
+document.getElementById("search").addEventListener("input", function () {
+  var q = this.value.toLowerCase().trim();
+  var names = document.querySelectorAll("#terms .term-name");
+  names.forEach(function (n) {
+    var b = n.nextElementSibling;
+    var hit = !q || (n.textContent + " " + b.textContent).toLowerCase().indexOf(q) >= 0;
+    n.style.display = hit ? "" : "none";
+    b.style.display = hit ? "" : "none";
+  });
+});
+</script>
+</body>
+</html>

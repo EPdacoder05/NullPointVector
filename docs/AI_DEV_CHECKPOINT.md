@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-11 (container: multi-stage image, PyJWT, cryptography 48.0.1, .trivyignore unfixed OS)
+_Last updated: 2026-08-11 (GitHub Pages demo in pages/; do not rewrite git history for leaked blobs)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |
@@ -214,7 +214,7 @@ Crosswalk vs pilot sequence §0b. Legacy Dash/Streamlit docs were deleted 2026-0
 | Your pain | Maps to | Today? | Notes |
 |---|---|---|---|
 | Mac `sharingd` / iCloudHelper keychain prompts | Ops (dev Mac only) | **Yes** | `scripts/fix_login_keychain_lock.sh` — **TestFlight users never see this** |
-| iOS Mac/phone “not working” (localhost/Tailscale) | **P2** | **Yes** | Funnel UP `https://elliss-macbook-pro.tail199a91.ts.net`; need **build 5+** auto-connect (screenshots still show old Sign-in UI = old binary) |
+| iOS Mac/phone “not working” (localhost/Tailscale) | **P2** | **Yes** | Funnel host is local-only (`PilotSecrets.apiBaseURL`); need **build 5+** auto-connect (screenshots still show old Sign-in UI = old binary) |
 | Good mail (Sezzle) = 100% phish | **P0b** | **Yes** | `sezzle.com` + auth_pass allowlist; hyphen auth header keys accepted |
 | Missed bad mail / “models not ready” | Gate + grading | Partial | Golden gate was PASS 2026-08-06; live FPs need grade→`nightly_retrain` — not a full rewrite today |
 | Feedback loop / sibling weights | **M2** | Verify | Grade toast + `scripts/nightly_retrain.py` already exist — prove with one Mark Safe / Block cycle |
