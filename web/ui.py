@@ -543,6 +543,7 @@ async def ui_signup_post(request: Request,
     if not result.get("ok"):
         msgs = {
             "bad_email": "Use a real email address.",
+            "disposable": "Burner / temporary emails are not allowed. Use a real inbox (Apple Hide My Email is fine).",
             "short_password": "Password must be at least 10 characters.",
             "email_taken": "That email already has an account — sign in.",
             "reserved": "That name is reserved.",

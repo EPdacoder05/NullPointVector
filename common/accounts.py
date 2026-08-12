@@ -37,16 +37,13 @@ def normalize_email(raw: str) -> str:
 
 
 def valid_email(raw: str) -> bool:
-    """Shape check only — not disposable-blocklist, not MX verify.
+    """Shape check only. Disposable burn domains are rejected in register().
 
-    Apple Hide My Email (`*@privaterelay.appleid.com`) must pass: iOS-heavy pilot.
-    Fake generators (instaddr-style) still look like emails; blocking those is a
-    later allow/deny list, not this regex.
+    Apple Hide My Email (`*@privaterelay.appleid.com`) always passes shape.
     """
     email = normalize_email(raw)
     if not _EMAIL_RE.match(email):
         return False
-    # Explicit allow so a future disposable blocklist never kills Apple relay.
     if email.endswith("@" + _APPLE_RELAY):
         return True
     return True
@@ -91,6 +88,8 @@ def ensure_table() -> bool:
         with conn.cursor() as cur:
             cur.execute(_TABLE_SQL)
         conn.commit()
+        from common.tenant_rls import ensure_rls
+        ensure_rls(conn)
         return True
     except Exception as e:
         logger.error("ensure deck_accounts: %s", e)
@@ -112,6 +111,9 @@ def register(email: str, password: str) -> dict[str, Any]:
     password = password or ""
     if not valid_email(email):
         return {"ok": False, "error": "bad_email"}
+    from common.disposable_domains import is_disposable_email
+    if is_disposable_email(email):
+        return {"ok": False, "error": "disposable"}
     reserved = _reserved_usernames()
     local = email.split("@", 1)[0]
     if email in reserved or local in reserved:
@@ -123,6 +125,8 @@ def register(email: str, password: str) -> dict[str, Any]:
     if not conn:
         return {"ok": False, "error": "db_unavailable"}
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, email)
         pw_hash = _hash_password(password)
         with conn.cursor() as cur:
             cur.execute(
@@ -160,6 +164,8 @@ def verify_login(email: str, password: str) -> Optional[dict[str, str]]:
     if not conn:
         return None
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, email)
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT email, password_hash, role FROM deck_accounts WHERE email = %s",
@@ -189,6 +195,8 @@ def delete_account(email: str) -> int:
         return 0
     try:
         ensure_table()
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, email)
         with conn.cursor() as cur:
             cur.execute("DELETE FROM deck_accounts WHERE email = %s", (email,))
             n = cur.rowcount or 0
