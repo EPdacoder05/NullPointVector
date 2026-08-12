@@ -25,13 +25,13 @@ INPUT  (CallEvent)  — built by the iOS CallKit extension / app:
     {
       "caller_id": "+18005551001",     # required; E.164 or alphanumeric sender id
       "phase": "incoming",             # incoming | voicemail | post_call
-      "transcript": null,              # optional; present → deep path runs
+      "transcript": null,              # optional; present → deep text path
       "direction": "inbound",          # inbound | outbound
       "contact_known": false,          # is the number in the user's contacts?
       "carrier_verified": null,        # STIR/SHAKEN attest result if available
       "timestamp": "2026-06-30T19:00:00Z",
       "device_id": "opaque-per-install",
-      "raw": { ... }                   # passthrough for future fields
+      "raw": { "audio_path": null }    # optional wav → voice spoof path (never solo-BLOCK)
     }
 
 OUTPUT (ScreenResult):
@@ -44,7 +44,7 @@ OUTPUT (ScreenResult):
       "reputation": { ...ReputationScore.to_dict()... },
       "content": { ...VishGuard verdict (only if transcript was scored)... },
       "reasons": ["Reported by 3 feeds as IRS scam", "Pressure/urgency language"],
-      "paths": ["reputation", "transcription"]
+      "paths": ["reputation", "transcription", "voice"]
     }
 """
 from __future__ import annotations

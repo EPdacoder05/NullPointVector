@@ -616,10 +616,11 @@ async def ui_auth_oauth_callback(provider: str, code: str = "", state: str = "",
         nxt = quote(result.get("next") or "/app/dashboard", safe="")
         err = result.get("error") or "oauth_exchange_failed"
         return RedirectResponse(f"/app/login?next={nxt}&error={err}", status_code=303)
-    dest = result.get("next") or "/app/dashboard"
+    dest = _safe_app_redirect_target(result.get("next") or "/app/dashboard")
     resp = RedirectResponse(dest, status_code=303)
     resp.set_cookie(
         "np_access", result["token"], httponly=True, samesite="lax",
+        secure=True,  # OAuth only completes on HTTPS public hosts
         max_age=12 * 3600, path="/",
     )
     return resp
@@ -633,20 +634,22 @@ async def ui_login_post(request: Request,
                         _rl: None = Depends(rate_limit())):
     from fastapi.responses import RedirectResponse
     from common.auth import authenticate_user, create_access_token
+    dest = _safe_app_redirect_target(next)
     user = authenticate_user(username.strip(), password)
     if not user:
         return templates.TemplateResponse(
             request, "login.html",
             {"channels": CHANNELS, "active": "login",
              "error": "Invalid credentials", "username": username,
-             "next": next if (next or "").startswith("/app") else "/app/dashboard"},
+             "next": dest},
             status_code=401)
     from datetime import timedelta
     token = create_access_token(user, expires=timedelta(hours=8))  # console session
-    dest = next if (next or "").startswith("/app") else "/app/dashboard"
     resp = RedirectResponse(url=dest, status_code=303)
     resp.set_cookie(
-        "np_access", token, httponly=True, samesite="lax", max_age=60 * 60 * 8, path="/",
+        "np_access", token, httponly=True, samesite="lax",
+        secure=(request.url.scheme == "https"),
+        max_age=60 * 60 * 8, path="/",
     )
     return resp
 

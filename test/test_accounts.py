@@ -45,3 +45,19 @@ def test_register_short_password(monkeypatch):
     out = register("friend@example.com", "short")
     assert out["ok"] is False
     assert out["error"] == "short_password"
+
+
+def test_reserved_blocks_local_part(monkeypatch):
+    monkeypatch.setenv("SIGNUP_OPEN", "true")
+    monkeypatch.setenv("API_ADMIN_USER", "admin")
+    from common.accounts import register
+    out = register("admin@example.com", "longenoughpassword")
+    assert out["ok"] is False
+    assert out["error"] == "reserved"
+
+
+def test_safe_redirect_rejects_external():
+    from web.ui import _safe_app_redirect_target
+    assert _safe_app_redirect_target("https://evil.test/phish") == "/app/dashboard"
+    assert _safe_app_redirect_target("//evil.test") == "/app/dashboard"
+    assert _safe_app_redirect_target("/app/connectors") == "/app/connectors"
