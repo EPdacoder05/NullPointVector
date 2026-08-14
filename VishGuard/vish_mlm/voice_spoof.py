@@ -19,12 +19,16 @@ from typing import Any, Optional
 
 import numpy as np
 
+from common.ml.channel_detector import resolve_model_artifact, verify_model_artifact
+
 logger = logging.getLogger("voice_spoof")
 
 _MAX_BYTES = 12 * 1024 * 1024
 _MAX_SECONDS = 90.0
 _TARGET_SR = 16000
-_MODEL_PATH = Path(__file__).resolve().parent / "models" / "voice_spoof_et.pkl"
+_MODEL_PATH = resolve_model_artifact(
+    Path(__file__).resolve().parent / "models" / "voice_spoof_et.pkl"
+)
 
 
 def _load_wav_mono(path: str) -> tuple[Optional[np.ndarray], int, Optional[str]]:
@@ -177,6 +181,7 @@ def _model_predict(feat: np.ndarray) -> Optional[float]:
     if not path.is_file():
         return None
     try:
+        verify_model_artifact(path, "VOICE_SPOOF_MODEL_SHA256")
         import joblib
         bundle = joblib.load(path)
         clf = bundle.get("model") if isinstance(bundle, dict) else bundle

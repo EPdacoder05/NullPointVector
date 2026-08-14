@@ -14,14 +14,22 @@ import pickle
 # import path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
-from Autobot.VectorDB.NullPoint_Vector import connect_db, store_threat
+from Autobot.VectorDB.NullPoint_Vector import connect_db
+from common.config import is_production_environment
+from common.ml.channel_detector import (
+    resolve_model_artifact,
+    stack_versions,
+    verify_model_artifact,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = Path(__file__).parent / 'models'
+MODEL_PATH = resolve_model_artifact(
+    Path(__file__).parent / 'models' / 'phishing_sgd_model.pkl'
+)
+MODEL_DIR = MODEL_PATH.parent
 MODEL_DIR.mkdir(exist_ok=True, parents=True)
-MODEL_PATH = MODEL_DIR / 'phishing_sgd_model.pkl'
 
 # Durable feedback buffer (shared with the training subsystem). Feedback is
 # appended here and only folded into the champion via a gated retrain.
@@ -594,6 +602,7 @@ class PhishingDetector:
             'word_tfidf': self.word_tfidf, 'char_tfidf': self.char_tfidf,
             'clf': self.clf, 'platt': self.platt,
             'feature_version': NUM_STRUCTURAL_FEATURES,
+            'stack': stack_versions(),
         }
 
     def load_artifact(self, artifact: dict):
@@ -605,41 +614,46 @@ class PhishingDetector:
 
     def _initialize_model(self):
         """Load existing model from disk, or cold-start train if none exists."""
+        production = is_production_environment()
         if MODEL_PATH.exists():
             try:
+                verify_model_artifact(MODEL_PATH, "PHISH_MODEL_SHA256")
                 with open(MODEL_PATH, 'rb') as f:
                     saved = pickle.load(f)
                 # Guard against a stale model trained on an older feature schema —
                 # the structural feature count must match or predictions misalign.
                 if saved.get('feature_version') != NUM_STRUCTURAL_FEATURES:
-                    logger.warning(
-                        "⚠️  Saved model feature schema "
-                        f"({saved.get('feature_version')}) != current "
-                        f"({NUM_STRUCTURAL_FEATURES}) — retraining."
+                    raise RuntimeError(
+                        "PhishGuard model feature schema does not match runtime"
                     )
-                    self._cold_start_training()
-                    return
+                want = saved.get('stack')
+                have = stack_versions()
+                if production and not want:
+                    raise RuntimeError("PhishGuard model stack metadata is missing")
+                if want != have:
+                    if production:
+                        raise RuntimeError(
+                            "PhishGuard model training stack does not match runtime"
+                        )
+                    logger.warning("artifact stack skew trained=%s runtime=%s "
+                                   "(pin the ML stack to match)", want, have)
                 self.word_tfidf = saved['word_tfidf']
                 self.char_tfidf = saved['char_tfidf']
                 self.clf = saved['clf']
                 self.platt = saved.get('platt')
-                # Visible train/serve stack skew (reproducibility) — pinned image
-                # keeps these aligned; we warn rather than silently retrain.
-                want = saved.get('stack')
-                if want:
-                    import numpy as _np, sklearn as _sk, scipy as _sp
-                    have = {'sklearn': _sk.__version__, 'numpy': _np.__version__,
-                            'scipy': _sp.__version__}
-                    if want != have:
-                        logger.warning("artifact stack skew trained=%s runtime=%s "
-                                       "(pin the ML stack to match)", want, have)
                 vocab = len(self.word_tfidf.vocabulary_)
                 logger.info(f"✅ Loaded model — vocab={vocab} words, "
                             f"classes={self.clf.classes_}, "
                             f"calibrated={self.platt is not None}, stack={want}")
             except Exception as e:
+                if production:
+                    raise RuntimeError(
+                        "PhishGuard approved model artifact is unavailable"
+                    ) from e
                 logger.error(f"❌ Failed to load model ({e}), retraining...")
                 self._cold_start_training()
+        elif production:
+            raise RuntimeError("PhishGuard model artifact is required in production")
         else:
             logger.warning("⚠️  No model found — running Cold Start training...")
             self._cold_start_training()
@@ -1039,6 +1053,8 @@ class PhishingDetector:
 
     def _save_model(self):
         """Persist all three transformers + classifier to a single pickle."""
+        if is_production_environment():
+            raise RuntimeError("runtime model writes are disabled in production")
         try:
             with open(MODEL_PATH, 'wb') as f:
                 import numpy as _np
@@ -1112,7 +1128,10 @@ class PhishingDetector:
             pass
         return (pred, conf)
 
-    def learn_from_feedback(self, email_data: dict, is_phishing: bool):
+    def learn_from_feedback(
+        self, email_data: dict, is_phishing: bool, *, buffer_feedback: bool = True,
+        source: str = "unverified-feedback",
+    ):
         """
         Incremental online learning: update model from user feedback.
 
@@ -1122,7 +1141,7 @@ class PhishingDetector:
         2. Call partial_fit on the SGDClassifier with ONE new labeled sample
         3. SGD performs ONE gradient step: weight += -lr * gradient
            with learning_rate ~0.01, so one example nudges the model slightly
-        4. Save model to disk immediately
+        4. Keep that nudge in memory; only a gated retrain may replace the champion
 
         WHY WE DON'T REFIT TF-IDF:
         - TF-IDF.fit() requires ALL training data (can't add one doc incrementally)
@@ -1146,15 +1165,17 @@ class PhishingDetector:
         # 1. DURABLE: append to the feedback buffer. The on-disk champion only
         #    changes when the Trainer folds this in AND the candidate passes the
         #    golden gate — so one bad label can never silently corrupt production.
-        try:
-            from training.feedback_buffer import FeedbackBuffer
-            FeedbackBuffer(FEEDBACK_PATH).append(email_data, label, source="feedback")
-        except Exception:
+        if buffer_feedback:
             try:
-                from PhishGuard.phish_mlm.training.feedback_buffer import FeedbackBuffer
-                FeedbackBuffer(FEEDBACK_PATH).append(email_data, label, source="feedback")
-            except Exception as e:
-                logger.warning(f"feedback buffer append failed: {e}")
+                from training.feedback_buffer import FeedbackBuffer
+                FeedbackBuffer(FEEDBACK_PATH).append(email_data, label, source=source)
+            except Exception:
+                try:
+                    from PhishGuard.phish_mlm.training.feedback_buffer import FeedbackBuffer
+                    FeedbackBuffer(FEEDBACK_PATH).append(
+                        email_data, label, source=source)
+                except Exception as e:
+                    logger.warning(f"feedback buffer append failed: {e}")
 
         # 2. EPHEMERAL: one in-memory SGD step so the RUNNING process adapts
         #    immediately. Deliberately NOT persisted — a restart or the next
@@ -1170,16 +1191,9 @@ class PhishingDetector:
         except Exception as e:
             logger.error(f"Ephemeral update failed: {e}")
             raise
-        if is_phishing:
-            try:
-                store_threat(
-                    content=text,
-                    threat_type='phishing',
-                    sender=email_data.get('from', 'unknown'),
-                    metadata={'feedback': 'user_reported', 'label': 1, 'confidence': 1.0}
-                )
-            except Exception as e:
-                logger.warning(f"store_threat failed: {e}")
+        # Do not mirror this process-local feedback into ``messages`` here: the
+        # detector has no authenticated tenant context. Tenant-owned grades are
+        # persisted by the authenticated grading/reporting layer instead.
 
 
 # Global singleton instance (shared across entire application)

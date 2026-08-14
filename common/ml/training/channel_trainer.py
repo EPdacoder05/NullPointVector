@@ -20,13 +20,19 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from common.ml.channel_detector import build_artifact, predict_with
-from common.ml.training.channel_eval import evaluate, passes_gate, load_golden
+from common.ml.training.channel_eval import (
+    evaluate,
+    has_release_evidence,
+    load_golden,
+    passes_gate,
+)
 from common.ml.training.gate_decide import decide_promotion
 
 logger = logging.getLogger(__name__)
@@ -94,11 +100,15 @@ class ChannelTrainer:
                 texts.append(t); labels.append(int(lbl)); metas.append(rec)
 
         # 2) durable feedback (reservoir-capped)
+        from common.grading import trusted_feedback_label
         for row in self.feedback.reservoir_sample(_MAX_FEEDBACK, seed=42):
+            label = trusted_feedback_label(row)
+            if label is None:
+                continue
             rec = row.get("record") or row.get("email") or {}
             t = self.detector.text_fn(rec)
             if t:
-                texts.append(t); labels.append(int(row.get("label", 0))); metas.append(rec)
+                texts.append(t); labels.append(label); metas.append(rec)
 
         # 3) labeled threats from the vector DB for THIS channel
         for rec, lbl in self._labeled_threats_from_db():
@@ -115,17 +125,25 @@ class ChannelTrainer:
         return texts, labels, metas
 
     def _labeled_threats_from_db(self) -> List[Tuple[dict, int]]:
+        # Raw tenant observations are not an implicit fleet-training corpus.
+        # This explicit operator switch is still subordinate to consent/data
+        # governance outside the trainer.
+        if os.getenv("ALLOW_FLEET_TRAINING", "").lower() not in ("1", "true"):
+            return []
         try:
             from Autobot.VectorDB.NullPoint_Vector import get_all_threats
-            rows = get_all_threats(threat_type=self.channel, limit=5_000) or []
+            rows = get_all_threats(
+                threat_type=self.channel, limit=5_000, bypass=True,
+            ) or []
         except Exception as e:
             logger.info("ChannelTrainer[%s]: DB threats unavailable (%s); skipping.",
                         self.channel, e)
             return []
         out: List[Tuple[dict, int]] = []
+        from common.grading import trusted_db_label
         for r in rows:
             meta = r.get("metadata", {}) or {}
-            label = meta.get("label", 1 if r.get("is_threat") else None)
+            label = trusted_db_label(r)
             if label is None:
                 continue
             content = r.get("content") or meta.get("content") or ""
@@ -218,12 +236,14 @@ class ChannelTrainer:
 
     @staticmethod
     def _decide(cand: Dict, champ: Dict, force: bool) -> Tuple[bool, str]:
+        gate_ok = passes_gate(cand) and has_release_evidence(cand)
         return decide_promotion(
             cand, champ, force,
-            gate_ok=passes_gate(cand),
+            gate_ok=gate_ok,
             gate_fail_reason=(
                 f"candidate failed gate (recall={cand['recall']:.3f}, "
-                f"fpr={cand['fpr']:.3f}, acc={cand['accuracy']:.3f})"
+                f"fpr={cand['fpr']:.3f}, acc={cand['accuracy']:.3f}, "
+                f"evidence={'sufficient' if has_release_evidence(cand) else 'insufficient'})"
             ),
             primary_key="recall",
         )

@@ -5,7 +5,7 @@
 <div class="topbar">
   <div>
     <h1>Benchmarks</h1>
-    <div class="desc">Held-out golden metrics and measured latency per channel — same harness as CI.{% if snapshot_stale %} Snapshot stale or missing — run <code>scripts/refresh_benchmarks.py</code>.{% endif %}</div>
+    <div class="desc">Fixed-set regression metrics and measured latency per channel — same harness as CI. These are not population accuracy claims.{% if snapshot_generated_at %} Snapshot: {{ snapshot_generated_at }}.{% endif %}{% if snapshot_stale %} Snapshot stale or missing — run <code>scripts/refresh_benchmarks.py</code>.{% endif %}</div>
   </div>
   <div class="topbar-actions">
     <a class="btn secondary" href="/app/quarantine">Quarantine</a>
@@ -52,6 +52,7 @@
 <section class="card">
   <div class="hd"><h2>Inference latency (ms)</h2></div>
   <div class="bd">
+    {% if latency %}
     <div class="bench-chart-wrap">
       <svg class="bench-svg" viewBox="0 0 640 200" role="img" aria-label="Latency p50 p95">
         {% for ch in channels %}
@@ -73,6 +74,9 @@
         <span><i class="lg fpr"></i> p95 ms</span>
       </div>
     </div>
+    {% else %}
+    <p class="hint">Not measured in this snapshot. Run the benchmark refresh with a non-zero latency sample count before making latency claims.</p>
+    {% endif %}
   </div>
 </section>
 
@@ -85,10 +89,11 @@
       <h3>{{ ch|capitalize }}</h3>
       {% if m.available %}
       <div class="bench-score">{{ '%.1f'|format((m.accuracy or 0) * 100) }}<span class="unit">% acc</span></div>
-      <div class="badge {{ 'tone-safe' if m.gate_pass else 'tone-danger' }}">
-        {{ 'GATE PASS' if m.gate_pass else 'GATE FAIL' }}
+      <div class="badge {{ 'tone-safe' if m.release_ready else ('tone-warn' if m.gate_pass else 'tone-danger') }}">
+        {{ 'RELEASE GATE PASS' if m.release_ready else ('INSUFFICIENT EVIDENCE' if m.gate_pass else 'GATE FAIL') }}
       </div>
-      <p class="hint">precision {{ '%.0f'|format((m.precision or 0)*100) }}% · recall {{ '%.0f'|format((m.recall or 0)*100) }}% · FPR {{ '%.1f'|format((m.fpr or 0)*100) }}%</p>
+      <p class="hint">n={{ m.n }} · precision {{ '%.0f'|format((m.precision or 0)*100) }}% · recall {{ '%.0f'|format((m.recall or 0)*100) }}% · FPR {{ '%.1f'|format((m.fpr or 0)*100) }}%</p>
+      {% if m.recall_ci95 and m.fpr_ci95 %}<p class="hint">95% CI: recall {{ '%.1f'|format(m.recall_ci95[0]*100) }}–{{ '%.1f'|format(m.recall_ci95[1]*100) }}% · FPR {{ '%.1f'|format(m.fpr_ci95[0]*100) }}–{{ '%.1f'|format(m.fpr_ci95[1]*100) }}%</p>{% endif %}
       {% set lat = latency.get(ch) if latency else None %}
       {% if lat %}<p class="hint">p50 {{ lat.p50_ms }} ms · p95 {{ lat.p95_ms }} ms</p>{% endif %}
       {% else %}

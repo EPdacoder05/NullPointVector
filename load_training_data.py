@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """Load all Phishy_Bizz folder emails as training data"""
 
-from PhishGuard.providers.email_fetcher.yahoo_doggy import YahooDoggy
-from Autobot.VectorDB.NullPoint_Vector import store_threat
+import argparse
 import email as email_module
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--account-sub", required=True)
+parser.add_argument("--mailbox-id", type=int, required=True)
+args = parser.parse_args()
+
+from common.tenant_rls import require_account_sub
+account_sub = require_account_sub(args.account_sub)
+
+from PhishGuard.providers.email_fetcher.yahoo_doggy import YahooDoggy
+from Autobot.VectorDB.NullPoint_Vector import store_threat
+
 print("📧 Connecting to Yahoo...")
-fetcher = YahooDoggy()
+fetcher = YahooDoggy(account_sub=account_sub, mailbox_id=args.mailbox_id)
 if not fetcher.connect():
     print("❌ Connection failed")
     exit(1)
@@ -47,12 +57,14 @@ for i, email_id in enumerate(ids, 1):
         
         # Store in Vector DB
         result = store_threat(
+            account_sub=account_sub,
             content=(body or subject)[:3000],  # Limit size
             threat_type='phishing',
             sender=sender[:150],
             metadata={
                 'subject': subject[:200],
                 'label': 1,  # Confirmed phishing
+                'label_source': 'analyst_verified',
                 'source': 'Phishy_bizz',
                 'date': str(msg.get('Date', ''))
             }

@@ -1,10 +1,9 @@
 """
 Channel-agnostic embedding-space anomaly detector (novel-attack surfacing).
 
-The supervised classifier only catches patterns near its training data. Novel
-campaigns look "safe" to it. This layer fits an IsolationForest over MiniLM
-embeddings of NORMAL messages for ONE channel, so anything far from that
-channel's known-good manifold is surfaced for triage.
+This optional research layer fits an IsolationForest over MiniLM embeddings of
+NORMAL messages for one channel.  Its output is only a novelty signal for
+human triage; novelty is not evidence that a message is malicious.
 
 WHY PER-CHANNEL:
     Email, SMS, and voice occupy different regions of embedding space (length,
@@ -12,8 +11,10 @@ WHY PER-CHANNEL:
     "novel" (false alarms). A manifold fit on each channel's own benign traffic
     gives a calibrated novelty signal for that channel.
 
-Complexity: IsolationForest is O(n log n) fit / O(log n) score — scales to
-millions of vectors. The embedding (MiniLM) dominates per-call cost (~1-3ms).
+The fit corpus is capped by ``_MAX_FIT_SAMPLES``.  Scoring traverses every tree
+and also runs an embedding model, so latency is hardware/model dependent and
+must be measured on the deployment target.  This module makes no real-time or
+constant-time latency claim.
 """
 from __future__ import annotations
 
@@ -55,7 +56,11 @@ class AnomalyResult:
 
 
 def get_embedder() -> Callable[[str], np.ndarray]:
-    """Reuse MiniLM + LRU cache (O(1) amortized for repeated/near-duplicate text)."""
+    """Reuse MiniLM with a bounded exact-text cache.
+
+    The cache helps only byte-identical normalized strings; it does not perform
+    semantic or near-duplicate lookup.
+    """
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -182,6 +187,13 @@ class EmbeddingAnomalyDetector:
         if not Path(path).exists():
             return None
         try:
+            from common.ml.channel_detector import verify_model_artifact
+            digest_env = {
+                "email": "PHISH_ANOMALY_SHA256",
+                "smishing": "SMISH_ANOMALY_SHA256",
+                "vishing": "VISH_ANOMALY_SHA256",
+            }.get(name, f"{name.upper()}_ANOMALY_SHA256")
+            verify_model_artifact(path, digest_env)
             with open(path, "rb") as f:
                 blob = pickle.load(f)
             inst = cls(name=blob.get("name", name), text_fn=text_fn,
@@ -224,6 +236,10 @@ def get_channel_anomaly_detector(
             _REGISTRY[channel] = loaded
             return loaded
     if not allow_fit:
+        return None
+    from common.config import is_production_environment
+    if is_production_environment():
+        logger.error("[%s] runtime anomaly fitting is disabled in production", channel)
         return None
     det = EmbeddingAnomalyDetector(name=channel, text_fn=text_fn, contamination=contamination)
     det.fit(normal_corpus_fn())

@@ -19,13 +19,14 @@ from common.ml.anomaly import (  # noqa: F401
     AnomalyLevel, AnomalyResult, EmbeddingAnomalyDetector,
     get_channel_anomaly_detector,
 )
+from common.ml.channel_detector import resolve_model_artifact
 
 logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).resolve().parent
 _MODEL_DIR = _HERE.parent / "models"
 _MODEL_DIR.mkdir(parents=True, exist_ok=True)
-ANOMALY_MODEL_PATH = _MODEL_DIR / "anomaly_if.pkl"
+ANOMALY_MODEL_PATH = resolve_model_artifact(_MODEL_DIR / "anomaly_if.pkl")
 
 
 def _email_text(data) -> str:

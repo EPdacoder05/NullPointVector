@@ -24,8 +24,12 @@ cold-start refit always replays the seed corpus → no catastrophic forgetting.
 from __future__ import annotations
 
 import logging
+import hashlib
+import hmac
 import math
+import os
 import pickle
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -33,6 +37,8 @@ import numpy as np
 from scipy.sparse import csr_matrix, hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression, SGDClassifier
+
+from common.config import is_production_environment
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,43 @@ CHAR_TFIDF_PARAMS = dict(max_features=10_000, ngram_range=(3, 5),
                          sublinear_tf=True, min_df=1, analyzer="char_wb")
 SGD_PARAMS = dict(loss="log_loss", penalty="l2", max_iter=1000,
                   random_state=42, class_weight="balanced", warm_start=True)
+
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def resolve_model_artifact(default_path: Path | str) -> Path:
+    """Resolve a model filename under an optional deploy-only artifact mount."""
+    default = Path(default_path)
+    configured_root = os.getenv("MODEL_ARTIFACT_DIR", "").strip()
+    if not configured_root:
+        return default
+    root = Path(configured_root)
+    if is_production_environment() and not root.is_absolute():
+        raise RuntimeError("MODEL_ARTIFACT_DIR must be absolute in production")
+    return root / default.name
+
+
+def verify_model_artifact(path: Path | str, digest_env: str) -> None:
+    """Verify an operator-approved digest before unpickling a model artifact.
+
+    Pickle is executable input. Internet-facing deployments therefore require a
+    pinned SHA-256 supplied by the deploy secret/config store. Development may
+    omit the pin, but an explicitly configured pin is always enforced.
+    """
+    expected = os.getenv(digest_env, "").strip()
+    if not expected:
+        if is_production_environment():
+            raise RuntimeError(f"{digest_env} is required for model loading")
+        return
+    if not _SHA256_RE.fullmatch(expected):
+        raise RuntimeError(f"{digest_env} must be a 64-character SHA-256 digest")
+
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as artifact_file:
+        for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if not hmac.compare_digest(digest.hexdigest(), expected.lower()):
+        raise RuntimeError("model artifact digest verification failed")
 
 
 def make_word_tfidf() -> TfidfVectorizer:
@@ -143,6 +186,7 @@ class ChannelDetector:
                  numeric_fn: Callable[[str, dict], list],
                  num_features: int,
                  seed_fn: Callable[[], list],
+                 artifact_digest_env: str,
                  threshold: float = 0.5):
         self.name = name
         self.model_path = Path(model_path)
@@ -151,6 +195,7 @@ class ChannelDetector:
         self.numeric_fn = numeric_fn
         self.num_features = num_features
         self.seed_fn = seed_fn
+        self.artifact_digest_env = artifact_digest_env
         self.threshold = threshold
 
         self.word_tfidf = None
@@ -175,27 +220,38 @@ class ChannelDetector:
 
     # ----------------------------------------------------------- lifecycle
     def _initialize_model(self):
+        production = is_production_environment()
         if self.model_path.exists():
             try:
+                verify_model_artifact(self.model_path, self.artifact_digest_env)
                 with open(self.model_path, "rb") as f:
                     saved = pickle.load(f)
                 if saved.get("feature_version") != self.num_features:
-                    logger.warning("%s: stale feature schema (%s != %s) — retraining",
-                                   self.name, saved.get("feature_version"), self.num_features)
-                    self._cold_start_training()
-                    return
-                self.load_artifact(saved)
-                # Surface train/serve stack skew loudly (do NOT silently retrain on
-                # a version diff — the pinned image keeps these aligned).
+                    raise RuntimeError(
+                        f"{self.name}: model feature schema does not match runtime"
+                    )
                 want, have = saved.get("stack"), stack_versions()
-                if want and want != have:
+                if production and not want:
+                    raise RuntimeError(f"{self.name}: model stack metadata is missing")
+                if want != have:
+                    if production:
+                        raise RuntimeError(
+                            f"{self.name}: model training stack does not match runtime"
+                        )
                     logger.warning("%s: artifact stack skew trained=%s runtime=%s "
                                    "(pin the ML stack to match)", self.name, want, have)
+                self.load_artifact(saved)
                 logger.info("%s: loaded model (calibrated=%s, stack=%s)",
                             self.name, self.platt is not None, saved.get("stack"))
                 return
             except Exception as e:
+                if production:
+                    raise RuntimeError(
+                        f"{self.name}: approved model artifact is unavailable"
+                    ) from e
                 logger.error("%s: failed to load model (%s) — retraining", self.name, e)
+        elif production:
+            raise RuntimeError(f"{self.name}: model artifact is required in production")
         self._cold_start_training()
 
     def _cold_start_training(self):
@@ -211,6 +267,8 @@ class ChannelDetector:
                     self.name, len(labels), self.platt is not None)
 
     def _save_model(self):
+        if is_production_environment():
+            raise RuntimeError("runtime model writes are disabled in production")
         try:
             with open(self.model_path, "wb") as f:
                 pickle.dump(self._artifact, f)

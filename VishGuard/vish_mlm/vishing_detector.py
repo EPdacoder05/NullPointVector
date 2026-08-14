@@ -6,9 +6,11 @@ Operates on speech-to-text transcripts + caller metadata. The channel-specific
 signals are robocall/IVR pressure patterns ("press 1"), authority-impersonation
 (IRS/警/arrest scripts), gift-card/wire payment coercion, and caller-ID shape.
 
-This is the lowest-latency path of the three guards: a live call transcript is
-scored incrementally as speech arrives, so a verdict is available before the
-call ends.
+This content model runs only when NullPoint legitimately receives text (for
+example, an explicitly shared voicemail or an app-owned VoIP transcript). iOS
+does not expose carrier-call audio or transcripts to this process, so this model
+is not a pre-ring carrier-call hook. Pre-ring carrier protection is driven by
+the separate exact-number reputation/directory path.
 """
 from __future__ import annotations
 
@@ -17,11 +19,13 @@ import re
 from pathlib import Path
 
 from common.ml import features as F
-from common.ml.channel_detector import ChannelDetector
+from common.ml.channel_detector import ChannelDetector, resolve_model_artifact
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = Path(__file__).parent / "models" / "vishing_sgd_model.pkl"
+MODEL_PATH = resolve_model_artifact(
+    Path(__file__).parent / "models" / "vishing_sgd_model.pkl"
+)
 
 NUM_VOICE_FEATURES = 14
 
@@ -140,6 +144,7 @@ detector = ChannelDetector(
     numeric_fn=_voice_numeric_features,
     num_features=NUM_VOICE_FEATURES,
     seed_fn=_seed_corpus,
+    artifact_digest_env="VISH_MODEL_SHA256",
 )
 
 # Backwards-compatible class alias.

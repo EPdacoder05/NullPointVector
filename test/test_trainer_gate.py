@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "PhishGuard" / "phish_mlm"))
 
@@ -38,9 +40,17 @@ def test_poisoned_candidate_is_rejected():
     ]
     for _ in range(30):
         for t in legit_texts:
-            feedback.append({"subject": "", "body": t, "from": "a@corp.com"}, label=1)
+            feedback.append(
+                {"subject": "", "body": t, "from": "a@corp.com"},
+                label=1,
+                source="console-grade",
+            )
         for t in phish_texts:
-            feedback.append({"subject": "", "body": t, "from": "x@paypal-secure.ru"}, label=0)
+            feedback.append(
+                {"subject": "", "body": t, "from": "x@paypal-secure.ru"},
+                label=0,
+                source="console-grade",
+            )
 
     result = Trainer(registry=registry, feedback=feedback).run()
 
@@ -49,6 +59,36 @@ def test_poisoned_candidate_is_rejected():
         f"metrics={result.candidate_metrics}"
     )
     assert "regression" in result.reason or "failed gate" in result.reason
+
+
+def test_registry_rejects_tampered_artifact_before_unpickle(tmp_path):
+    from PhishGuard.phish_mlm.training.registry import ModelRegistry
+
+    registry = ModelRegistry(tmp_path)
+    version = registry.save_candidate(
+        {"feature_version": 1, "platt": None, "payload": "safe"},
+        {"gate_pass": False},
+    )
+    model_path = tmp_path / "registry" / version / "model.pkl"
+    model_path.write_bytes(b"tampered executable input")
+
+    with pytest.raises(RuntimeError, match="digest verification failed"):
+        registry.load(version)
+
+
+def test_registry_rejects_path_traversal_and_runtime_production_write(
+    monkeypatch, tmp_path,
+):
+    from PhishGuard.phish_mlm.training.registry import ModelRegistry
+
+    registry = ModelRegistry(tmp_path)
+    with pytest.raises(ValueError, match="invalid model version"):
+        registry.load("../outside")
+
+    monkeypatch.setenv("ENV", "production")
+    monkeypatch.delenv("MODEL_TRAINING_MODE", raising=False)
+    with pytest.raises(RuntimeError, match="disabled in production"):
+        registry.save_candidate({"feature_version": 1}, {})
 
 
 if __name__ == "__main__":

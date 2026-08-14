@@ -28,10 +28,12 @@ def decide_promotion(
       - FPR rises by more than _REGRESSION_EPS
       - accuracy drops by more than _REGRESSION_EPS
     """
-    if force:
-        return True, "force_promote"
     if not gate_ok:
         return False, gate_fail_reason
+    # A break-glass override may waive the champion-regression comparison, but
+    # never the safety/evidence gate itself.
+    if force:
+        return True, "force_promote_after_gate"
     if not champ:
         return True, "no champion → promote first passing model"
 

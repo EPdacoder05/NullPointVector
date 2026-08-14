@@ -9,15 +9,10 @@ Decision matrix:
          the triage decision feeds the feedback buffer → next gated retrain)
     otherwise                                      → PASS
 
-This is the closed self-improving loop: known attacks are blocked by the
-classifier, unknown-unknowns are caught by the anomaly layer, and human triage
-of those novelties teaches the classifier over time.
-
-PERFORMANCE: the classifier path is pure CPU and sub-millisecond. The anomaly
-path requires a MiniLM embedding (~1-3ms on GPU/MPS). For millions of
-evaluations, embed in batches and/or gate the anomaly call behind the
-classifier (only run anomaly when classifier is not already high-confidence
-phish) — `assess(..., use_anomaly=...)` supports both.
+Novelty can surface unusual content for human review; it does not prove an
+attack and is not automatically promoted into training data.  Latency is not
+claimed here: both sparse-classifier and optional embedding performance must be
+measured with the release artifact on the deployment target.
 """
 import logging
 import sys
@@ -126,8 +121,10 @@ def assess(email_data: dict, detector=None, use_anomaly: bool = True,
         action, is_threat = Action.QUARANTINE, True
         reasons.append(f"classifier PHISH @ {conf:.0%} ≥ {QUARANTINE_THRESHOLD:.0%}")
     elif level == "EXTREME":
-        action, is_threat = Action.QUARANTINE, True
-        reasons.append("anomaly EXTREME — quarantine novel high-risk email")
+        # Unsupervised novelty is not a malicious label.  It may only request
+        # review; it must never quarantine/block by itself.
+        action, is_threat = Action.TRIAGE_NOVEL, False
+        reasons.append("unusual pattern — human review required")
     elif pred == 1 and conf >= REVIEW_THRESHOLD:
         action, is_threat = Action.REVIEW, True
         reasons.append(f"classifier PHISH @ {conf:.0%} (review band)")

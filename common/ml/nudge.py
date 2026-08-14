@@ -12,6 +12,7 @@ Sibling channels share entity crumbs via ``common.ml.cross_channel``.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional
 
 logger = logging.getLogger("nudge")
@@ -75,6 +76,13 @@ def word_weight_deltas(detector, before, after, k: int = 10) -> list[dict]:
 
 def apply_nudge(channel: str, record: dict, is_threat: bool) -> dict:
     """Buffer is caller's job; this only does ephemeral partial_fit + Δw proof."""
+    from common.config import is_production_environment
+    enabled = os.getenv("ENABLE_EPHEMERAL_NUDGE", "").lower() in ("1", "true")
+    if not enabled or is_production_environment():
+        # A live singleton is shared across tenants and replicas do not receive
+        # the same update. Keep this diagnostic mechanism opt-in for local model
+        # development; production weights move only by gated artifact promotion.
+        return {"ok": False, "error": "nudge_disabled", "deltas": []}
     try:
         det = _get_detector(channel)
     except Exception as e:
@@ -83,8 +91,14 @@ def apply_nudge(channel: str, record: dict, is_threat: bool) -> dict:
 
     before = snapshot_coef(det)
     try:
-        # Positional 2nd arg: PhishDetector.is_phishing / ChannelDetector.is_threat.
-        det.learn_from_feedback(record, is_threat)
+        # ``record_grade`` already made the one durable append.  PhishDetector's
+        # public method also supports direct API feedback, so suppress its append
+        # only on this grading/nudge path.  Sibling ChannelDetector implementations
+        # never write the feedback buffer themselves.
+        if channel == "phishing":
+            det.learn_from_feedback(record, is_threat, buffer_feedback=False)
+        else:
+            det.learn_from_feedback(record, is_threat)
     except Exception as e:
         logger.error("nudge failed [%s]: %s", channel, e)
         return {"ok": False, "error": "nudge_failed", "deltas": []}

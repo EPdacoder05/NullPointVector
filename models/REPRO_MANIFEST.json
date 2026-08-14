@@ -27,7 +27,11 @@
           "fp": 1,
           "fn": 0
         },
-        "gate_pass": true
+        "recall_ci95": [0.8318, 1.0],
+        "fpr_ci95": [0.0085, 0.2267],
+        "gate_pass": true,
+        "evidence_sufficient": false,
+        "release_ready": false
       }
     },
     "smishing": {
@@ -51,7 +55,11 @@
           "fp": 0,
           "fn": 0
         },
-        "gate_pass": true
+        "recall_ci95": [0.6756, 1.0],
+        "fpr_ci95": [0.0, 0.3244],
+        "gate_pass": true,
+        "evidence_sufficient": false,
+        "release_ready": false
       }
     },
     "vishing": {
@@ -75,7 +83,11 @@
           "fp": 0,
           "fn": 1
         },
-        "gate_pass": true
+        "recall_ci95": [0.5291, 0.9776],
+        "fpr_ci95": [0.0, 0.3244],
+        "gate_pass": false,
+        "evidence_sufficient": false,
+        "release_ready": false
       }
     }
   }

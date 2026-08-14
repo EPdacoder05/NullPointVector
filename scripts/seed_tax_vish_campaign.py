@@ -2,11 +2,12 @@
 """One-shot: screen tax-resolution campaign samples so DB + directory pick up CIDs/TFNs.
 
 Usage (app stack up):
-  docker compose exec app python scripts/seed_tax_vish_campaign.py
+  docker compose exec app python scripts/seed_tax_vish_campaign.py --account-sub USER_SUB
 """
 from __future__ import annotations
 
 import json
+import argparse
 import sys
 from pathlib import Path
 
@@ -50,10 +51,15 @@ SAMPLES = [
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--account-sub", required=True)
+    args = parser.parse_args()
     sys.path.insert(0, str(ROOT))
+    from common.tenant_rls import require_account_sub
     from common.vish import screen_call, CallEvent
     from common.vish.phones import extract_e164_numbers
     from common.streaming.dlq import persist_threat_durable
+    account_sub = require_account_sub(args.account_sub)
 
     pack_nums = []
     if PACK.exists():
@@ -80,6 +86,7 @@ def main() -> int:
                 "campaign": "tax_resolution_robocall",
             }
             persist_threat_durable(
+                account_sub=account_sub,
                 content=sample["transcript"],
                 threat_type="vishing",
                 sender=sample["caller_id"],
@@ -88,6 +95,7 @@ def main() -> int:
             blocked += 1
             for cb in extract_e164_numbers(sample["transcript"], exclude=[sample["caller_id"]]):
                 persist_threat_durable(
+                    account_sub=account_sub,
                     content=f"[callback] {sample['transcript'][:500]}",
                     threat_type="vishing",
                     sender=cb,
@@ -98,6 +106,7 @@ def main() -> int:
     # Ensure every pack number is durably present even if screen was soft.
     for raw in pack_nums:
         persist_threat_durable(
+            account_sub=account_sub,
             content="[tax_resolution campaign seed]",
             threat_type="vishing",
             sender=raw,
@@ -112,7 +121,7 @@ def main() -> int:
         blocked += 1
 
     from Autobot.VectorDB.NullPoint_Vector import get_vish_directory
-    updated, block, label = get_vish_directory()
+    updated, block, label = get_vish_directory(account_sub=account_sub)
     print(f"directory: {len(block)} blocks, {len(label)} labels @ {updated}")
     print(f"seed writes≈{blocked}")
     return 0

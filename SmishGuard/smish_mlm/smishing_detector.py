@@ -13,11 +13,13 @@ import logging
 from pathlib import Path
 
 from common.ml import features as F
-from common.ml.channel_detector import ChannelDetector
+from common.ml.channel_detector import ChannelDetector, resolve_model_artifact
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = Path(__file__).parent / "models" / "smishing_sgd_model.pkl"
+MODEL_PATH = resolve_model_artifact(
+    Path(__file__).parent / "models" / "smishing_sgd_model.pkl"
+)
 
 # Feature schema version == length of the structural vector. Bump implicitly by
 # changing _sms_numeric_features; a mismatch on disk triggers an auto-retrain.
@@ -140,6 +142,7 @@ detector = ChannelDetector(
     numeric_fn=_sms_numeric_features,
     num_features=NUM_SMS_FEATURES,
     seed_fn=_seed_corpus,
+    artifact_digest_env="SMISH_MODEL_SHA256",
 )
 
 # Backwards-compatible class alias for existing imports.

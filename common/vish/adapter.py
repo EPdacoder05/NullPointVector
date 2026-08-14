@@ -1,6 +1,6 @@
 """
-Hybrid VishGuard screening: fuse the reputation (number) path and the
-transcription (content) path into one CallKit action.
+Hybrid VishGuard policy: fuse the reputation (number) path and an optional,
+legitimately ingested transcript into one recommended action.
 
     CallEvent
        │
@@ -13,8 +13,9 @@ Fusion principles:
     benign-sounding pitch). The content path catches NEW numbers running known
     scripts. Either firing strongly is enough → we take a risk-max, then apply
     trust adjustments (known contact, STIR/SHAKEN attestation).
-  - Output is one of four CallKit actions plus consumer-readable reasons (reuses
-    the same explainability philosophy as the web console).
+  - Output is one of four channel-neutral policy recommendations plus
+    consumer-readable reasons. It does not itself create an iOS carrier-call
+    hook or prove that the OS can execute every recommendation.
 """
 from __future__ import annotations
 
@@ -83,7 +84,12 @@ def _content_verdict(event: CallEvent) -> dict | None:
 
 
 def screen_call(event: CallEvent | dict) -> ScreenResult:
-    """Screen a CallKit event through both paths and return a fused verdict."""
+    """Score an explicit event through both paths and return a policy verdict.
+
+    Calling this function does not mean iOS delivered a carrier-call event. The
+    caller must be an authorized API/import path with a legitimately observed
+    number and, when present, transcript.
+    """
     if isinstance(event, dict):
         event = CallEvent.from_dict(event)
 

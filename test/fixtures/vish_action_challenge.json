@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "purpose": "action_challenge",
+  "description": "Small synthetic and redacted policy challenge derived from recurring tax-call language. It is not a prevalence sample, benchmark, training set, golden set, release gate, or model-promotion input.",
+  "provenance": "synthetic_redacted",
+  "training_eligible": false,
+  "release_evidence": false,
+  "group_disjoint_required": true,
+  "rows": [
+    {
+      "id": "legit-cpa-appointment-a",
+      "group_id": "challenge-legit-cpa-appointment",
+      "taxonomy": "legit",
+      "expected_action": "allow",
+      "scenario": "cpa_scheduled_callback",
+      "transcript": "Hi <CLIENT>, this is <CPA> returning your scheduled call about the tax documents you uploaded. I will not ask for a password or payment on this call.",
+      "signals": {"known_contact": true, "scheduled_callback": true, "verified_source_number": true}
+    },
+    {
+      "id": "legit-cpa-appointment-b",
+      "group_id": "challenge-legit-cpa-appointment",
+      "taxonomy": "legit",
+      "expected_action": "allow",
+      "scenario": "cpa_scheduled_callback",
+      "transcript": "This is <ENROLLED_AGENT> from your tax preparer's office. You asked us to call after reviewing the state notice. Please use the portal if you need to send anything.",
+      "signals": {"known_contact": true, "scheduled_callback": true, "verified_source_number": true}
+    },
+    {
+      "id": "legit-irs-callback-a",
+      "group_id": "challenge-legit-verified-government-callback",
+      "taxonomy": "legit",
+      "expected_action": "allow",
+      "scenario": "irs_scheduled_callback",
+      "transcript": "This is <AGENT> returning the callback you scheduled about case <REDACTED>. Do not give payment information by phone; verify the callback using the number published on IRS.gov.",
+      "signals": {"prior_case": true, "scheduled_callback": true, "verified_source_number": true}
+    },
+    {
+      "id": "legit-state-tax-callback-a",
+      "group_id": "challenge-legit-verified-government-callback",
+      "taxonomy": "legit",
+      "expected_action": "allow",
+      "scenario": "state_tax_scheduled_callback",
+      "transcript": "Hello <TAXPAYER>, the state taxpayer-assistance office is returning your requested call. Please open your existing portal case; no payment or verification code is needed on this call.",
+      "signals": {"prior_case": true, "scheduled_callback": true, "verified_source_number": true}
+    },
+    {
+      "id": "nuisance-tax-resolution-first-a",
+      "group_id": "challenge-nuisance-tax-resolution-first-contact",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "label",
+      "scenario": "unsolicited_tax_resolution",
+      "transcript": "Hi, this is <CALLER>. Based on your file, you may still have federal or state tax matters worth reviewing. Press one or call 202-555-0101.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 1}
+    },
+    {
+      "id": "nuisance-tax-resolution-first-b",
+      "group_id": "challenge-nuisance-tax-resolution-first-contact",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "label",
+      "scenario": "unsolicited_tax_resolution",
+      "transcript": "This is <CALLER> with a tax resolution service. If you still have unresolved tax debt, there may be programs available. Press one or call 202-555-0102.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 1}
+    },
+    {
+      "id": "nuisance-tax-file-first-a",
+      "group_id": "challenge-nuisance-tax-file-first-contact",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "label",
+      "scenario": "unsolicited_tax_file_review",
+      "transcript": "I reviewed your tax file briefly and it looks like you may still be eligible to reduce what you owe. Call 202-555-0103.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 1}
+    },
+    {
+      "id": "nuisance-tax-file-first-b",
+      "group_id": "challenge-nuisance-tax-file-first-contact",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "label",
+      "scenario": "unsolicited_tax_file_review",
+      "transcript": "There may still be tax resolution options that were not fully evaluated during the original review. Press one or call 202-555-0104.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 1}
+    },
+    {
+      "id": "nuisance-tax-resolution-repeat-a",
+      "group_id": "challenge-nuisance-tax-resolution-repeat",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "silence",
+      "scenario": "corroborated_repeat_campaign",
+      "transcript": "<CALLER> here again. If you believe you may still have taxes due, now is a good time to review your options. Press one or call 202-555-0111.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 4, "independent_reports": 3}
+    },
+    {
+      "id": "nuisance-tax-resolution-repeat-b",
+      "group_id": "challenge-nuisance-tax-resolution-repeat",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "silence",
+      "scenario": "corroborated_repeat_campaign",
+      "transcript": "This is <CALLER> following up regarding your tax relief inquiry. Call 202-555-0112. Press nine if this is no longer relevant.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 5, "independent_reports": 3}
+    },
+    {
+      "id": "nuisance-tax-advocacy-repeat-a",
+      "group_id": "challenge-nuisance-tax-advocacy-repeat",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "silence",
+      "scenario": "corroborated_repeat_campaign",
+      "transcript": "This is <CALLER> with the taxpayer advocacy division. I was reviewing your file and there may still be opportunities to address a portion of your balance. Call 202-555-0113.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 4, "independent_reports": 4}
+    },
+    {
+      "id": "nuisance-tax-advocacy-repeat-b",
+      "group_id": "challenge-nuisance-tax-advocacy-repeat",
+      "taxonomy": "nuisance_robocall",
+      "expected_action": "silence",
+      "scenario": "corroborated_repeat_campaign",
+      "transcript": "Many people assume their options have expired, but that is not always the case. Press one now or call 202-555-0114 before the review period ends.",
+      "signals": {"known_contact": false, "prior_case": false, "campaign_matches": 6, "independent_reports": 4}
+    },
+    {
+      "id": "fraud-tax-payment-threat-a",
+      "group_id": "challenge-fraud-tax-payment-threat",
+      "taxonomy": "fraud",
+      "expected_action": "block",
+      "scenario": "government_impersonation_payment_demand",
+      "transcript": "This is the tax enforcement unit. Pay today with gift cards or officers will arrive within one hour. Stay on the line and read every card number.",
+      "signals": {"payment_method": "gift_card", "coercive_threat": true, "verified_source_number": false}
+    },
+    {
+      "id": "fraud-tax-payment-threat-b",
+      "group_id": "challenge-fraud-tax-payment-threat",
+      "taxonomy": "fraud",
+      "expected_action": "block",
+      "scenario": "government_impersonation_payment_demand",
+      "transcript": "Your tax account has an arrest warrant. Transfer cryptocurrency to the wallet I provide now and do not contact your bank or tax preparer.",
+      "signals": {"payment_method": "cryptocurrency", "coercive_threat": true, "verified_source_number": false}
+    },
+    {
+      "id": "fraud-tax-credential-theft-a",
+      "group_id": "challenge-fraud-tax-credential-theft",
+      "taxonomy": "fraud",
+      "expected_action": "block",
+      "scenario": "credential_or_otp_theft",
+      "transcript": "I am calling from the IRS refund desk. Read me the six-digit code that just arrived so I can release your refund.",
+      "signals": {"requests_one_time_code": true, "verified_source_number": false}
+    },
+    {
+      "id": "fraud-tax-credential-theft-b",
+      "group_id": "challenge-fraud-tax-credential-theft",
+      "taxonomy": "fraud",
+      "expected_action": "block",
+      "scenario": "credential_or_otp_theft",
+      "transcript": "To stop immediate tax penalties, install the remote-support app and give me your banking login while I secure your account.",
+      "signals": {"requests_remote_access": true, "requests_bank_credentials": true, "verified_source_number": false}
+    }
+  ]
+}

@@ -30,8 +30,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from common.ml.channel_detector import stack_versions  # noqa: E402
+from common.ml.training.channel_eval import (  # noqa: E402
+    confidence_intervals,
+    evaluate as evaluate_channel,
+    has_release_evidence,
+    passes_gate as passes_channel_gate,
+)
 from common.streaming.channel_pipeline import normalize  # noqa: E402
-from PhishGuard.phish_mlm.eval.evaluate import evaluate, passes_gate  # noqa: E402
+from PhishGuard.phish_mlm.eval.evaluate import (  # noqa: E402
+    evaluate as evaluate_phishing,
+    passes_gate as passes_phishing_gate,
+)
 
 CHANNELS = {
     "phishing": {"module": "PhishGuard.phish_mlm.phishing_detector",
@@ -66,10 +75,24 @@ def _golden_metrics(channel: str, cfg: dict, detector) -> dict:
                     nr[k] = r[k]
             norm.append(nr)
         rows = norm
-    m = evaluate(detector, rows)
+    if channel == "phishing":
+        m = evaluate_phishing(detector, rows)
+        gate_pass = passes_phishing_gate(m)
+        evidence_sufficient = has_release_evidence(
+            m, min_recall=0.90, max_fpr=0.10,
+        )
+    else:
+        m = evaluate_channel(detector, rows)
+        gate_pass = passes_channel_gate(m)
+        evidence_sufficient = has_release_evidence(m)
+    recall_ci, fpr_ci = confidence_intervals(m)
     return {"n": m["n"], "accuracy": round(m["accuracy"], 4),
             "recall": round(m["recall"], 4), "fpr": round(m["fpr"], 4),
-            "confusion": m["confusion"], "gate_pass": bool(passes_gate(m))}
+            "recall_ci95": [round(v, 4) for v in recall_ci],
+            "fpr_ci95": [round(v, 4) for v in fpr_ci],
+            "confusion": m["confusion"], "gate_pass": bool(gate_pass),
+            "evidence_sufficient": bool(evidence_sufficient),
+            "release_ready": bool(gate_pass and evidence_sufficient)}
 
 
 def regenerate(channel: str, cfg: dict) -> dict:
@@ -106,7 +129,7 @@ def main() -> int:
         try:
             entry = regenerate(channel, cfg)
             manifest["channels"][channel] = entry
-            if entry["golden"].get("gate_pass") is False:
+            if entry["golden"].get("release_ready") is not True:
                 ok = False
         except Exception as e:  # keep going; record the failure
             manifest["channels"][channel] = {"error": str(e)}

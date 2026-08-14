@@ -31,6 +31,10 @@ def _candidate_numbers(limit: int = 200) -> list[str]:
     out: list[str] = []
     seen = set()
     try:
+        # This scheduled operator job is the sole bounded cross-tenant reader.
+        # Customer request paths never receive this bypass capability.
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, bypass=True)
         with conn.cursor() as cur:
             cur.execute(
                 """

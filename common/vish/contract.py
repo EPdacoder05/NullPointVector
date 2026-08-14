@@ -9,19 +9,20 @@ WHY A CONTRACT (the R1 decision):
     CallKit surfaces a *call event + caller ID*, never an audio transcript. The
     VishGuard model scores *text*. We chose the **hybrid** path:
 
-      • LIVE path (every call)     → score the NUMBER via reputation feeds.
-                                     Zero audio, zero latency budget blown,
-                                     works the instant the phone rings.
+      • PRE-RING data plane       → compile known NUMBER reputation into Call
+                                     Directory, or serve it through Apple's
+                                     separately provisioned Live Caller ID path.
       • DEEP path (voicemail/opt-in)→ transcribe (Apple Speech / Whisper) and
                                      score the TRANSCRIPT with VishGuard for a
                                      content-level verdict + explainability.
 
-    The two are fused into one `ScreenResult` with a single recommended CallKit
-    action. The live path always runs; the deep path runs only when a transcript
-    is supplied — so the same endpoint serves "ring-time screening" and
-    "post-call/voicemail analysis".
+    The two can be fused into one `ScreenResult` policy recommendation. The
+    current iOS app does not receive native carrier-call events and does not call
+    this endpoint automatically at ring time. A backend response also cannot
+    directly silence an arbitrary carrier call; iOS applies only capabilities
+    exposed by the installed Apple extension.
 
-INPUT  (CallEvent)  — built by the iOS CallKit extension / app:
+INPUT  (CallEvent)  — submitted by an authorized explicit/owned transport path:
     {
       "caller_id": "+18005551001",     # required; E.164 or alphanumeric sender id
       "phase": "incoming",             # incoming | voicemail | post_call
@@ -61,7 +62,7 @@ class CallPhase(str, Enum):
 
 
 class CallKitAction(str, Enum):
-    """What we recommend the iOS client tell CallKit to do."""
+    """Channel-neutral policy recommendation, not proof of an iOS capability."""
     ALLOW = "allow"        # ring normally
     LABEL = "label"        # ring, but show a caller-id warning label
     SILENCE = "silence"    # send to voicemail silently (suspicious, not certain)

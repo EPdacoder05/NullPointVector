@@ -30,16 +30,22 @@ GOLDEN = {
 # Per-channel CI gates (held-out golden sets).
 GATES = {
     "phishing": {"min_accuracy": 0.90, "max_fpr": 0.10, "min_pump_fake_recall": 1.0},
-    "smishing": {"min_accuracy": 0.90, "max_fpr": 0.10},
-    "vishing":  {"min_accuracy": 0.90, "max_fpr": 0.10},
+    "smishing": {"min_accuracy": 0.90, "max_fpr": 0.05, "min_recall": 0.90},
+    "vishing":  {"min_accuracy": 0.90, "max_fpr": 0.05, "min_recall": 0.90},
 }
 
 
 def _passes_channel_gate(channel: str, metrics: dict) -> bool:
     g = GATES.get(channel, GATES["phishing"])
+    if metrics.get("evaluation_valid", True) is not True:
+        return False
+    if int(metrics.get("inference_errors", 0) or 0) != 0:
+        return False
     if metrics.get("accuracy", 0) < g["min_accuracy"]:
         return False
     if metrics.get("fpr", 1) > g["max_fpr"]:
+        return False
+    if metrics.get("recall", 0) < g.get("min_recall", 0):
         return False
     if "min_pump_fake_recall" in g:
         if metrics.get("pump_fake_recall", 0) < g["min_pump_fake_recall"]:
@@ -118,11 +124,45 @@ def _eval_channel(channel: str) -> dict:
     if not path.exists():
         return {"available": False, "reason": "no golden set"}
     rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
-    from PhishGuard.phish_mlm.eval.evaluate import evaluate, passes_gate
-    m = evaluate(detector=_detector(channel), rows=rows)
+    if channel == "phishing":
+        from PhishGuard.phish_mlm.eval.evaluate import evaluate
+        m = evaluate(detector=_detector(channel), rows=rows)
+    else:
+        from common.ml.training.channel_eval import evaluate
+        m = evaluate(detector=_detector(channel), rows=rows)
     m["available"] = True
-    m["gate_pass"] = _passes_channel_gate(channel, m)
-    return m
+    return reassess_channel_metrics(channel, m)
+
+
+def reassess_channel_metrics(channel: str, metrics: dict) -> dict:
+    """Apply current gate/evidence policy to live or stored metrics."""
+    from common.ml.training.channel_eval import confidence_intervals, has_release_evidence
+
+    result = dict(metrics)
+    recall_ci, fpr_ci = confidence_intervals(result)
+    result["recall_ci95"] = [round(recall_ci[0], 4), round(recall_ci[1], 4)]
+    result["fpr_ci95"] = [round(fpr_ci[0], 4), round(fpr_ci[1], 4)]
+    result["gate_pass"] = _passes_channel_gate(channel, result)
+    gate = GATES[channel]
+    result["evidence_sufficient"] = has_release_evidence(
+        result,
+        min_recall=gate.get("min_recall", 0.90),
+        max_fpr=gate["max_fpr"],
+    )
+    result["release_ready"] = bool(
+        result["gate_pass"] and result["evidence_sufficient"]
+    )
+    return result
+
+
+def reassess_quality_snapshot(quality: dict) -> dict:
+    """Re-evaluate cached gate flags without loading detector artifacts."""
+    return {
+        channel: reassess_channel_metrics(channel, metrics)
+        if metrics.get("available") else dict(metrics)
+        for channel, metrics in (quality or {}).items()
+        if channel in GATES
+    }
 
 
 def model_quality(ttl: float = 300.0) -> dict:
