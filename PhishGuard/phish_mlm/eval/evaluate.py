@@ -19,7 +19,14 @@ Run directly:   python -m eval.evaluate         (from phish_mlm/)
                 python PhishGuard/phish_mlm/eval/evaluate.py
 """
 import json
+import sys
 from pathlib import Path
+
+# phish_mlm eval is often imported with only this package on sys.path (CI gate).
+# Ensure repo root is present so shared Wilson helpers resolve.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from common.ml.training.channel_eval import has_release_evidence, _wilson
 

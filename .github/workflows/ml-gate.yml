@@ -43,13 +43,18 @@ jobs:
           key: hf-all-MiniLM-L6-v2
 
       - name: Model golden-eval gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest -q test/test_model_gate.py
 
       - name: Anti-poisoning trainer gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest -q test/test_trainer_gate.py
 
       - name: API smoke (auth, RBAC, rate limit, idempotency)
         env:
+          PYTHONPATH: ${{ github.workspace }}
           JWT_SECRET_KEY: ci-secret
           API_ADMIN_PASSWORD: changeme
         run: pytest -q test/test_api_smoke.py

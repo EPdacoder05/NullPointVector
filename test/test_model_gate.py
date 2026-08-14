@@ -7,7 +7,10 @@ accuracy below 90%, pushes FPR above 10%, or lets a pump-fake through, CI fails.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "PhishGuard" / "phish_mlm"))
+_REPO = Path(__file__).resolve().parent.parent
+# Repo root first so `common.*` imports inside phish eval resolve in CI.
+sys.path.insert(0, str(_REPO))
+sys.path.insert(0, str(_REPO / "PhishGuard" / "phish_mlm"))
 
 
 def test_golden_gate_passes():
