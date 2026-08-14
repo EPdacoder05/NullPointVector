@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    command: ["./start.sh", "web"]
     ports:
       - "8000:8000"
     volumes:
@@ -26,19 +27,35 @@ services:
     environment:
       # App talks to PgBouncer (transaction pooler), NOT Postgres directly.
       # PgBouncer multiplexes thousands of client conns onto a small server pool.
-      - DB_HOST=db
+      - DB_HOST=pgbouncer
       - DB_PORT=5432
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       - ML_MODEL_PATH=${ML_MODEL_PATH}
       - REDIS_URL=redis://redis:6379/0
+      - PROCESS_ROLE=web
       - USE_GUNICORN=${USE_GUNICORN:-true}
       - API_WORKERS=${API_WORKERS:-1}
       # MiniLM-on-every-insert OOMs the app (nginx 502). Opt in when you have RAM.
       - ENABLE_MESSAGE_EMBEDDINGS=${ENABLE_MESSAGE_EMBEDDINGS:-0}
     depends_on:
-      pgbouncer:
-        condition: service_started   # app's start.sh retries DB init on its own
+      migrate:
+        condition: service_completed_successfully
       redis:
+        condition: service_healthy
+
+  migrate:
+    build: .
+    command: ["./start.sh", "migrate"]
+    volumes:
+      - .:/app
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=pgbouncer
+      - DB_PORT=5432
+      - PROCESS_ROLE=migrate
+    depends_on:
+      pgbouncer:
         condition: service_healthy
 
   redis:
@@ -100,7 +117,7 @@ services:
   #   - reached only over the private compose network (no public host port)
   #   - upstream Postgres is loopback-bound; PgBouncer is the single DB door
   pgbouncer:
-    image: edoburu/pgbouncer:latest
+    image: edoburu/pgbouncer:v1.25.2-p0
     environment:
       - DB_HOST=db
       - DB_PORT=5432
@@ -124,7 +141,7 @@ services:
       - IGNORE_STARTUP_PARAMETERS=extra_float_digits
     # Loopback-bound host port for local psql/debugging only.
     ports:
-      - "127.0.0.1:6432:6432"
+      - "127.0.0.1:6432:5432"
     depends_on:
       db:
         condition: service_healthy
@@ -132,10 +149,9 @@ services:
     labels:
       - "autoheal=true"
     healthcheck:
-      # PgBouncer doesn't answer pg_isready on its own listener and busybox `nc`
-      # lacks -z, so probe the operationally-meaningful condition instead:
-      # PgBouncer can reach its upstream Postgres. If `db` is down, this fails.
-      test: ["CMD-SHELL", "pg_isready -h db -p 5432 -U $$DB_USER -d $$DB_NAME"]
+      # Probe PgBouncer's own standard-Postgres listener, including its upstream
+      # authentication path, rather than checking Postgres directly.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $$DB_USER -d $$DB_NAME"]
       interval: 10s
       timeout: 3s
       retries: 5

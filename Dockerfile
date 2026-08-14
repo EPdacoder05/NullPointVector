@@ -68,9 +68,15 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser . .
 
-RUN mkdir -p Phishy_Bizz logs data/ingestion data/dlq \
+RUN mkdir -p Phishy_Bizz logs data/ingestion data/dlq data/models \
+        PhishGuard/phish_mlm/models \
+        SmishGuard/smish_mlm/models \
+        VishGuard/vish_mlm/models \
     && chmod +x start.sh \
-    && chown -R appuser:appuser Phishy_Bizz logs data
+    && chown -R appuser:appuser Phishy_Bizz logs data \
+        PhishGuard/phish_mlm/models \
+        SmishGuard/smish_mlm/models \
+        VishGuard/vish_mlm/models
 
 USER appuser
 

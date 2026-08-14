@@ -1,18 +1,16 @@
 import psycopg2
-from psycopg2.extensions import register_adapter, AsIs
+from psycopg2.extensions import AsIs, parse_dsn, register_adapter
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import os
-from dotenv import load_dotenv, dotenv_values
 from cryptography.fernet import Fernet
-import base64
 import logging
 import json 
 import sys
 from datetime import datetime
-from pathlib import Path
 from psycopg2 import pool
 from functools import lru_cache
+from threading import Lock
 from time import time
 
 # Add logging configuration
@@ -64,8 +62,13 @@ register_adapter(np.ndarray, adapt_numpy_array)
 
 # Global connection pool (initialized on first use)
 _connection_pool = None
+_pool_init_lock = Lock()
 _last_db_error_log = 0.0
 _reported_host_fallbacks = set()
+
+_LOCAL_DB_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_COMPOSE_DB_HOSTS = frozenset({"db", "postgres", "postgresql", "pgbouncer"})
+_TLS_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 
 def _throttled_db_error(message, interval_seconds=30):
@@ -77,15 +80,30 @@ def _throttled_db_error(message, interval_seconds=30):
         _last_db_error_log = now
 
 
-def _candidate_db_hosts(configured_host):
-    """Return host candidates, falling back to local host when docker host is unavailable."""
+def _production_like() -> bool:
+    """Use the repository-wide public-deploy detector without duplicating it."""
+    from common.config import is_production_environment
+
+    return is_production_environment()
+
+
+def _candidate_db_hosts(configured_host, *, production_like=None):
+    """Return safe host candidates.
+
+    Container-name-to-loopback fallback is a local developer convenience only.
+    An internet-facing deployment must never silently connect to a different
+    database host than the one provisioned by its operator.
+    """
     host = configured_host or 'localhost'
     candidates = [host]
+
+    if production_like is None:
+        production_like = _production_like()
 
     # In local runs, DB_HOST is often a docker service name ("db"/"pgbouncer")
     # that doesn't resolve on the host. Fall back to loopback (both are bound to
     # 127.0.0.1 in docker-compose) so app-on-host + stack-in-docker still works.
-    if host in {'db', 'postgres', 'postgresql', 'pgbouncer'}:
+    if not production_like and host in _COMPOSE_DB_HOSTS:
         candidates.extend(['localhost', '127.0.0.1'])
 
     # De-duplicate while preserving order.
@@ -106,56 +124,142 @@ def _log_host_fallback_once(original_host, fallback_host):
     _reported_host_fallbacks.add(key)
     logger.warning(f"⚠️ DB host fallback active: {original_host} -> {fallback_host}")
 
+
+def _bounded_pool_size(name, default, *, minimum, maximum):
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+    if value < minimum or value > maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+def _database_connection_params(*, production_like=None):
+    """Build libpq parameters from process environment without reading files.
+
+    ``DATABASE_URL`` is authoritative when present.  Local development may use
+    DB_* values and conservative defaults; public deployments must provide a
+    complete URL or a complete DB_* set. Remote public connections are forced
+    to use an encrypted libpq mode even when the URL omitted ``sslmode``.
+
+    The returned mapping can contain credentials and must never be logged.
+    """
+    if production_like is None:
+        production_like = _production_like()
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        try:
+            params = dict(parse_dsn(database_url))
+        except Exception:
+            raise RuntimeError("DATABASE_URL is invalid") from None
+        if production_like:
+            required = ("host", "dbname", "user", "password")
+            if any(not str(params.get(name) or "").strip() for name in required):
+                raise RuntimeError("DATABASE_URL is incomplete")
+    else:
+        names = {
+            "host": "DB_HOST",
+            "port": "DB_PORT",
+            "user": "DB_USER",
+            "password": "DB_PASSWORD",
+            "dbname": "DB_NAME",
+        }
+        configured = {key: os.getenv(env_name, "").strip()
+                      for key, env_name in names.items()}
+        if production_like:
+            missing = [env_name for key, env_name in names.items()
+                       if not configured[key]]
+            if missing:
+                raise RuntimeError(
+                    "Database configuration is incomplete; set DATABASE_URL or all DB_* values"
+                )
+            params = configured
+        else:
+            params = {
+                "host": configured["host"] or "localhost",
+                "port": configured["port"] or "5432",
+                "user": configured["user"] or "EPNP",
+                "password": configured["password"] or None,
+                "dbname": configured["dbname"] or "NullPointVector",
+            }
+
+    host = str(params.get("host") or "").strip()
+    sslmode = (os.getenv("DB_SSLMODE") or params.get("sslmode") or "").strip().lower()
+    if production_like and host not in _LOCAL_DB_HOSTS:
+        if sslmode and sslmode not in _TLS_MODES:
+            raise RuntimeError("Production database transport must use TLS")
+        # Encryption is the safe minimum. Operators with a managed CA should
+        # set DB_SSLMODE=verify-full and PGSSLROOTCERT for identity validation.
+        params["sslmode"] = sslmode or "require"
+    elif sslmode:
+        params["sslmode"] = sslmode
+
+    params["connect_timeout"] = _bounded_pool_size(
+        "DB_CONNECT_TIMEOUT", 10, minimum=1, maximum=60,
+    )
+    params["application_name"] = "nullpoint"
+    return params
+
+
+def _safe_db_failure(operation, exc):
+    """Log a stable failure class without credentials or connection strings."""
+    _throttled_db_error(f"Database {operation} failed ({type(exc).__name__})")
+
+
 def _init_pool():
-    """Initialize connection pool with database credentials."""
+    """Initialize a thread-safe connection pool once per worker process."""
     global _connection_pool
-    
+
     if _connection_pool is not None:
         return _connection_pool
-    
-    # Load .env configuration
-    project_root = Path(__file__).resolve().parent.parent.parent
-    env_path = project_root / '.env'
-    config = dotenv_values(env_path)
-    
-    # Manual fallback for DB_PORT
-    if not config or 'DB_PORT' not in config:
-        if env_path.exists():
-            with open(env_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('DB_PORT='):
-                        config = dict(config) if config else {}
-                        config['DB_PORT'] = line.split('=')[1].strip()
-    
-    # Prefer process env (Docker Compose) over .env file so container DB_HOST wins.
-    host = os.getenv('DB_HOST') or config.get('DB_HOST') or 'localhost'
-    port = os.getenv('DB_PORT') or config.get('DB_PORT') or '5432'
-    user = os.getenv('DB_USER') or config.get('DB_USER') or 'EPNP'
-    password = os.getenv('DB_PASSWORD') or config.get('DB_PASSWORD')
-    dbname = os.getenv('DB_NAME') or config.get('DB_NAME') or 'NullPointVector'
-    
-    for candidate_host in _candidate_db_hosts(host):
-        try:
-            _connection_pool = pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=10,
-                dbname=dbname,
-                user=user,
-                password=password,
-                host=candidate_host,
-                port=port,
-                connect_timeout=10,
-                application_name="yahoo_phish",
-            )
-            if candidate_host != host:
-                _log_host_fallback_once(host, candidate_host)
-            logger.info(f"✅ Connection pool initialized ({candidate_host}:{port})")
-            return _connection_pool
-        except Exception as e:
-            _throttled_db_error(f"❌ Failed to create connection pool on host '{candidate_host}': {e}")
 
-    return None
+    with _pool_init_lock:
+        if _connection_pool is not None:
+            return _connection_pool
+
+        production_like = _production_like()
+        try:
+            base_params = _database_connection_params(
+                production_like=production_like,
+            )
+            minconn = _bounded_pool_size(
+                "DB_POOL_MIN", 1, minimum=1, maximum=20,
+            )
+            maxconn = _bounded_pool_size(
+                "DB_POOL_MAX", 10, minimum=1, maximum=50,
+            )
+            if minconn > maxconn:
+                raise RuntimeError("DB_POOL_MIN cannot exceed DB_POOL_MAX")
+        except RuntimeError:
+            if production_like:
+                raise
+            _safe_db_failure("configuration", sys.exc_info()[1])
+            return None
+
+        original_host = str(base_params.get("host") or "localhost")
+        for candidate_host in _candidate_db_hosts(
+            original_host, production_like=production_like,
+        ):
+            connection_params = dict(base_params)
+            connection_params["host"] = candidate_host
+            try:
+                candidate_pool = pool.ThreadedConnectionPool(
+                    minconn=minconn,
+                    maxconn=maxconn,
+                    **connection_params,
+                )
+                _connection_pool = candidate_pool
+                if candidate_host != original_host:
+                    _log_host_fallback_once(original_host, candidate_host)
+                logger.info("Database connection pool initialized")
+                return _connection_pool
+            except Exception as exc:
+                _safe_db_failure("pool initialization", exc)
+
+        return None
 
 
 def get_conn():
@@ -168,8 +272,8 @@ def get_conn():
     try:
         conn = pool_instance.getconn()
         return conn
-    except Exception as e:
-        logger.error(f"Failed to get connection from pool: {e}")
+    except Exception as exc:
+        logger.error("Failed to get database connection (%s)", type(exc).__name__)
         return None
 
 
@@ -177,114 +281,65 @@ def release_conn(conn):
     """Release a connection back to the pool."""
     if conn is None:
         return
-    try:
-        from common.tenant_rls import clear_tenant
-        clear_tenant(conn)
-    except Exception as e:
-        logger.warning(f"Failed to clear tenant context before releasing connection: {e}")
     pool_instance = _init_pool()
     if pool_instance is not None:
+        discard = False
         try:
-            pool_instance.putconn(conn)
-        except Exception as e:
-            logger.error(f"Failed to release connection: {e}")
+            # SET LOCAL tenant state disappears at transaction end. Roll back
+            # before reusing a pooled connection even if the request path
+            # forgot to end its transaction.
+            conn.rollback()
+            from common.tenant_rls import clear_tenant
+            clear_tenant(conn)
+        except Exception as exc:
+            discard = True
+            logger.error("Discarding pooled connection after cleanup failure (%s)",
+                         type(exc).__name__)
+        try:
+            pool_instance.putconn(conn, close=discard)
+        except Exception as exc:
+            logger.error("Failed to return database connection (%s)", type(exc).__name__)
 
-
-def _load_env_explicitly():
-    """Helper to force load .env from project root."""
-    try:
-        # Calculate path to .env relative to this file
-        # File: Yahoo_Phish/Autobot/VectorDB/NullPoint_Vector.py
-        # Root: Yahoo_Phish/
-        project_root = Path(__file__).resolve().parent.parent.parent
-        env_path = project_root / '.env'
-        
-        if env_path.exists():
-            load_dotenv(dotenv_path=env_path, override=False)
-            return True
-        else:
-            logger.warning(f"⚠️ .env file NOT found at {env_path}")
-            return False
-    except Exception as e:
-        logger.error(f"Error loading .env: {e}")
-        return False
 
 def connect_db():
-    """Connect to the PostgreSQL database."""
-    
-    # 1. Calculate path to .env
-    project_root = Path(__file__).resolve().parent.parent.parent
-    env_path = project_root / '.env'
-    
-    # 2. Load values DIRECTLY from file (Bypassing shell cache)
-    config = dotenv_values(env_path)
-    
-    # 3. MANUAL FALLBACK: If dotenv failed to parse, read file manually
-    if not config or 'DB_PORT' not in config:
-        logger.warning("⚠️ Standard parser failed to find DB_PORT. Attempting manual read...")
-        try:
-            if env_path.exists():
-                with open(env_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith('DB_PORT='):
-                            manual_port = line.split('=')[1].strip()
-                            config = dict(config) if config else {}
-                            config['DB_PORT'] = manual_port
-                            logger.info(f"✅ Manually extracted DB_PORT: {manual_port}")
-        except Exception as e:
-            logger.error(f"Manual read failed: {e}")
+    """Open one short-lived connection using the canonical runtime config."""
+    production_like = _production_like()
+    try:
+        base_config = _database_connection_params(
+            production_like=production_like,
+        )
+    except RuntimeError:
+        if production_like:
+            raise
+        _safe_db_failure("configuration", sys.exc_info()[1])
+        return None
 
-    # 4. Prefer process env (Docker) over .env file values
-    host = os.getenv('DB_HOST') or config.get('DB_HOST') or 'localhost'
-    port = os.getenv('DB_PORT') or config.get('DB_PORT') or '5432'
-    user = os.getenv('DB_USER') or config.get('DB_USER') or 'EPNP'
-    password = os.getenv('DB_PASSWORD') or config.get('DB_PASSWORD')
-    dbname = os.getenv('DB_NAME') or config.get('DB_NAME') or 'NullPointVector'
-
-    base_config = {
-        'dbname': dbname,
-        'user': user,
-        'password': password,
-        'port': port,
-        'connect_timeout': 10,
-        'application_name': 'yahoo_phish',
-    }
-
-    for candidate_host in _candidate_db_hosts(host):
+    original_host = str(base_config.get("host") or "localhost")
+    for candidate_host in _candidate_db_hosts(
+        original_host, production_like=production_like,
+    ):
         db_config = dict(base_config)
-        db_config['host'] = candidate_host
+        db_config["host"] = candidate_host
         try:
-            if __name__ == "__main__":
-                logger.info(
-                    f"Attempting connection to: {db_config['host']}:{db_config['port']} as {db_config['user']}"
-                )
-
             conn = psycopg2.connect(**db_config)
-            if candidate_host != host:
-                _log_host_fallback_once(host, candidate_host)
+            if candidate_host != original_host:
+                _log_host_fallback_once(original_host, candidate_host)
             return conn
-        except psycopg2.Error as e:
-            _throttled_db_error(f"Database connection failed on host '{candidate_host}': {e}")
+        except psycopg2.Error as exc:
+            _safe_db_failure("connection", exc)
 
     return None
 
 # Initialize encryption
 def get_encryption_key():
-    """Get or generate encryption key."""
-    key = os.getenv('ENCRYPTION_KEY')
-    if not key:
-        # Try loading from file if env var is missing
-        project_root = Path(__file__).resolve().parent.parent.parent
-        env_path = project_root / '.env'
-        config = dotenv_values(env_path)
-        key = config.get('ENCRYPTION_KEY')
+    """Return a validated Fernet key; never replace a malformed key."""
+    key = os.getenv('ENCRYPTION_KEY', '').strip()
 
     if not key:
         # In production, an ephemeral key is a data-loss bug: every restart would
         # generate a fresh key and orphan all previously-encrypted rows. Fail loud
         # so the key is provisioned via secret manager / env. Dev keeps ephemeral.
-        if os.getenv("ENV", "development").lower() == "production":
+        if _production_like():
             raise RuntimeError(
                 "ENCRYPTION_KEY is not set. Refusing to start in production with an "
                 "ephemeral key (would orphan all previously-encrypted data). "
@@ -293,13 +348,12 @@ def get_encryption_key():
         key = Fernet.generate_key()
         logger.warning("ENCRYPTION_KEY unset — generated an EPHEMERAL key (dev only). "
                        "Data encrypted now will be unreadable after restart.")
-    else:
-        try:
-            key_bytes = base64.urlsafe_b64decode(key)
-            key = base64.urlsafe_b64encode(key_bytes).decode()
-        except Exception as e:
-            logger.error(f"Invalid encryption key format: {e}")
-            key = Fernet.generate_key()
+        return key
+
+    try:
+        Fernet(key.encode("ascii"))
+    except (ValueError, TypeError, UnicodeError):
+        raise RuntimeError("ENCRYPTION_KEY is not a valid Fernet key") from None
     return key
 
 FERNET_KEY = get_encryption_key()
@@ -347,7 +401,13 @@ def create_tables(conn):
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS messages (
                     id SERIAL PRIMARY KEY,
+                    account_sub TEXT,
+                    mailbox_id BIGINT,
                     message_type TEXT NOT NULL,
+                    provider TEXT,
+                    provider_uid TEXT,
+                    uidvalidity TEXT,
+                    folder TEXT,
                     sender TEXT,
                     recipient TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -362,21 +422,50 @@ def create_tables(conn):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             ''')
+            # Additive migration for existing installs. Ownership cannot be
+            # inferred safely, so historical rows remain NULL and RLS-hidden.
+            cursor.execute('''
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS account_sub TEXT;
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS mailbox_id BIGINT;
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider TEXT;
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider_uid TEXT;
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS uidvalidity TEXT;
+                ALTER TABLE messages ADD COLUMN IF NOT EXISTS folder TEXT;
+
+                CREATE INDEX IF NOT EXISTS idx_messages_tenant_page
+                  ON messages (account_sub, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_messages_tenant_sender
+                  ON messages (account_sub, sender, id DESC);
+
+                DO $$ BEGIN
+                  ALTER TABLE messages ADD CONSTRAINT messages_new_rows_need_tenant
+                    CHECK (account_sub IS NOT NULL AND btrim(account_sub) <> '') NOT VALID;
+                EXCEPTION WHEN duplicate_object THEN NULL;
+                END $$;
+            ''')
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS message_embedding_idx
                 ON messages USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100);
             ''')
         conn.commit()
+        from common.tenant_rls import ensure_rls
+        ensure_rls(conn)
         logger.info("Database tables and extensions created successfully")
     except psycopg2.Error as e:
-        logger.error(f"Error creating tables: {e}")
+        logger.error("Database schema operation failed (%s)", type(e).__name__)
         conn.rollback()
         raise
 
 def insert_message(conn, message_type, sender, raw_content, preprocessed_text, 
                    subject=None, recipient=None, timestamp=None, 
-                   is_threat=0, confidence=0.0, metadata=None, label=None):
+                   is_threat=0, confidence=0.0, metadata=None, label=None, *,
+                   account_sub: str,
+                   mailbox_id: int | None = None,
+                   provider: str = "",
+                   provider_uid: str = "",
+                   uidvalidity: str = "",
+                   folder: str = ""):
     """Insert a message with all its components into the database.
     
     SECURITY: Encrypts sensitive fields at rest:
@@ -390,6 +479,21 @@ def insert_message(conn, message_type, sender, raw_content, preprocessed_text,
     - embedding: ML vector (not sensitive)
     - metadata: Already sanitized by input_validator
     """
+    from common.tenant_rls import require_account_sub, set_tenant
+
+    sub = require_account_sub(account_sub)
+    mailbox = None
+    if mailbox_id is not None:
+        mailbox = int(mailbox_id)
+        if mailbox <= 0:
+            raise ValueError("valid mailbox_id is required")
+    provider = (provider or "").strip().lower()
+    provider_uid = str(provider_uid or "").strip()
+    uidvalidity = str(uidvalidity or "").strip()
+    folder = str(folder or "").strip()
+    if provider_uid and (mailbox is None or not provider or not folder):
+        raise ValueError("provider UID requires mailbox_id, provider, and folder")
+
     try:
         embedding = generate_embedding(preprocessed_text)
         
@@ -398,17 +502,22 @@ def insert_message(conn, message_type, sender, raw_content, preprocessed_text,
         encrypted_subject = encrypt_data(subject) if subject else None
         encrypted_preprocessed = encrypt_data(preprocessed_text)
         
+        set_tenant(conn, sub)
         with conn.cursor() as cursor:
             cursor.execute('''
                 INSERT INTO messages (
-                    message_type, sender, recipient, timestamp, subject,
+                    account_sub, mailbox_id, message_type, provider, provider_uid,
+                    uidvalidity, folder, sender, recipient, timestamp, subject,
                     raw_content, preprocessed_text, embedding,
                     is_threat, confidence, metadata, label
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
             ''', (
-                message_type, sender, recipient, timestamp, encrypted_subject,
+                sub, mailbox, message_type, provider or None, provider_uid or None,
+                uidvalidity or None, folder or None, sender, recipient, timestamp,
+                encrypted_subject,
                 encrypted_raw_content, encrypted_preprocessed, embedding,
                 is_threat, confidence, json.dumps(metadata) if metadata else None, label
             ))
@@ -426,9 +535,13 @@ def insert_message(conn, message_type, sender, raw_content, preprocessed_text,
         conn.rollback()
         return None
 
-def find_similar_messages(conn, query_text, message_type=None, limit=5):
+def find_similar_messages(conn, query_text, message_type=None, limit=5, *,
+                          account_sub: str):
     """Find similar messages with optional message type filter."""
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = require_account_sub(account_sub)
+        set_tenant(conn, sub)
         query_embedding = generate_embedding(query_text)
         with conn.cursor() as cursor:
             if message_type:
@@ -436,18 +549,19 @@ def find_similar_messages(conn, query_text, message_type=None, limit=5):
                     SELECT id, message_type, subject, sender, raw_content, is_threat,
                            embedding <-> %s as distance, preprocessed_text, metadata
                     FROM messages
-                    WHERE message_type = %s
+                    WHERE account_sub = %s AND message_type = %s
                     ORDER BY embedding <-> %s
                     LIMIT %s;
-                ''', (query_embedding, message_type, query_embedding, limit))
+                ''', (query_embedding, sub, message_type, query_embedding, limit))
             else:
                 cursor.execute('''
                     SELECT id, message_type, subject, sender, raw_content, is_threat,
                            embedding <-> %s as distance, preprocessed_text, metadata
                     FROM messages
+                    WHERE account_sub = %s
                     ORDER BY embedding <-> %s
                     LIMIT %s;
-                ''', (query_embedding, query_embedding, limit))
+                ''', (query_embedding, sub, query_embedding, limit))
             results = cursor.fetchall()
             decrypted_results = []
             for row in results:
@@ -468,7 +582,8 @@ def find_similar_messages(conn, query_text, message_type=None, limit=5):
 # API WRAPPER FUNCTIONS
 # ============================================================================
 
-def search_similar_threats(content: str, threat_type: str = None, top_k: int = 5):
+def search_similar_threats(content: str, threat_type: str = None, top_k: int = 5,
+                           *, account_sub: str):
     """
     API-friendly wrapper for threat similarity search.
     
@@ -486,7 +601,9 @@ def search_similar_threats(content: str, threat_type: str = None, top_k: int = 5
         return []
     
     try:
-        results = find_similar_messages(conn, content, threat_type, top_k)
+        results = find_similar_messages(
+            conn, content, threat_type, top_k, account_sub=account_sub,
+        )
         
         threats = []
         for row in results:
@@ -514,7 +631,8 @@ def search_similar_threats(content: str, threat_type: str = None, top_k: int = 5
         release_conn(conn)
 
 
-def store_threat(content: str, threat_type: str, sender: str = "unknown", metadata: dict = None):
+def store_threat(content: str, threat_type: str, sender: str = "unknown",
+                 metadata: dict = None, *, account_sub: str):
     """
     API-friendly wrapper to store a new threat in the database.
     
@@ -546,7 +664,8 @@ def store_threat(content: str, threat_type: str, sender: str = "unknown", metada
             timestamp=datetime.now(),
             is_threat=1,
             confidence=metadata.get("confidence", 0.0) if metadata else 0.0,
-            metadata=metadata
+            metadata=metadata,
+            account_sub=account_sub,
         )
         
         return {
@@ -557,12 +676,12 @@ def store_threat(content: str, threat_type: str, sender: str = "unknown", metada
         }
     except Exception as e:
         logger.error(f"Error storing threat: {e}")
-        return {"error": str(e)}
+        return {"error": "store_failed"}
     finally:
         release_conn(conn)
 
 
-def get_threat_by_id(threat_id: str):
+def get_threat_by_id(threat_id: str, *, account_sub: str):
     """
     API-friendly wrapper to retrieve a specific threat by ID.
     
@@ -577,13 +696,16 @@ def get_threat_by_id(threat_id: str):
         return None
     
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = require_account_sub(account_sub)
+        set_tenant(conn, sub)
         with conn.cursor() as cursor:
             cursor.execute('''
                 SELECT id, message_type, sender, recipient, timestamp, subject,
                        raw_content, preprocessed_text, is_threat, confidence, metadata
                 FROM messages
-                WHERE id = %s
-            ''', (threat_id,))
+                WHERE id = %s AND account_sub = %s
+            ''', (threat_id, sub))
             
             row = cursor.fetchone()
             if not row:
@@ -616,7 +738,8 @@ def get_threat_by_id(threat_id: str):
         release_conn(conn)
 
 
-def get_all_threats(threat_type: str = None, limit: int = 100):
+def get_all_threats(threat_type: str = None, limit: int = 100, *,
+                    account_sub: str | None = None, bypass: bool = False):
     """
     API-friendly wrapper to list all threats.
     
@@ -632,30 +755,35 @@ def get_all_threats(threat_type: str = None, limit: int = 100):
         return []
     
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = "" if bypass else require_account_sub(account_sub)
+        set_tenant(conn, sub or None, bypass=bypass)
         with conn.cursor() as cursor:
             if threat_type:
                 cursor.execute('''
                     SELECT id, message_type, sender, timestamp, subject, 
-                           is_threat, confidence, metadata
+                           is_threat, confidence, metadata, label
                     FROM messages
-                    WHERE message_type = %s
+                    WHERE (%s OR account_sub = %s) AND message_type = %s
                     ORDER BY timestamp DESC
                     LIMIT %s
-                ''', (threat_type, limit))
+                ''', (bypass, sub, threat_type, limit))
             else:
                 cursor.execute('''
                     SELECT id, message_type, sender, timestamp, subject,
-                           is_threat, confidence, metadata
+                           is_threat, confidence, metadata, label
                     FROM messages
+                    WHERE (%s OR account_sub = %s)
                     ORDER BY timestamp DESC
                     LIMIT %s
-                ''', (limit,))
+                ''', (bypass, sub, limit))
             
             results = cursor.fetchall()
             threats = []
             
             for row in results:
-                id, msg_type, sender, timestamp, encrypted_subject, is_threat, confidence, metadata = row
+                (id, msg_type, sender, timestamp, encrypted_subject, is_threat,
+                 confidence, metadata, human_label) = row
                 
                 # SECURITY: Decrypt subject field
                 decrypted_subject = decrypt_data(encrypted_subject) if encrypted_subject else None
@@ -668,7 +796,8 @@ def get_all_threats(threat_type: str = None, limit: int = 100):
                     "subject": decrypted_subject,
                     "is_threat": bool(is_threat),
                     "confidence": confidence,
-                    "metadata": metadata or {}
+                    "metadata": metadata or {},
+                    "label": human_label,
                 })
             
             return threats
@@ -679,7 +808,8 @@ def get_all_threats(threat_type: str = None, limit: int = 100):
         release_conn(conn)
 
 
-def get_threats_by_sender(sender: str, limit: int = 50):
+def get_threats_by_sender(sender: str, limit: int = 50, *,
+                          account_sub: str | None = None, bypass: bool = False):
     """Return confirmed threats previously seen from a given sender / caller-id.
 
     Powers the local (always-on, zero-cost) reputation provider: a number that
@@ -692,14 +822,17 @@ def get_threats_by_sender(sender: str, limit: int = 50):
     if not conn:
         return []
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = "" if bypass else require_account_sub(account_sub)
+        set_tenant(conn, sub or None, bypass=bypass)
         with conn.cursor() as cursor:
             cursor.execute('''
                 SELECT id, message_type, sender, timestamp, is_threat, confidence, metadata
                 FROM messages
-                WHERE sender = %s AND is_threat = 1
+                WHERE (%s OR account_sub = %s) AND sender = %s AND is_threat = 1
                 ORDER BY timestamp DESC
                 LIMIT %s
-            ''', (sender, limit))
+            ''', (bypass, sub, sender, limit))
             rows = cursor.fetchall()
             out = []
             for row in rows:
@@ -721,72 +854,75 @@ def get_threats_by_sender(sender: str, limit: int = 50):
         release_conn(conn)
 
 
-def get_vish_directory(limit: int = 5000):
+def get_vish_directory(limit: int = 5000, *, account_sub: str):
     """Build Call Directory block/label lists from confirmed vishing/smishing threats.
 
     Returns (updated_at_iso, block_numbers, label_entries).
     Fail-safe → empty lists on any error. `is_threat` is integer (1/0) in Postgres.
     """
-    from common.reputation.base import normalize_number
+    from common.reputation.base import directory_action_for_message, normalize_number
+    from common.tenant_rls import require_account_sub
     import os
+    sub = require_account_sub(account_sub)
     conn = get_conn()
-    block, label, seen = [], [], set()
+    block: list[str] = []
+    blocked_numbers: set[str] = set()
+    label_by_number: dict[str, str] = {}
     updated = None
 
-    def _add_number(snd, metadata, ts):
+    def _block_number(num: str) -> None:
+        label_by_number.pop(num, None)
+        if num not in blocked_numbers:
+            blocked_numbers.add(num)
+            block.append(num)
+
+    def _label_number(num: str, display_label: str) -> None:
+        if num not in blocked_numbers:
+            label_by_number.setdefault(num, display_label)
+
+    def _add_number(snd, metadata, ts, human_label=None):
         nonlocal updated
         if not snd:
             return
         num = normalize_number(str(snd))
-        if not num or not num.startswith("+") or num in seen:
+        if not num or not num.startswith("+"):
             return
-        seen.add(num)
         meta = metadata or {}
         if isinstance(meta, str):
             try:
                 meta = json.loads(meta)
             except Exception:
                 meta = {}
-        action = str(meta.get("action", "")).lower()
-        risk = float(meta.get("risk_score", 0) or 0)
         if ts and updated is None:
             updated = ts
-        if action == "block" or risk >= 0.85 or meta.get("is_threat") in (True, 1, "1"):
-            block.append(num)
-        elif action in ("label", "silence") or risk >= 0.4:
-            lbl = str(meta.get("label") or meta.get("verdict") or "Suspicious caller")
-            if isinstance(lbl, (int, float)):
-                lbl = "Suspicious caller"
-            label.append({"number": num, "label": str(lbl).replace("_", " ").title()})
-        else:
-            # Confirmed threat row without fine-grained action → block
-            block.append(num)
+        action, display_label = directory_action_for_message(meta, human_label)
+        if action == "block":
+            _block_number(num)
+        elif action == "label":
+            _label_number(num, display_label)
 
     if conn:
         try:
+            from common.tenant_rls import set_tenant
+            set_tenant(conn, sub)
             with conn.cursor() as cursor:
                 # is_threat is INTEGER (1/0), never compare to TRUE boolean.
                 cursor.execute(
                     '''
-                    SELECT sender, metadata, timestamp
+                    SELECT sender, metadata, timestamp, label
                     FROM messages
-                    WHERE message_type IN (%s, %s) AND is_threat = 1
+                    WHERE account_sub = %s
+                      AND message_type IN (%s, %s) AND is_threat = 1
                     ORDER BY timestamp DESC
                     LIMIT %s
                     ''',
-                    ("vishing", "smishing", max(1, min(int(limit), 10000))),
+                    (sub, "vishing", "smishing", max(1, min(int(limit), 10000))),
                 )
-                for snd, metadata, ts in cursor.fetchall():
-                    _add_number(snd, metadata, ts)
-        except Exception as e:
-            logger.error(f"Error building vish directory: {e}")
-        finally:
-            release_conn(conn)
+                for snd, metadata, ts, human_label in cursor.fetchall():
+                    _add_number(snd, metadata, ts, human_label)
 
-    # Hot vendor numbers (IPQS enrich cron). Raw SQL only — no import of
-    # common.number_reputation (avoids Autobot↔common cycle).
-    if conn:
-        try:
+            # Hot vendor numbers (IPQS enrich cron). Raw SQL only — no import of
+            # common.number_reputation (avoids Autobot↔common cycle).
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
@@ -805,31 +941,32 @@ def get_vish_directory(limit: int = 5000):
                     )
                     for e164, risk, verdict in cursor.fetchall():
                         num = normalize_number(str(e164 or ""))
-                        if not num or num in seen:
+                        if not num:
                             continue
-                        seen.add(num)
                         r = float(risk or 0)
                         if r >= 0.85:
-                            block.append(num)
+                            _block_number(num)
                         else:
                             lbl = str(verdict or "Suspicious caller").replace("_", " ").title()
-                            label.append({"number": num, "label": lbl})
+                            _label_number(num, lbl)
         except Exception as e:
-            logger.debug("number_reputation directory sql: %s", e)
+            logger.error("Error building tenant vish directory: %s", e)
+        finally:
+            release_conn(conn)
 
-    # Pilot seed so TestFlight sync is never empty before live call grades exist.
+    # Optional operator-controlled seed. There is intentionally no fabricated
+    # default blocklist in production.
     seed = os.getenv(
         "VISH_DIRECTORY_SEED",
-        "+18005550199,+18885550100,+12125551212",
+        "",
     )
     for raw in seed.split(","):
         raw = raw.strip()
         if not raw:
             continue
         num = normalize_number(raw)
-        if num and num.startswith("+") and num not in seen:
-            seen.add(num)
-            block.append(num)
+        if num and num.startswith("+"):
+            _block_number(num)
 
     # Campaign packs (tax-resolution robocalls, etc.) — versioned JSON under data/vish_campaigns/.
     try:
@@ -845,9 +982,8 @@ def get_vish_directory(limit: int = 5000):
                     continue
                 for raw in data.get("block") or []:
                     num = normalize_number(str(raw))
-                    if num and num.startswith("+") and num not in seen:
-                        seen.add(num)
-                        block.append(num)
+                    if num and num.startswith("+"):
+                        _block_number(num)
                 for entry in data.get("label") or []:
                     if isinstance(entry, dict):
                         num = normalize_number(str(entry.get("number") or ""))
@@ -855,9 +991,8 @@ def get_vish_directory(limit: int = 5000):
                     else:
                         num = normalize_number(str(entry))
                         lbl = str(data.get("label") or "Suspicious caller")
-                    if num and num.startswith("+") and num not in seen:
-                        seen.add(num)
-                        label.append({"number": num, "label": lbl})
+                    if num and num.startswith("+"):
+                        _label_number(num, lbl)
     except Exception as e:
         logger.warning("vish campaign packs: %s", e)
 
@@ -867,11 +1002,16 @@ def get_vish_directory(limit: int = 5000):
         updated_at = updated.isoformat() if hasattr(updated, "isoformat") else str(updated)
         if not updated_at.endswith("Z") and "+" not in updated_at:
             updated_at = updated_at.replace("+00:00", "Z")
+    label = [
+        {"number": number, "label": display_label}
+        for number, display_label in label_by_number.items()
+    ]
     return updated_at, block, label
 
 
 def get_threats_page(threat_type: str = None, after_id: int = None, limit: int = 50,
-                     *, max_confidence: float = None, min_confidence: float = None):
+                     *, account_sub: str, max_confidence: float = None,
+                     min_confidence: float = None):
     """
     Keyset (cursor) pagination over threats, ordered by descending id.
 
@@ -879,6 +1019,8 @@ def get_threats_page(threat_type: str = None, after_id: int = None, limit: int =
       Inbox/Dashboard/feed: max_confidence=0.85 (below hard hold)
       Quarantine uses get_review_queue (conf >= 0.70) separately
     """
+    from common.tenant_rls import require_account_sub
+    sub = require_account_sub(account_sub)
     conn = get_conn()
     if not conn:
         return [], None
@@ -888,7 +1030,7 @@ def get_threats_page(threat_type: str = None, after_id: int = None, limit: int =
 
     cols = ("id, message_type, sender, timestamp, subject, "
             "is_threat, confidence, metadata, label")
-    clauses, params = [], []
+    clauses, params = ["account_sub = %s"], [sub]
     if threat_type:
         clauses.append("message_type = %s")
         params.append(threat_type)
@@ -908,6 +1050,8 @@ def get_threats_page(threat_type: str = None, after_id: int = None, limit: int =
     params.append(limit + 1)  # fetch one extra to know if a next page exists
 
     try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, sub)
         with conn.cursor() as cur:
             cur.execute(
                 f"SELECT {cols} FROM messages {where} ORDER BY id DESC LIMIT %s",
@@ -939,7 +1083,7 @@ def get_threats_page(threat_type: str = None, after_id: int = None, limit: int =
         release_conn(conn)
 
 
-def get_review_queue(limit: int = 100):
+def get_review_queue(limit: int = 100, *, account_sub: str):
     """Ungraded hard holds for Quarantine (confidence >= 0.85).
 
     Inbox/Dashboard use max_confidence=0.85 so rows never duplicate.
@@ -950,15 +1094,18 @@ def get_review_queue(limit: int = 100):
     if not conn:
         return [], counts
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = require_account_sub(account_sub)
+        set_tenant(conn, sub)
         with conn.cursor() as cur:
             cur.execute('''
                 SELECT id, message_type, sender, timestamp, subject, confidence, metadata,
                        preprocessed_text
                 FROM messages
-                WHERE label IS NULL AND confidence >= 0.85
+                WHERE account_sub = %s AND label IS NULL AND confidence >= 0.85
                 ORDER BY confidence DESC, id DESC
                 LIMIT %s
-            ''', (max(1, min(int(limit), 500)),))
+            ''', (sub, max(1, min(int(limit), 500))))
             rows = []
             for _id, msg_type, sender, ts, enc_subject, conf, meta, enc_body in cur.fetchall():
                 conf = float(conf or 0)
@@ -989,16 +1136,19 @@ def get_review_queue(limit: int = 100):
         release_conn(conn)
 
 
-def list_sender_siblings(msg_id: int, limit: int = 80):
+def list_sender_siblings(msg_id: int, limit: int = 80, *, account_sub: str):
     """Ungraded messages from the same sender (for cascade confirm UI)."""
     conn = get_conn()
     if not conn:
         return {"sender": "", "siblings": []}
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = require_account_sub(account_sub)
+        set_tenant(conn, sub)
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT sender FROM messages WHERE id = %s LIMIT 1",
-                (int(msg_id),),
+                "SELECT sender FROM messages WHERE id = %s AND account_sub = %s LIMIT 1",
+                (int(msg_id), sub),
             )
             row = cur.fetchone()
             if not row or not row[0]:
@@ -1011,12 +1161,12 @@ def list_sender_siblings(msg_id: int, limit: int = 80):
                 )
                     id, subject, timestamp, confidence
                 FROM messages
-                WHERE sender = %s AND id <> %s AND label IS NULL
+                WHERE account_sub = %s AND sender = %s AND id <> %s AND label IS NULL
                 ORDER BY COALESCE(NULLIF(metadata->>'rfc_message_id', ''), subject),
                          id DESC
                 LIMIT %s
                 ''',
-                (sender, int(msg_id), int(limit)),
+                (sub, sender, int(msg_id), int(limit)),
             )
             out = []
             for mid, enc_subject, ts, conf in cur.fetchall():
@@ -1039,6 +1189,7 @@ def list_sender_siblings(msg_id: int, limit: int = 80):
 
 
 def set_message_grade(msg_id: int, label=None, status: str = "", *,
+                      account_sub: str,
                       cascade_sender: bool = True,
                       also_ids=None):
     """Persist a human verdict on one message (Quarantine/Inbox grading).
@@ -1054,6 +1205,9 @@ def set_message_grade(msg_id: int, label=None, status: str = "", *,
     if not conn:
         return None
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = require_account_sub(account_sub)
+        set_tenant(conn, sub)
         # Align is_threat with the human verdict so UI lists stay consistent.
         if label == 0:
             threat_flag = 0
@@ -1071,30 +1225,34 @@ def set_message_grade(msg_id: int, label=None, status: str = "", *,
                     SET label = %s,
                         is_threat = %s,
                         confidence = %s,
-                        metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                             '{review_status}', to_jsonb(%s::text))
-                    WHERE id = %s
+                        metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                   jsonb_build_object('review_status', %s::text,
+                                                      'label_source', 'human_grade')
+                    WHERE id = %s AND account_sub = %s
                     RETURNING message_type, sender, subject, preprocessed_text, confidence
-                ''', (label, threat_flag, conf_override, status or "ungraded", int(msg_id)))
+                ''', (label, threat_flag, conf_override, status or "ungraded",
+                      int(msg_id), sub))
             elif threat_flag is not None:
                 cur.execute('''
                     UPDATE messages
                     SET label = %s,
                         is_threat = %s,
-                        metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                             '{review_status}', to_jsonb(%s::text))
-                    WHERE id = %s
+                        metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                   jsonb_build_object('review_status', %s::text,
+                                                      'label_source', 'human_grade')
+                    WHERE id = %s AND account_sub = %s
                     RETURNING message_type, sender, subject, preprocessed_text, confidence
-                ''', (label, threat_flag, status or "ungraded", int(msg_id)))
+                ''', (label, threat_flag, status or "ungraded", int(msg_id), sub))
             else:
                 cur.execute('''
                     UPDATE messages
                     SET label = %s,
-                        metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                             '{review_status}', to_jsonb(%s::text))
-                    WHERE id = %s
+                        metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                   jsonb_build_object('review_status', %s::text,
+                                                      'label_source', 'human_grade')
+                    WHERE id = %s AND account_sub = %s
                     RETURNING message_type, sender, subject, preprocessed_text, confidence
-                ''', (label, status or "ungraded", int(msg_id)))
+                ''', (label, status or "ungraded", int(msg_id), sub))
             row = cur.fetchone()
             if not row:
                 conn.commit()
@@ -1121,43 +1279,51 @@ def set_message_grade(msg_id: int, label=None, status: str = "", *,
                             cur.execute('''
                                 UPDATE messages
                                 SET label = %s, is_threat = %s, confidence = %s,
-                                    metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                                         '{review_status}', to_jsonb(%s::text))
-                                WHERE sender = %s AND id <> %s AND label IS NULL
+                                    metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                               jsonb_build_object('review_status', %s::text,
+                                                                  'label_source', 'human_grade')
+                                WHERE account_sub = %s AND sender = %s
+                                  AND id <> %s AND label IS NULL
                                 RETURNING id
                             ''', (label, threat_flag, conf_override, status or "ungraded",
-                                  sender, int(msg_id)))
+                                  sub, sender, int(msg_id)))
                         else:
                             cur.execute('''
                                 UPDATE messages
                                 SET label = %s, is_threat = %s, confidence = %s,
-                                    metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                                         '{review_status}', to_jsonb(%s::text))
-                                WHERE sender = %s AND id = ANY(%s) AND label IS NULL
+                                    metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                               jsonb_build_object('review_status', %s::text,
+                                                                  'label_source', 'human_grade')
+                                WHERE account_sub = %s AND sender = %s
+                                  AND id = ANY(%s) AND label IS NULL
                                 RETURNING id
                             ''', (label, threat_flag, conf_override, status or "ungraded",
-                                  sender, extra))
+                                  sub, sender, extra))
                     else:
                         if extra is None:
                             cur.execute('''
                                 UPDATE messages
                                 SET label = %s, is_threat = %s,
-                                    metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                                         '{review_status}', to_jsonb(%s::text))
-                                WHERE sender = %s AND id <> %s AND label IS NULL
+                                    metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                               jsonb_build_object('review_status', %s::text,
+                                                                  'label_source', 'human_grade')
+                                WHERE account_sub = %s AND sender = %s
+                                  AND id <> %s AND label IS NULL
                                 RETURNING id
                             ''', (label, threat_flag, status or "ungraded",
-                                  sender, int(msg_id)))
+                                  sub, sender, int(msg_id)))
                         else:
                             cur.execute('''
                                 UPDATE messages
                                 SET label = %s, is_threat = %s,
-                                    metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb),
-                                                         '{review_status}', to_jsonb(%s::text))
-                                WHERE sender = %s AND id = ANY(%s) AND label IS NULL
+                                    metadata = COALESCE(metadata, '{}'::jsonb) ||
+                                               jsonb_build_object('review_status', %s::text,
+                                                                  'label_source', 'human_grade')
+                                WHERE account_sub = %s AND sender = %s
+                                  AND id = ANY(%s) AND label IS NULL
                                 RETURNING id
                             ''', (label, threat_flag, status or "ungraded",
-                                  sender, extra))
+                                  sub, sender, extra))
                     cascaded_ids.extend(int(r[0]) for r in cur.fetchall())
 
             conn.commit()
@@ -1172,7 +1338,7 @@ def set_message_grade(msg_id: int, label=None, status: str = "", *,
             if label == 0 and sender:
                 try:
                     from utils.safe_sender_manager import SafeSenderManager
-                    SafeSenderManager(conn).add_safe_sender(
+                    SafeSenderManager(conn, account_sub=sub).add_safe_sender(
                         sender, reason="console-grade-safe", auto_learned=True)
                 except Exception as e:
                     logger.debug("safe_sender learn skipped: %s", e)
@@ -1198,19 +1364,22 @@ def set_message_grade(msg_id: int, label=None, status: str = "", *,
         release_conn(conn)
 
 
-def get_message_detail(msg_id: int):
+def get_message_detail(msg_id: int, *, account_sub: str):
     """Decrypt one message for the analyst message view (console only)."""
     conn = get_conn()
     if not conn:
         return None
     try:
+        from common.tenant_rls import require_account_sub, set_tenant
+        sub = require_account_sub(account_sub)
+        set_tenant(conn, sub)
         with conn.cursor() as cur:
             cur.execute('''
                 SELECT id, message_type, sender, recipient, timestamp, subject,
                        raw_content, preprocessed_text, is_threat, confidence,
                        metadata, label
-                FROM messages WHERE id = %s
-            ''', (int(msg_id),))
+                FROM messages WHERE id = %s AND account_sub = %s
+            ''', (int(msg_id), sub))
             row = cur.fetchone()
             if not row:
                 return None
@@ -1245,22 +1414,20 @@ def get_message_detail(msg_id: int):
 
 
 if __name__ == "__main__":
-    logger.info("🔌 INITIALIZING DATABASE CONNECTION TEST...")
-    
-    # Debug: Print where we are looking for .env
-    project_root = Path(__file__).resolve().parent.parent.parent
-    env_path = project_root / '.env'
-    logger.info(f"Looking for .env at: {env_path}")
-    
-    conn = connect_db()
+    logger.info("Initializing database schema")
+    try:
+        conn = connect_db()
+    except Exception as exc:
+        logger.critical("Database configuration rejected (%s)", type(exc).__name__)
+        sys.exit(1)
 
     if conn:
-        logger.info("✅ CONNECTION SUCCESSFUL!")
         try:
             create_tables(conn)
-            logger.info("✅ Tables Verified/Created.")
-        except Exception as e:
-            logger.error(f"❌ Database Operation Failed: {e}")
+            logger.info("Database schema initialized")
+        except Exception as exc:
+            logger.error("Database schema initialization failed (%s)",
+                         type(exc).__name__)
             conn.close()
             # Exit non-zero so the launcher's retry loop can react instead of
             # booting the API against a DB with no schema.
@@ -1269,14 +1436,7 @@ if __name__ == "__main__":
             if not conn.closed:
                 conn.close()
     else:
-        logger.critical("❌ CONNECTION FAILED.")
-        # Print the actual values being used to help debug
-        logger.info(f"DEBUG: DB_HOST={os.getenv('DB_HOST')}")
-        logger.info(f"DEBUG: DB_PORT={os.getenv('DB_PORT')}")
-        logger.info("TROUBLESHOOTING STEPS:")
-        logger.info("1. Ensure the database/PgBouncer containers are RUNNING.")
-        logger.info("2. Run 'docker compose up -d db pgbouncer'.")
-        logger.info("3. Verify .env has DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.")
+        logger.critical("Database connection unavailable")
         sys.exit(1)
 
     # Note: 'processed' column added via migration script

@@ -2,6 +2,8 @@
 .git
 .gitignore
 .github
+.agents
+.codex
 .vscode
 .idea
 .DS_Store
@@ -14,6 +16,13 @@ docs/
 # --- secrets / local env ---
 .env
 .env.*
+.ios_pilot_*
+**/PilotSecrets.swift
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
 swap_env.sh
 
 # --- python caches / build junk ---
@@ -37,14 +46,28 @@ ENV/
 
 # --- RUNTIME DATA (provided by volumes at runtime; NOT baked) ---
 # data/ingestion alone was 4.2GB of raw emails. Caches regenerate; dlq/ingestion
-# are named volumes in docker-compose. Keep these out of the build context.
-data/
+# are named volumes in docker-compose. Only explicitly reviewed, non-secret static
+# policy snapshots belong in the image.
+data/*
+!data/benchmark_snapshot.json
+!data/vish_campaigns/
+!data/vish_campaigns/**
 logs/
 *.log
+**/feedback.jsonl
 
-# --- training corpus (model artifacts are pre-trained & committed under */models) ---
+# --- training corpus / model artifacts ---
+# Champion binaries are supplied by an approved read-only deploy artifact or
+# volume. Never send pickle files or raw training material in the image context.
+*.pkl
+**/*.pkl
 archive/
 Phishy_Bizz/
+
+# --- non-runtime source trees ---
+ios/
+test/
+tests/
 
 # --- misc ---
 terminals/

@@ -1,6 +1,7 @@
 # NullPoint Signal Deck on Fly.io — app process only.
-# Postgres + Redis: `fly postgres create` / Upstash or `fly redis create`, then
-# `fly secrets set DATABASE_URL=... REDIS_URL=... JWT_SECRET_KEY=... SIGNUP_OPEN=true`
+# Provision managed Postgres/Redis endpoints with encrypted transport, then
+# `fly secrets set DATABASE_URL=... REDIS_URL=... JWT_SECRET_KEY=... ENCRYPTION_KEY=...`
+# Keep `SIGNUP_OPEN=false` until verified account-state support ships.
 #
 #   fly launch --no-deploy   # first time, accept this fly.toml
 #   fly deploy
@@ -14,15 +15,32 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
+[deploy]
+  # Runs once in a temporary Machine. A non-zero exit stops the release.
+  release_command = "./start.sh migrate"
+  strategy = "canary"
+
+[processes]
+  # Mailbox ingest must be deployed as a separately scaled `monitor` process
+  # only after tenant/exact-mailbox integration tests pass.
+  web = "./start.sh web"
+
 [env]
+  ENV = "production"
   PORT = "8000"
+  PROCESS_ROLE = "web"
   USE_GUNICORN = "true"
   API_WORKERS = "1"
+  DB_POOL_MIN = "1"
+  DB_POOL_MAX = "5"
   ENABLE_MESSAGE_EMBEDDINGS = "0"
-  BILLING_MOCK = "true"
+  BILLING_ENABLED = "false"
+  BILLING_MOCK = "false"
+  SIGNUP_OPEN = "false"
   FORCE_HSTS = "true"
 
 [http_service]
+  processes = ["web"]
   internal_port = 8000
   force_https = true
   auto_stop_machines = "stop"
