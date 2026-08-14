@@ -15,8 +15,17 @@ logger = logging.getLogger("accounts")
 
 _EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s.]+\.[^@\s]{2,64}$")
 _MIN_PASSWORD = 10
-# Apple Hide My Email (iCloud Private Relay) is a real mailbox — always allow.
-_APPLE_RELAY = "privaterelay.appleid.com"
+# Apple Hide My Email / Sign in with Apple relays are real mailboxes. Apple
+# introduced additional relay domains in 2026, so identity policy must not pin
+# itself to the original domain alone.
+_APPLE_RELAY_DOMAINS = frozenset({
+    "privaterelay.appleid.com",
+    "private.icloud.com",
+})
+# Production signup cannot be enabled until the table and login path enforce a
+# verified/pending account state. Keep this a code capability, not an env flag
+# that could accidentally claim an unfinished flow exists.
+_PRODUCTION_VERIFIED_ACCOUNT_STATE = False
 
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS deck_accounts (
@@ -29,7 +38,17 @@ CREATE TABLE IF NOT EXISTS deck_accounts (
 
 
 def signup_open() -> bool:
-    return os.getenv("SIGNUP_OPEN", "false").strip().lower() in ("1", "true", "yes")
+    requested = os.getenv("SIGNUP_OPEN", "false").strip().lower() in ("1", "true", "yes")
+    if not requested:
+        return False
+    from common.config import is_production_environment
+    if is_production_environment():
+        verification_enabled = (
+            os.getenv("EMAIL_VERIFICATION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        )
+        return verification_enabled and _PRODUCTION_VERIFIED_ACCOUNT_STATE
+    return True
 
 
 def normalize_email(raw: str) -> str:
@@ -39,12 +58,12 @@ def normalize_email(raw: str) -> str:
 def valid_email(raw: str) -> bool:
     """Shape check only. Disposable burn domains are rejected in register().
 
-    Apple Hide My Email (`*@privaterelay.appleid.com`) always passes shape.
+    Apple private-relay aliases always pass the same shape check as other mail.
     """
     email = normalize_email(raw)
     if not _EMAIL_RE.match(email):
         return False
-    if email.endswith("@" + _APPLE_RELAY):
+    if email.rsplit("@", 1)[-1] in _APPLE_RELAY_DOMAINS:
         return True
     return True
 
@@ -190,11 +209,12 @@ def delete_account(email: str) -> int:
     email = normalize_email(email)
     if not email:
         return 0
+    # Ensure schema without holding a pool connection (avoid nested get_conn).
+    ensure_table()
     conn = _conn()
     if not conn:
         return 0
     try:
-        ensure_table()
         from common.tenant_rls import set_tenant
         set_tenant(conn, email)
         with conn.cursor() as cur:
