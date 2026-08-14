@@ -67,11 +67,7 @@ class IPhoneVoiceFetcher:
             raise
 
     def monitor_realtime(self, callback):
-        """Monitor calls in real-time using CallKit."""
-        try:
-            # This would use Apple's CallKit framework
-            # to receive real-time call notifications
-            pass
-        except Exception as e:
-            logger.error(f"Error in real-time monitoring: {e}")
-            raise 
+        """Unsupported: iOS does not expose carrier calls through this Python API."""
+        raise NotImplementedError(
+            "Carrier-call real-time monitoring is not available through CallKit"
+        )

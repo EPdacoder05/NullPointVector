@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from common.mail_parse import sender_domain as _sender_domain
+from common.tenant_rls import require_account_sub
 
 logger = logging.getLogger("user_reports")
 
@@ -84,6 +86,11 @@ def submit_user_report(
 ) -> dict[str, Any]:
     """Persist report + maybe flag/promote fleet. Never raises to UI."""
     out: dict[str, Any] = {"ok": False, "id": None, "fleet": None}
+    try:
+        tenant = require_account_sub(account_sub)
+    except Exception:
+        out["error"] = "invalid_account"
+        return out
     ch = (channel or "email").lower()
     if ch not in ("email", "sms", "call", "phishing", "smishing", "vishing"):
         ch = "email"
@@ -100,7 +107,6 @@ def submit_user_report(
         out["error"] = "empty_report"
         return out
 
-    sender_key = _sender_domain(sender) or (sender or "").strip().lower()[:120]
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_conn, release_conn
     except Exception as e:
@@ -114,8 +120,26 @@ def submit_user_report(
     try:
         ensure_user_reports_table(conn)
         from common.tenant_rls import set_tenant
-        set_tenant(conn, (account_sub or "anon")[:128])
+        set_tenant(conn, tenant)
         with conn.cursor() as cur:
+            # A referenced object must belong to the authenticated tenant. Use
+            # the stored sender as source of truth so clients cannot attach an
+            # arbitrary fleet-poisoning identity to somebody else's message.
+            if message_id:
+                cur.execute(
+                    """
+                    SELECT sender
+                    FROM messages
+                    WHERE id = %s AND account_sub = %s
+                    """,
+                    (int(message_id), tenant),
+                )
+                owned = cur.fetchone()
+                if not owned:
+                    out["error"] = "message_not_found"
+                    return out
+                sender = str(owned[0] or "")
+            sender_key = _sender_domain(sender) or (sender or "").strip().lower()[:120]
             cur.execute(
                 """
                 INSERT INTO user_reports
@@ -126,7 +150,7 @@ def submit_user_report(
                 """,
                 (
                     int(message_id) if message_id else None,
-                    (account_sub or "anon")[:128],
+                    tenant,
                     ch,
                     (sender or "")[:500],
                     sender_key,
@@ -139,7 +163,9 @@ def submit_user_report(
         conn.commit()
         out["ok"] = True
         out["id"] = int(rid)
-        out["fleet"] = check_fleet_promotion(conn, sender_key=sender_key, channel=ch)
+        out["fleet"] = check_fleet_promotion(
+            conn, sender_key=sender_key, channel=ch,
+        )
     except Exception as e:
         logger.warning("submit_user_report failed: %s", e)
         out["error"] = "persist_failed"
@@ -159,6 +185,16 @@ def check_fleet_promotion(conn, *, sender_key: str, channel: str = "email") -> d
     """
     result = {"status": "none", "count": 0, "sender_key": sender_key}
     if not sender_key:
+        return result
+    # Verified identity, abuse resistance, reversible fleet releases, and an
+    # analyst veto are not implemented yet. Tenant-local reports may be stored,
+    # but they must not silently alter every customer's protection policy.
+    from common.config import is_production_environment
+    if (
+        is_production_environment()
+        or os.getenv("ENABLE_FLEET_AUTO_PROMOTION", "").lower() not in ("1", "true")
+    ):
+        result["status"] = "disabled"
         return result
     since = datetime.now(timezone.utc) - timedelta(days=30)
     try:

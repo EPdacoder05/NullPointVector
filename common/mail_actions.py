@@ -16,9 +16,12 @@ _MAX_JUNK_MOVES = 3
 _IMAP_TIMEOUT_S = 8
 
 
-def _ids_with_imap(ids: list) -> list[tuple[int, str, str]]:
-    """Return [(msg_id, provider, imap_id), ...] without decrypting bodies."""
-    out: list[tuple[int, str, str]] = []
+def _ids_with_imap(ids: list, *, account_sub: str) -> list[dict[str, Any]]:
+    """Resolve exact owned mailbox UIDs without decrypting message bodies."""
+    from common.tenant_rls import require_account_sub
+
+    sub = require_account_sub(account_sub)
+    out: list[dict[str, Any]] = []
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_conn, release_conn
     except Exception as e:
@@ -36,23 +39,31 @@ def _ids_with_imap(ids: list) -> list[tuple[int, str, str]]:
                 continue
         if not clean:
             return out
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, sub)
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, metadata
+                SELECT id, mailbox_id, provider, provider_uid, uidvalidity, folder
                 FROM messages
-                WHERE id = ANY(%s)
+                WHERE account_sub = %s AND id = ANY(%s)
                 """,
-                (clean,),
+                (sub, clean),
             )
-            for mid, meta in cur.fetchall():
-                meta = meta or {}
-                if not isinstance(meta, dict):
+            for mid, mailbox_id, provider, provider_uid, uidvalidity, folder in cur.fetchall():
+                provider = (provider or "").strip().lower()
+                provider_uid = str(provider_uid or "").strip()
+                folder = str(folder or "").strip()
+                if not mailbox_id or not provider or not provider_uid or not folder:
                     continue
-                imap_id = meta.get("imap_id")
-                provider = (meta.get("provider") or meta.get("source") or "").strip().lower()
-                if imap_id and provider:
-                    out.append((int(mid), provider, str(imap_id)))
+                out.append({
+                    "id": int(mid),
+                    "mailbox_id": int(mailbox_id),
+                    "provider": provider,
+                    "provider_uid": provider_uid,
+                    "uidvalidity": str(uidvalidity or ""),
+                    "folder": folder,
+                })
     except Exception as e:
         logger.warning("imap id lookup failed: %s", e)
     finally:
@@ -60,30 +71,37 @@ def _ids_with_imap(ids: list) -> list[tuple[int, str, str]]:
     return out
 
 
-def move_message_to_junk(msg_id: int) -> dict[str, Any]:
+def move_message_to_junk(msg_id: int, *, account_sub: str) -> dict[str, Any]:
     """Best-effort: move one stored message to provider junk/spam."""
-    batch = move_many_to_junk([msg_id])
+    batch = move_many_to_junk([msg_id], account_sub=account_sub)
     results = batch.get("results") or []
     if results:
         return results[0]
     return {"ok": False, "error": "no_result", "id": msg_id}
 
 
-def move_many_to_junk(ids: list) -> dict[str, Any]:
+def move_many_to_junk(ids: list, *, account_sub: str) -> dict[str, Any]:
     """Fail-open batch with one connection + timeout. Never block grade forever."""
-    candidates = _ids_with_imap(ids)[:_MAX_JUNK_MOVES]
+    try:
+        candidates = _ids_with_imap(ids, account_sub=account_sub)[:_MAX_JUNK_MOVES]
+    except ValueError:
+        return {"moved": 0, "attempted": 0, "results": [], "error": "tenant_required"}
     if not candidates:
         return {
             "moved": 0,
             "attempted": 0,
-            "results": [{"ok": False, "error": "no_imap_id", "id": i} for i in (ids or [])[:5]],
-            "note": "no_imap_id_or_capped",
+            "results": [{"ok": False, "error": "no_provider_identity", "id": i} for i in (ids or [])[:5]],
+            "note": "no_provider_identity_or_capped",
         }
 
-    # Group by provider — one login per provider
-    by_prov: dict[str, list[tuple[int, str]]] = {}
-    for mid, prov, imap_id in candidates:
-        by_prov.setdefault(prov, []).append((mid, imap_id))
+    # One login per exact mailbox. Provider-only grouping could mutate another
+    # connected mailbox when a user has several accounts at the same provider.
+    groups: dict[tuple[str, int, str, str], list[dict[str, Any]]] = {}
+    for item in candidates:
+        key = (
+            item["provider"], item["mailbox_id"], item["folder"], item["uidvalidity"],
+        )
+        groups.setdefault(key, []).append(item)
 
     results: list[dict[str, Any]] = []
     old_timeout = socket.getdefaulttimeout()
@@ -91,37 +109,41 @@ def move_many_to_junk(ids: list) -> dict[str, Any]:
         socket.setdefaulttimeout(_IMAP_TIMEOUT_S)
         from PhishGuard.providers.email_fetcher.registry import EmailFetcherRegistry
 
-        for provider, items in by_prov.items():
+        for (provider, mailbox_id, folder, uidvalidity), items in groups.items():
             fetcher = None
             try:
-                fetcher = EmailFetcherRegistry.get_fetcher(provider)
+                fetcher = EmailFetcherRegistry.get_fetcher(
+                    provider, account_sub=account_sub, mailbox_id=mailbox_id,
+                )
                 if not fetcher or not fetcher.connect():
-                    for mid, _ in items:
+                    for item in items:
                         results.append({
                             "ok": False, "error": "connect_failed",
-                            "id": mid, "provider": provider,
+                            "id": item["id"], "provider": provider,
                         })
                     continue
-                for mid, imap_id in items:
+                for item in items:
                     try:
-                        ok = bool(fetcher.move_to_junk(str(imap_id)))
+                        ok = bool(fetcher.move_to_junk(
+                            item["provider_uid"], folder=folder,
+                            uidvalidity=uidvalidity,
+                        ))
                         results.append({
-                            "ok": ok, "id": mid, "provider": provider,
-                            "imap_id": imap_id,
+                            "ok": ok, "id": item["id"], "provider": provider,
                             "error": None if ok else "move_failed",
                         })
                     except Exception as e:
-                        logger.warning("move_to_junk [%s/%s]: %s", provider, mid, e)
+                        logger.warning("move_to_junk [%s/%s]: %s", provider, item["id"], e)
                         results.append({
                             "ok": False, "error": "exception",
-                            "id": mid, "provider": provider,
+                            "id": item["id"], "provider": provider,
                         })
             except Exception as e:
                 logger.warning("junk batch provider %s: %s", provider, e)
-                for mid, _ in items:
+                for item in items:
                     results.append({
                         "ok": False, "error": "exception",
-                        "id": mid, "provider": provider,
+                        "id": item["id"], "provider": provider,
                     })
             finally:
                 if fetcher is not None:

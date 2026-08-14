@@ -405,11 +405,32 @@ class EmailIngestionEngine:
         conn = None
         try:
             conn = connect_db()
+            if conn is None:
+                raise RuntimeError("database unavailable")
+            from common.ingest_dedup import (
+                already_ingested, ensure_ingest_dedup_indexes, ingest_fingerprint,
+            )
+            ensure_ingest_dedup_indexes(conn)
             for email in emails:
                 try:
                     if not isinstance(email, dict):
                         logger.error(f"Email skipped (not dict): {type(email)}")
                         continue
+
+                    # Ownership is part of the fetch contract, not something we
+                    # infer from recipient headers or a process-wide credential.
+                    from common.tenant_rls import require_account_sub
+                    account_sub = require_account_sub(email.get("account_sub"))
+                    mailbox_id = int(email.get("mailbox_id"))
+                    provider_uid = str(email.get("provider_uid") or "").strip()
+                    uidvalidity = str(email.get("uidvalidity") or "").strip()
+                    folder = str(
+                        email.get("folder")
+                        or (email.get("metadata") or {}).get("folder")
+                        or "INBOX"
+                    ).strip()
+                    if mailbox_id <= 0 or not provider_uid:
+                        raise ValueError("owned mailbox UID is required")
 
                     metadata = email.get('metadata', {}) or {}
                     geo = metadata.get('geo')
@@ -450,13 +471,6 @@ class EmailIngestionEngine:
 
                     # Build unified metadata for storage (keep auth headers for allowlist + explain)
                     from common.email_time import parse_email_date, normalize_message_id
-                    from common.ingest_dedup import (
-                        already_ingested, ensure_ingest_dedup_indexes, ingest_fingerprint,
-                    )
-                    try:
-                        ensure_ingest_dedup_indexes(conn)
-                    except Exception:
-                        pass
                     rfc_mid = normalize_message_id(
                         (email.get("headers") or {}).get("message_id")
                         or (email.get("headers") or {}).get("Message-ID")
@@ -474,7 +488,9 @@ class EmailIngestionEngine:
                         **metadata,
                         'source': provider,
                         'provider': provider,  # registry key for move_to_junk
-                        'imap_id': email.get('id'),  # IMAP sequence id from fetcher
+                        'provider_uid': provider_uid,
+                        'uidvalidity': uidvalidity,
+                        'folder': folder,
                         'rfc_message_id': rfc_mid,
                         'ingest_fp': ingest_fp,
                         'timestamp': email_ts.isoformat(),
@@ -498,7 +514,15 @@ class EmailIngestionEngine:
                         # Durable dedup: Message-ID and/or content fingerprint
                         # (API Idempotency-Key never applied to IMAP batch — this is it)
                         existing = already_ingested(
-                            conn, rfc_message_id=rfc_mid, ingest_fp=ingest_fp,
+                            conn,
+                            account_sub=account_sub,
+                            mailbox_id=mailbox_id,
+                            provider=provider,
+                            provider_uid=provider_uid,
+                            uidvalidity=uidvalidity,
+                            folder=folder,
+                            rfc_message_id=rfc_mid,
+                            ingest_fp=ingest_fp,
                         )
                         if existing:
                             logger.debug(
@@ -525,7 +549,13 @@ class EmailIngestionEngine:
                             # verdicts (quarantine grading). Writing the model's own
                             # prediction here would train the model on its own
                             # guesses (self-poisoning) and empty the review queue.
-                            label=None
+                            label=None,
+                            account_sub=account_sub,
+                            mailbox_id=mailbox_id,
+                            provider=provider,
+                            provider_uid=provider_uid,
+                            uidvalidity=uidvalidity,
+                            folder=folder,
                         )
                         # Real-time logging of DB persistence with geo info
                         if msg_id:

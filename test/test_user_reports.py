@@ -1,11 +1,25 @@
 """User report reason mapping + payment spoof policy."""
-from common.user_reports import REASON_MAP
+from common.user_reports import REASON_MAP, check_fleet_promotion
 from common.policy_pipeline import decide_override, extract_signals
 
 
 def test_reason_map_codes():
     assert REASON_MAP["credential"] == "CREDENTIAL_PHISH"
     assert REASON_MAP["pressure"] == "URGENCY_PRESSURE"
+
+
+def test_fleet_auto_promotion_is_off_by_default(monkeypatch):
+    monkeypatch.delenv("ENABLE_FLEET_AUTO_PROMOTION", raising=False)
+    monkeypatch.setenv("ENV", "development")
+    result = check_fleet_promotion(None, sender_key="example.test", channel="email")
+    assert result["status"] == "disabled"
+
+
+def test_fleet_auto_promotion_cannot_be_enabled_in_production(monkeypatch):
+    monkeypatch.setenv("ENABLE_FLEET_AUTO_PROMOTION", "true")
+    monkeypatch.setenv("ENV", "production")
+    result = check_fleet_promotion(None, sender_key="example.test", channel="email")
+    assert result["status"] == "disabled"
 
 
 def test_paypal_payment_without_paypal_domain():

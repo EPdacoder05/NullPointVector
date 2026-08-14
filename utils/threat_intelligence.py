@@ -9,6 +9,7 @@ from pathlib import Path
 # Import your Vector DB connector
 from Autobot.VectorDB.NullPoint_Vector import get_conn, release_conn, insert_message, find_similar_messages
 from common.redis_client import get_redis
+from common.tenant_rls import require_account_sub
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,15 +33,16 @@ class ThreatIntelligence:
     def _cache_bucket(self, threat_type: str) -> str:
         return 'urls' if threat_type == 'url' else 'senders'
 
-    def _cache_get(self, bucket: str, key: str) -> Optional[bool]:
-        entry = self.cache.get(bucket, {}).get(key)
+    def _cache_get(self, account_sub: str, bucket: str, key: str) -> Optional[bool]:
+        tenant_key = f"{account_sub}:{key}"
+        entry = self.cache.get(bucket, {}).get(tenant_key)
         if entry:
             age = datetime.now() - datetime.fromisoformat(entry.get('timestamp', '2000-01-01T00:00:00'))
             if age.total_seconds() <= self.cache_ttl_seconds:
                 return bool(entry.get('is_threat'))
 
         if self.redis is not None:
-            raw = self.redis.get(f"threat:{bucket}:{key}")
+            raw = self.redis.get(f"threat:{account_sub}:{bucket}:{key}")
             if raw:
                 try:
                     data = json.loads(raw)
@@ -49,17 +51,18 @@ class ThreatIntelligence:
                     return None
         return None
 
-    def _cache_set(self, bucket: str, key: str, is_threat: bool):
+    def _cache_set(self, account_sub: str, bucket: str, key: str, is_threat: bool):
+        tenant_key = f"{account_sub}:{key}"
         payload = {
             'is_threat': bool(is_threat),
             'timestamp': datetime.now().isoformat(),
         }
-        self.cache.setdefault(bucket, {})[key] = payload
+        self.cache.setdefault(bucket, {})[tenant_key] = payload
         self._save_cache()
         if self.redis is not None:
             try:
                 self.redis.setex(
-                    f"threat:{bucket}:{key}",
+                    f"threat:{account_sub}:{bucket}:{key}",
                     self.cache_ttl_seconds,
                     json.dumps(payload),
                 )
@@ -85,14 +88,17 @@ class ThreatIntelligence:
         except Exception as e:
             logger.error(f"Error saving cache: {e}")
 
-    def check_url(self, url: str) -> bool:
+    def check_url(self, url: str, *, account_sub: Optional[str] = None) -> bool:
         """
         Check if URL is malicious using external feeds + Vector DB similarity.
         """
-        # 1. Check Cache
-        cached = self._cache_get('urls', url)
-        if cached is not None:
-            return cached
+        # Tenantless legacy callers may use vendor reputation, but must not
+        # read or populate another customer's learned cache/Vector DB memory.
+        tenant = require_account_sub(account_sub) if account_sub else None
+        if tenant:
+            cached = self._cache_get(tenant, 'urls', url)
+            if cached is not None:
+                return cached
 
         # 2. External feeds (URLhaus + IPQS) — fail-open
         is_threat = False
@@ -101,7 +107,8 @@ class ThreatIntelligence:
             hit = scan_url_external(url)
             if hit and hit.get("risk", 0) >= 0.5:
                 is_threat = True
-                self._cache_set('urls', url, is_threat)
+                if tenant:
+                    self._cache_set(tenant, 'urls', url, is_threat)
                 return is_threat
         except Exception as e:
             logger.debug(f"External URL intel skipped: {e}")
@@ -110,10 +117,14 @@ class ThreatIntelligence:
         # We treat the URL string as the "message" to embed
         is_threat = False
         try:
+            if not tenant:
+                return is_threat
             conn = get_conn()
             if conn is not None:
                 try:
-                    similar_urls = find_similar_messages(conn, url, limit=1)
+                    similar_urls = find_similar_messages(
+                        conn, url, limit=1, account_sub=tenant,
+                    )
                     if similar_urls:
                         top_match = similar_urls[0]
                         is_threat = bool(top_match[5])
@@ -123,16 +134,21 @@ class ThreatIntelligence:
             logger.error(f"Vector DB lookup failed: {e}")
 
         # 3. Update Cache
-        self._cache_set('urls', url, is_threat)
+        if tenant:
+            self._cache_set(tenant, 'urls', url, is_threat)
         
         return is_threat
         
-    def check_sender(self, sender: str) -> bool:
+    def check_sender(self, sender: str, *, account_sub: Optional[str] = None) -> bool:
         """
         Check if sender is malicious using Vector DB similarity.
         """
+        tenant = require_account_sub(account_sub) if account_sub else None
+        if not tenant:
+            return False
+
         # 1. Check Cache
-        cached = self._cache_get('senders', sender)
+        cached = self._cache_get(tenant, 'senders', sender)
         if cached is not None:
             return cached
 
@@ -142,7 +158,9 @@ class ThreatIntelligence:
             conn = get_conn()
             if conn is not None:
                 try:
-                    similar_senders = find_similar_messages(conn, sender, limit=1)
+                    similar_senders = find_similar_messages(
+                        conn, sender, limit=1, account_sub=tenant,
+                    )
                     if similar_senders:
                         is_threat = bool(similar_senders[0][5])
                 finally:
@@ -151,14 +169,17 @@ class ThreatIntelligence:
             logger.error(f"Vector DB lookup failed: {e}")
 
         # 3. Update Cache
-        self._cache_set('senders', sender, is_threat)
+        self._cache_set(tenant, 'senders', sender, is_threat)
         
         return is_threat
         
-    def add_threat(self, threat_type: str, identifier: str, metadata: Optional[Dict[str, Any]] = None):
+    def add_threat(self, threat_type: str, identifier: str,
+                   metadata: Optional[Dict[str, Any]] = None, *,
+                   account_sub: str):
         """
         Add a confirmed threat to the Vector DB (Training/Memory).
         """
+        tenant = require_account_sub(account_sub)
         conn = None
         try:
             conn = get_conn()
@@ -172,20 +193,24 @@ class ThreatIntelligence:
                 preprocessed_text=identifier,
                 is_threat=1,
                 confidence=1.0,
-                metadata=metadata
+                metadata=metadata,
+                account_sub=tenant,
             )
             logger.info(f"Added new threat to Vector DB: {threat_type} - {identifier}")
             
             # Also update cache immediately
-            self._cache_set(self._cache_bucket(threat_type), identifier, True)
+            self._cache_set(
+                tenant, self._cache_bucket(threat_type), identifier, True,
+            )
                 
         except Exception as e:
             logger.error(f"Error adding threat: {e}")
         finally:
             release_conn(conn)
             
-    def load_threats(self, file_path: str):
+    def load_threats(self, file_path: str, *, account_sub: str):
         """Load bulk threats from a JSON file."""
+        tenant = require_account_sub(account_sub)
         try:
             with open(file_path, 'r') as f:
                 threats = json.load(f)
@@ -199,7 +224,8 @@ class ThreatIntelligence:
                 self.add_threat(
                     threat_type=t_type,
                     identifier=threat.get('identifier'),
-                    metadata=threat.get('metadata')
+                    metadata=threat.get('metadata'),
+                    account_sub=tenant,
                 )
         except Exception as e:
             logger.error(f"Error loading threats: {e}")
@@ -274,17 +300,21 @@ class ThreatIntelligence:
 threat_intel = ThreatIntelligence()
 
 # Export functions for easy access
-def check_url(url: str) -> bool:
-    return threat_intel.check_url(url)
+def check_url(url: str, *, account_sub: Optional[str] = None) -> bool:
+    return threat_intel.check_url(url, account_sub=account_sub)
 
-def check_sender(sender: str) -> bool:
-    return threat_intel.check_sender(sender)
+def check_sender(sender: str, *, account_sub: Optional[str] = None) -> bool:
+    return threat_intel.check_sender(sender, account_sub=account_sub)
 
-def add_threat(threat_type: str, identifier: str, metadata: Optional[Dict[str, Any]] = None):
-    threat_intel.add_threat(threat_type, identifier, metadata)
+def add_threat(threat_type: str, identifier: str,
+               metadata: Optional[Dict[str, Any]] = None, *,
+               account_sub: str):
+    threat_intel.add_threat(
+        threat_type, identifier, metadata, account_sub=account_sub,
+    )
 
-def load_threats(file_path: str):
-    threat_intel.load_threats(file_path)
+def load_threats(file_path: str, *, account_sub: str):
+    threat_intel.load_threats(file_path, account_sub=account_sub)
 
 #Abstraction: Your fetchers (iPhone/Email) shouldn't know how to query the Vector DB. They should just ask threat_intel.check_url(url).
 #Caching: Querying the DB for every single URL in a 10,000-message dump is slow. This file keeps a local JSON cache (data/threat_cache.json) to speed things up.

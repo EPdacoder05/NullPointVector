@@ -36,8 +36,9 @@ class EmailFetcher(ABC):
         pass
         
     @abstractmethod
-    def move_to_junk(self, email_id: str) -> bool:
-        """Move an email to the junk/spam folder."""
+    def move_to_junk(self, email_id: str, *, folder: str = "INBOX",
+                     uidvalidity: str = "") -> bool:
+        """Move an exact provider UID to junk for the connected mailbox."""
         pass
         
     def extract_auth_headers(self, email_message) -> dict:
@@ -174,6 +175,11 @@ class EmailFetcher(ABC):
             
             return {
                 'id': email_data.get('id'),
+                'provider_uid': email_data.get('provider_uid') or email_data.get('id'),
+                'uidvalidity': str(email_data.get('uidvalidity') or ''),
+                'account_sub': email_data.get('account_sub'),
+                'mailbox_id': email_data.get('mailbox_id'),
+                'folder': email_data.get('folder', 'INBOX'),
                 'from': email_data.get('from'),
                 'to': email_data.get('to'),
                 'subject': email_data.get('subject'),
@@ -202,4 +208,4 @@ class EmailFetcher(ABC):
         
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
-        self.disconnect() 
+        self.disconnect()

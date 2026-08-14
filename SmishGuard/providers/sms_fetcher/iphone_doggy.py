@@ -87,11 +87,7 @@ class IPhoneSMSFetcher:
             raise
 
     def monitor_realtime(self, callback):
-        """Monitor SMS in real-time using iOS notifications."""
-        try:
-            # This would use Apple's Push Notification service
-            # to receive real-time SMS notifications
-            pass
-        except Exception as e:
-            logger.error(f"Error in real-time monitoring: {e}")
-            raise 
+        """Unsupported: APNs does not forward the user's carrier SMS to this code."""
+        raise NotImplementedError(
+            "Carrier SMS must use an iOS Message Filter extension, not APNs"
+        )

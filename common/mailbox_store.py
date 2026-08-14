@@ -67,18 +67,22 @@ def _dec(token: str) -> str:
 
 def upsert_app_password(*, account_sub: str, provider: str,
                         account_email: str, app_password: str) -> dict[str, Any]:
-    ensure_table()
-    conn = _conn()
-    if not conn:
-        return {"ok": False, "error": "db_unavailable"}
     provider = (provider or "").strip().lower()
     account_email = (account_email or "").strip()
     app_password = (app_password or "").strip()
-    account_sub = (account_sub or "").strip() or "anonymous"
+    from common.tenant_rls import TenantContextError, require_account_sub
+    try:
+        account_sub = require_account_sub(account_sub)
+    except TenantContextError:
+        return {"ok": False, "error": "tenant_required"}
     if provider not in ("yahoo", "gmail", "microsoft", "outlook"):
         return {"ok": False, "error": "bad_provider"}
     if "@" not in account_email or len(app_password) < 8:
         return {"ok": False, "error": "need_email_and_app_password"}
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return {"ok": False, "error": "db_unavailable"}
     try:
         from common.tenant_rls import set_tenant
         set_tenant(conn, account_sub)
@@ -112,6 +116,11 @@ def upsert_app_password(*, account_sub: str, provider: str,
 
 
 def list_for_user(account_sub: str) -> list[dict[str, Any]]:
+    from common.tenant_rls import TenantContextError, require_account_sub
+    try:
+        account_sub = require_account_sub(account_sub)
+    except TenantContextError:
+        return []
     ensure_table()
     conn = _conn()
     if not conn:
@@ -162,14 +171,15 @@ def list_all() -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT account_sub, provider, account_email, mode, updated_at
+                SELECT id, account_sub, provider, account_email, mode, updated_at
                 FROM user_mailboxes
                 ORDER BY updated_at DESC
                 """
             )
             out = []
-            for sub, provider, account_email, mode, updated in cur.fetchall():
+            for mailbox_id, sub, provider, account_email, mode, updated in cur.fetchall():
                 out.append({
+                    "id": int(mailbox_id),
                     "account_sub": sub,
                     "provider": provider,
                     "account": account_email,
@@ -187,17 +197,21 @@ def list_all() -> list[dict[str, Any]]:
 
 def upsert_oauth(*, account_sub: str, provider: str, account_email: str,
                  refresh_token: str, access_token: str = "") -> dict[str, Any]:
-    ensure_table()
-    conn = _conn()
-    if not conn:
-        return {"ok": False, "error": "db_unavailable"}
     provider = (provider or "").strip().lower()
     account_email = (account_email or "").strip()
-    account_sub = (account_sub or "").strip() or "anonymous"
+    from common.tenant_rls import TenantContextError, require_account_sub
+    try:
+        account_sub = require_account_sub(account_sub)
+    except TenantContextError:
+        return {"ok": False, "error": "tenant_required"}
     if provider not in ("gmail", "microsoft", "outlook"):
         return {"ok": False, "error": "bad_provider"}
     if "@" not in account_email or not (refresh_token or "").strip():
         return {"ok": False, "error": "need_email_and_refresh"}
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return {"ok": False, "error": "db_unavailable"}
     try:
         from common.tenant_rls import set_tenant
         set_tenant(conn, account_sub)
@@ -234,6 +248,11 @@ def upsert_oauth(*, account_sub: str, provider: str, account_email: str,
 
 
 def get_oauth(account_sub: str, provider: str, account_email: str) -> Optional[dict[str, str]]:
+    from common.tenant_rls import TenantContextError, require_account_sub
+    try:
+        account_sub = require_account_sub(account_sub)
+    except TenantContextError:
+        return None
     ensure_table()
     conn = _conn()
     if not conn:
@@ -269,6 +288,11 @@ def get_oauth(account_sub: str, provider: str, account_email: str) -> Optional[d
 
 def get_secret(account_sub: str, provider: str, account_email: str) -> Optional[str]:
     """Return plaintext app password for ingest (caller must not log it)."""
+    from common.tenant_rls import TenantContextError, require_account_sub
+    try:
+        account_sub = require_account_sub(account_sub)
+    except TenantContextError:
+        return None
     ensure_table()
     conn = _conn()
     if not conn:
@@ -292,6 +316,63 @@ def get_secret(account_sub: str, provider: str, account_email: str) -> Optional[
         return data.get("password")
     except Exception as e:
         logger.error("get_secret: %s", e)
+        return None
+    finally:
+        from Autobot.VectorDB.NullPoint_Vector import release_conn
+        release_conn(conn)
+
+
+def get_mailbox(account_sub: str, mailbox_id: int, *, provider: str = "") -> Optional[dict[str, Any]]:
+    """Return one exact mailbox descriptor without decrypting its credential.
+
+    Provider mutations must resolve by both tenant and immutable mailbox id. An
+    email address or provider alone is intentionally insufficient because users
+    may connect several accounts at the same provider.
+    """
+    from common.tenant_rls import TenantContextError, require_account_sub
+    try:
+        sub = require_account_sub(account_sub)
+        mid = int(mailbox_id)
+    except (TenantContextError, TypeError, ValueError):
+        return None
+    if mid <= 0:
+        return None
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return None
+    try:
+        from common.tenant_rls import set_tenant
+        set_tenant(conn, sub)
+        params: list[Any] = [sub, mid]
+        clause = ""
+        normalized_provider = (provider or "").strip().lower()
+        if normalized_provider:
+            clause = " AND provider = %s"
+            params.append(normalized_provider)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, account_sub, provider, account_email, mode, updated_at
+                FROM user_mailboxes
+                WHERE account_sub = %s AND id = %s{clause}
+                LIMIT 1
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": int(row[0]),
+            "account_sub": row[1],
+            "provider": row[2],
+            "account": row[3],
+            "mode": row[4],
+            "updated_at": row[5].isoformat() if row[5] else None,
+        }
+    except Exception as e:
+        logger.error("get_mailbox: %s", e)
         return None
     finally:
         from Autobot.VectorDB.NullPoint_Vector import release_conn

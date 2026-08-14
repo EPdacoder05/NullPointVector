@@ -16,17 +16,43 @@ logger = logging.getLogger("ingest_dedup")
 
 
 def ensure_ingest_dedup_indexes(conn) -> None:
-    """Partial unique indexes — race-safe across pollers."""
+    """Mailbox-scoped partial unique indexes — race-safe across pollers.
+
+    The former global Message-ID/fingerprint indexes collapsed the same message
+    delivered to two different users. Legacy rows have NULL ownership and are
+    deliberately excluded from these indexes rather than assigned heuristically.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_rfc_message_id
-              ON messages ((metadata->>'rfc_message_id'))
-              WHERE COALESCE(metadata->>'rfc_message_id', '') <> '';
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS account_sub TEXT;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS mailbox_id BIGINT;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider TEXT;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider_uid TEXT;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS uidvalidity TEXT;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS folder TEXT;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_fp
-              ON messages ((metadata->>'ingest_fp'))
-              WHERE COALESCE(metadata->>'ingest_fp', '') <> '';
+            DROP INDEX IF EXISTS idx_messages_rfc_message_id;
+            DROP INDEX IF EXISTS idx_messages_ingest_fp;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_mailbox_provider_uid_v2
+              ON messages (
+                account_sub, mailbox_id, provider,
+                (COALESCE(uidvalidity, '')), (COALESCE(folder, '')), provider_uid
+              )
+              WHERE account_sub IS NOT NULL AND mailbox_id IS NOT NULL
+                AND COALESCE(provider, '') <> ''
+                AND COALESCE(provider_uid, '') <> '';
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_mailbox_rfc_message_id
+              ON messages (account_sub, mailbox_id, (metadata->>'rfc_message_id'))
+              WHERE account_sub IS NOT NULL AND mailbox_id IS NOT NULL
+                AND COALESCE(metadata->>'rfc_message_id', '') <> '';
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_mailbox_ingest_fp
+              ON messages (account_sub, mailbox_id, (metadata->>'ingest_fp'))
+              WHERE account_sub IS NOT NULL AND mailbox_id IS NOT NULL
+                AND COALESCE(metadata->>'ingest_fp', '') <> '';
             """
         )
     conn.commit()
@@ -48,18 +74,45 @@ def ingest_fingerprint(*, sender: str, subject: str, body: str,
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
-def already_ingested(conn, *, rfc_message_id: str = "", ingest_fp: str = "") -> Optional[int]:
-    """Return existing message id if this mail was already stored."""
+def already_ingested(conn, *, account_sub: str, mailbox_id: int,
+                     provider: str = "", provider_uid: str = "",
+                     uidvalidity: str = "", folder: str = "INBOX",
+                     rfc_message_id: str = "", ingest_fp: str = "") -> Optional[int]:
+    """Return an existing id in exactly one owned mailbox, never globally."""
+    from common.tenant_rls import require_account_sub, set_tenant
+
+    sub = require_account_sub(account_sub)
+    mid_id = int(mailbox_id)
+    if mid_id <= 0:
+        raise ValueError("valid mailbox_id is required")
+    set_tenant(conn, sub)
     mid = normalize_message_id(rfc_message_id)
     with conn.cursor() as cur:
+        if provider_uid and provider:
+            cur.execute(
+                """
+                SELECT id FROM messages
+                WHERE account_sub = %s AND mailbox_id = %s
+                  AND provider = %s AND provider_uid = %s
+                  AND COALESCE(uidvalidity, '') = %s
+                  AND COALESCE(folder, '') = %s
+                LIMIT 1
+                """,
+                (sub, mid_id, provider.strip().lower(), str(provider_uid),
+                 str(uidvalidity or ""), str(folder or "INBOX")),
+            )
+            row = cur.fetchone()
+            if row:
+                return int(row[0])
         if mid:
             cur.execute(
                 """
                 SELECT id FROM messages
-                WHERE metadata->>'rfc_message_id' = %s
+                WHERE account_sub = %s AND mailbox_id = %s
+                  AND metadata->>'rfc_message_id' = %s
                 LIMIT 1
                 """,
-                (mid,),
+                (sub, mid_id, mid),
             )
             row = cur.fetchone()
             if row:
@@ -68,10 +121,11 @@ def already_ingested(conn, *, rfc_message_id: str = "", ingest_fp: str = "") -> 
             cur.execute(
                 """
                 SELECT id FROM messages
-                WHERE metadata->>'ingest_fp' = %s
+                WHERE account_sub = %s AND mailbox_id = %s
+                  AND metadata->>'ingest_fp' = %s
                 LIMIT 1
                 """,
-                (ingest_fp,),
+                (sub, mid_id, ingest_fp),
             )
             row = cur.fetchone()
             if row:

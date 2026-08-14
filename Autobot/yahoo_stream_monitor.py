@@ -176,7 +176,9 @@ class YahooStreamMonitor:
                     await self._auto_triage_threats()
                 
                 # 3. Check if retrain needed
-                current_threat_count = len(get_all_threats(limit=10_000))
+                # Operator-only aggregate retrain counter. Customer request
+                # handlers never receive the RLS bypass capability.
+                current_threat_count = len(get_all_threats(limit=10_000, bypass=True))
                 new_threats = current_threat_count - self.last_threat_count
                 
                 if new_threats >= self.retrain_threshold:

@@ -26,7 +26,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class RealTimeMonitor:
-    """Real-time monitoring service for iPhone SMS and calls."""
+    """Development-only polling of a mounted iPhone backup snapshot.
+
+    This is not an iOS real-time integration and cannot observe a carrier call or
+    SMS as it arrives. It must never support a production protection claim.
+    """
     
     def __init__(self):
         """Initialize the monitoring service."""
@@ -51,8 +55,8 @@ class RealTimeMonitor:
         self.last_call_check = datetime.now()
         
     def start_monitoring(self):
-        """Start real-time monitoring of SMS and calls."""
-        logger.info("Starting real-time monitoring service...")
+        """Poll an explicitly mounted local backup for forensic development."""
+        logger.info("Starting development backup polling service...")
         
         # Start monitoring threads
         sms_thread = threading.Thread(target=self._monitor_sms)
@@ -71,7 +75,7 @@ class RealTimeMonitor:
             logger.info("Stopping monitoring service...")
     
     def _monitor_sms(self):
-        """Monitor SMS messages in real-time."""
+        """Poll SMS rows present in the mounted backup snapshot."""
         while True:
             try:
                 # Check for new messages
@@ -93,7 +97,7 @@ class RealTimeMonitor:
                 time.sleep(30)  # Wait longer on error
     
     def _monitor_calls(self):
-        """Monitor calls in real-time."""
+        """Poll call rows present in the mounted backup snapshot."""
         while True:
             try:
                 # Check for new calls
@@ -207,4 +211,4 @@ class RealTimeMonitor:
 
 if __name__ == "__main__":
     monitor = RealTimeMonitor()
-    monitor.start_monitoring() 
+    monitor.start_monitoring()
