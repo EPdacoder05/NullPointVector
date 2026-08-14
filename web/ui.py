@@ -6,12 +6,16 @@ Talks to process_one / Postgres threat store. Aesthetic: brass + forest.
 """
 from __future__ import annotations
 
+import hmac
 import logging
+import os
 from pathlib import Path
+from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from common.rate_limit import rate_limit
 
@@ -20,6 +24,183 @@ logger = logging.getLogger("ui")
 _BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(_BASE / "templates"))
 router = APIRouter()
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_PUBLIC_APP_PATHS = frozenset({
+    "/app/login", "/app/signup", "/app/privacy", "/app/terms",
+})
+_PUBLIC_APP_PREFIXES = ("/app/auth/oauth/", "/app/auth/callback/")
+_ROLE_RANK = {"viewer": 0, "customer": 1, "analyst": 2,
+              "admin": 3, "enterprise": 4}
+_LOGIN_ERRORS = {
+    "account_deleted": "Your account was deleted and you have been signed out.",
+    "oauth_not_configured": "That sign-in method is not available. Use password sign-in or try again later.",
+    "oauth_exchange_failed": "Sign-in could not be completed. Try again or use password sign-in.",
+    "provider_pending": "That sign-in method is not available yet.",
+}
+_SIGNUP_ERRORS = {
+    "signup_closed": "Signup is closed. Ask the operator, or use an existing account.",
+}
+_CONNECTOR_ERRORS = {
+    "denied": "Mailbox access was not granted.",
+    "oauth_denied": "Mailbox access was not granted.",
+    "oauth_failed": "The mailbox connection could not be completed. Try again.",
+}
+
+
+def _normalized_app_path(path: str) -> str:
+    value = (path or "/").rstrip("/")
+    return value or "/"
+
+
+def _is_public_app_path(path: str) -> bool:
+    normalized = _normalized_app_path(path)
+    return normalized in _PUBLIC_APP_PATHS or any(
+        path.startswith(prefix) for prefix in _PUBLIC_APP_PREFIXES
+    )
+
+
+def _origin_only(raw: str) -> str:
+    """Normalize an HTTP(S) Origin/Referer without retaining path or query."""
+    try:
+        parsed = urlsplit((raw or "").strip())
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    if parsed.username or parsed.password:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _extra_allowed_origins() -> set[str]:
+    """Comma-separated API_ALLOWED_ORIGINS + PUBLIC_BASE_URL (path stripped)."""
+    out: set[str] = set()
+    public_base = _origin_only(os.getenv("PUBLIC_BASE_URL", ""))
+    if public_base:
+        out.add(public_base)
+    for part in (os.getenv("API_ALLOWED_ORIGINS") or "").split(","):
+        origin = _origin_only(part)
+        if origin:
+            out.add(origin)
+    return out
+
+
+def _request_origins(request: Request) -> set[str]:
+    from common.config import is_production_environment
+    allowed = _extra_allowed_origins()
+    if is_production_environment():
+        # Host and forwarding headers are request-controlled unless a trusted
+        # proxy normalizes them. Production uses configured origins only.
+        allowed.discard("")
+        return allowed
+    # Match CORS defaults so local console POSTs work even if Host is stripped.
+    allowed.update({
+        "http://127.0.0.1:8088",
+        "http://localhost:8088",
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    })
+    # Leftmost forwarded proto (Funnel/TLS terminator) before nginx $scheme.
+    xf = (request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip().lower()
+    scheme = xf if xf in {"http", "https"} else (request.url.scheme or "http")
+    if scheme not in {"http", "https"}:
+        scheme = "http"
+    host = (request.headers.get("host") or request.url.netloc or "").strip().lower()
+    if host:
+        allowed.add(_origin_only(f"{scheme}://{host}"))
+        # Tailscale Funnel terminates TLS outside nginx (listen :80). Browser
+        # Origin is https://*.ts.net while X-Forwarded-Proto may still be http.
+        host_only = host.split(":", 1)[0]
+        if host_only.endswith(".ts.net"):
+            allowed.add(f"https://{host_only}")
+        # If a proxy forwarded Host without the client port, still accept the
+        # loopback Origin the browser actually sends (…:8088).
+        if host_only in {"127.0.0.1", "localhost", "::1"}:
+            allowed.add(f"http://{host_only}:8088")
+            allowed.add(f"http://{host_only}:8000")
+    allowed.discard("")
+    return allowed
+
+
+def _is_same_origin(request: Request) -> bool:
+    source = request.headers.get("origin") or request.headers.get("referer") or ""
+    source_origin = _origin_only(source)
+    return bool(source_origin and source_origin in _request_origins(request))
+
+
+async def _submitted_csrf_token(request: Request) -> str:
+    supplied = (request.headers.get("x-csrf-token") or "").strip()
+    if supplied:
+        return supplied
+    content_type = (request.headers.get("content-type") or "").split(";", 1)[0].lower()
+    if content_type != "application/x-www-form-urlencoded":
+        return ""
+    try:
+        body = (await request.body()).decode("utf-8", errors="strict")
+        values = parse_qs(body, keep_blank_values=True, strict_parsing=False)
+    except (UnicodeDecodeError, ValueError):
+        return ""
+    return str((values.get("_csrf") or [""])[0]).strip()
+
+
+class ConsoleSecurityMiddleware(BaseHTTPMiddleware):
+    """Fail-closed authentication and request-forgery perimeter for `/app`."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not (path == "/app" or path.startswith("/app/")):
+            return await call_next(request)
+
+        from fastapi.responses import JSONResponse, RedirectResponse
+        from common.auth import csrf_token_for_session
+
+        public_path = _is_public_app_path(path)
+        user = _current_user(request)
+        request.state.console_user = user
+        session_token = request.cookies.get("np_access") or ""
+        request.state.csrf_token = (
+            csrf_token_for_session(session_token) if user and session_token else ""
+        )
+
+        if not public_path and not user:
+            accepts = (request.headers.get("accept") or "").lower()
+            if request.method in {"GET", "HEAD"} and "application/json" not in accepts:
+                target = path
+                if request.url.query:
+                    target += f"?{request.url.query}"
+                response = RedirectResponse(
+                    f"/app/login?next={quote(target, safe='')}", status_code=303,
+                )
+            else:
+                response = JSONResponse(
+                    {"ok": False, "error": "login_required"}, status_code=401,
+                )
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        if request.method not in _SAFE_METHODS:
+            has_source = bool(request.headers.get("origin") or request.headers.get("referer"))
+            # Public login/signup forms remain usable by non-browser clients
+            # without Origin, but a supplied cross-origin source is rejected.
+            if (not public_path or has_source) and not _is_same_origin(request):
+                return JSONResponse(
+                    {"ok": False, "error": "origin_blocked"}, status_code=403,
+                    headers={"Cache-Control": "no-store"},
+                )
+            if not public_path:
+                expected = request.state.csrf_token
+                supplied = await _submitted_csrf_token(request)
+                if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+                    return JSONResponse(
+                        {"ok": False, "error": "csrf_failed"}, status_code=403,
+                        headers={"Cache-Control": "no-store"},
+                    )
+
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers.append("Vary", "Cookie")
+        return response
 
 # Per-channel presentation metadata (the detection wiring lives in channel_pipeline).
 CHANNELS = {
@@ -39,6 +220,8 @@ _ACTION_TONE = {"allow": "safe", "flag": "warn", "quarantine": "danger", "block"
 
 def _current_user(request: Request):
     """Resolve the signed-in console user from the np_access cookie (or None)."""
+    if hasattr(request.state, "console_user"):
+        return request.state.console_user
     token = request.cookies.get("np_access")
     if not token:
         return None
@@ -49,7 +232,10 @@ def _current_user(request: Request):
         return None
     if not payload:
         return None
-    return {"sub": payload.get("sub") or "user", "role": payload.get("role") or "viewer"}
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject.strip():
+        return None
+    return {"sub": subject.strip(), "role": payload.get("role") or "viewer"}
 
 
 def _require_user_json(request: Request):
@@ -58,6 +244,17 @@ def _require_user_json(request: Request):
     user = _current_user(request)
     if not user or not user.get("sub") or user.get("sub") in ("anon", "anonymous"):
         return None, JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    return user, None
+
+
+def _require_role_json(request: Request, minimum: str):
+    """Return an authenticated console user with at least `minimum` role."""
+    from fastapi.responses import JSONResponse
+    user, err = _require_user_json(request)
+    if err:
+        return None, err
+    if _ROLE_RANK.get(str(user.get("role") or "viewer"), 0) < _ROLE_RANK[minimum]:
+        return None, JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
     return user, None
 
 
@@ -89,8 +286,20 @@ async def ui_account_delete(request: Request,
         return RedirectResponse("/app/login?next=/app/account", status_code=303)
     if confirm not in ("1", "true", "yes", "on"):
         return RedirectResponse("/app/account?err=confirm", status_code=303)
+    from common.config import is_production_environment
+    if is_production_environment():
+        # Token/session revocation and cross-store deletion are not yet an
+        # atomic, retryable job. Do not present a partial delete as complete.
+        return JSONResponse(
+            {"ok": False, "error": "account_deletion_unavailable"},
+            status_code=503,
+        )
     from common.account_delete import delete_account_data
-    delete_account_data(str(user.get("sub") or ""))
+    result = delete_account_data(str(user.get("sub") or ""))
+    if not result.get("ok"):
+        return JSONResponse(
+            {"ok": False, "error": "account_deletion_failed"}, status_code=503,
+        )
     resp = RedirectResponse("/app/login?next=/app/dashboard&error=account_deleted", status_code=303)
     resp.delete_cookie("np_access", path="/")
     return resp
@@ -123,6 +332,7 @@ def _ctx(request: Request, **kw) -> dict:
     kw["tz_abbrev"] = tz_abbrev(tz)
     kw["tz_choices"] = common_timezone_choices()
     kw["hour12"] = _request_hour12(request)
+    kw["csrf_token"] = getattr(request.state, "csrf_token", "")
     return kw
 
 
@@ -175,8 +385,8 @@ def _technical_view(channel: str, v) -> dict:
         "pipeline": [
             "Word TF-IDF (1–3 grams) + Char TF-IDF (3–5 grams) — catches wording and obfuscation (acc0unt)",
             "Structural features — channel-specific, hard-to-fake numeric signals",
-            "SGDClassifier (log-loss) — linear model, sub-ms inference",
-            "Platt calibration — turns the score into a real probability P(threat)",
+            "SGDClassifier (log-loss) — sparse linear inference; production latency not yet measured",
+            "Score calibration — estimates P(threat); reliability still requires a larger holdout",
             "Per-channel anomaly (Isolation Forest) — novelty vs that channel’s normal traffic",
             "Risk engine — fuses calibrated P(threat) + anomaly into action (allow/flag/quarantine)",
         ],
@@ -193,10 +403,13 @@ def _technical_view(channel: str, v) -> dict:
     }
 
 
-def _verdict_view(channel: str, content: str, sender: str) -> dict:
+def _verdict_view(account_sub: str, channel: str, content: str, sender: str) -> dict:
     """Run the pipeline and shape the verdict for the template (never raises)."""
     from common.streaming.channel_pipeline import process_one
-    record = {"subject": "", "body": content, "transcript": content,
+    from common.tenant_rls import require_account_sub
+    tenant = require_account_sub(account_sub)
+    record = {"account_sub": tenant,
+              "subject": "", "body": content, "transcript": content,
               "from": sender, "caller_id": sender}
     try:
         v = process_one(channel, record)
@@ -208,10 +421,15 @@ def _verdict_view(channel: str, content: str, sender: str) -> dict:
             try:
                 from common.streaming.dlq import persist_threat_durable
                 persist_threat_durable(
+                    account_sub=tenant,
                     content=content, threat_type=channel, sender=sender or "unknown",
                     metadata={"risk_score": float(v.risk_score), "action": action,
                               "confidence": float(v.risk_score), "channel": channel,
-                              "anomaly_level": v.anomaly_level, "via": "console-analyze"})
+                              "anomaly_level": v.anomaly_level,
+                              "label_source": "model_prediction",
+                              "training_eligible": False,
+                              "destructive_action_eligible": False,
+                              "via": "console-analyze"})
             except Exception as pe:
                 logger.debug("console persist skipped: %s", pe)
         return {
@@ -249,7 +467,11 @@ async def ui_analyze(request: Request,
                      _rl: None = Depends(rate_limit())):
     if channel not in CHANNELS:
         channel = "phishing"
-    view = _verdict_view(channel, content, sender.strip())
+    user = _current_user(request)
+    if not user:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/app/login", status_code=303)
+    view = _verdict_view(str(user["sub"]), channel, content, sender.strip())
     return templates.TemplateResponse(request, "_result.html", {"v": view})
 
 
@@ -282,12 +504,14 @@ def _screen_view(caller_id: str, transcript: str, contact_known: bool) -> dict:
         return {"ok": False, "error": "Call screening temporarily unavailable."}
 
 
-def _record_screen_result(caller_id: str, view: dict, transcript: str = "") -> None:
+def _record_screen_result(account_sub: str, caller_id: str, view: dict,
+                          transcript: str = "") -> None:
     if not view.get("ok"):
         return
     try:
         from common.call_events import record_screen
         record_screen({
+            "account_sub": account_sub,
             "caller_id": caller_id,
             "action": view.get("action"),
             "risk": (view.get("risk_pct") or 0) / 100.0,
@@ -309,8 +533,12 @@ async def ui_screen(request: Request,
                     contact_known: str = Form(""),
                     _rl: None = Depends(rate_limit())):
     known = contact_known.lower() in ("true", "1", "on", "yes")
+    user = _current_user(request)
+    if not user:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/app/login", status_code=303)
     view = _screen_view(caller_id, transcript, known)
-    _record_screen_result(caller_id, view, transcript.strip())
+    _record_screen_result(str(user["sub"]), caller_id, view, transcript.strip())
     return templates.TemplateResponse(request, "_screen.html", {"s": view})
 
 
@@ -350,40 +578,6 @@ async def ui_checkout_post(request: Request,
     from fastapi.responses import JSONResponse, RedirectResponse
     from common.billing import validate_checkout_payload, start_checkout
 
-    origin = (request.headers.get("origin") or "").rstrip("/")
-    referer = (request.headers.get("referer") or "")
-    host = str(request.base_url).rstrip("/")
-    pub = (os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
-    allowed = {
-        host,
-        pub,
-        "http://localhost:8088",
-        "http://127.0.0.1:8088",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    }
-    # Tailscale Funnel / HTTPS reverse-proxy hosts (Origin may be https://*.ts.net)
-    for extra in (os.getenv("CHECKOUT_ALLOWED_ORIGINS") or "").split(","):
-        extra = extra.strip().rstrip("/")
-        if extra:
-            allowed.add(extra)
-    allowed.discard("")
-
-    def _origin_ok(o: str) -> bool:
-        if not o:
-            return True
-        if o in allowed:
-            return True
-        # Same host as PUBLIC_BASE_URL / Funnel
-        if pub and (o == pub or o.endswith(".ts.net") and ".ts.net" in pub):
-            return True
-        if o.endswith(".ts.net") or o.endswith(".trycloudflare.com"):
-            return True
-        return any(a and a in referer for a in allowed)
-
-    if not _origin_ok(origin):
-        return JSONResponse({"ok": False, "error": "origin_blocked"}, status_code=403)
-
     body = {"plan": plan, "interval": interval, "email": email}
     ok, err = validate_checkout_payload(body)
     if not ok:
@@ -398,8 +592,10 @@ async def ui_checkout_post(request: Request,
         )
     client_ip = request.client.host if request.client else "unknown"
     pub = (os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
-    if not pub or pub in ("http://localhost", "https://localhost", "http://127.0.0.1"):
-        pub = "http://localhost:8088"
+    if not pub:
+        return JSONResponse(
+            {"ok": False, "error": "checkout_unavailable"}, status_code=503,
+        )
     base = pub
 
     result = start_checkout(
@@ -439,15 +635,23 @@ async def ui_checkout_success(request: Request, session_id: str = ""):
 async def ui_benchmarks(request: Request):
     """Benchmark Deck — prefer disk snapshot (fast); never golden-eval on every hit."""
     import os
+    from datetime import datetime, timezone
     from common.bench_snapshot import load_snapshot
-    from ui.kpi import operational_kpis
+    from ui.kpi import operational_kpis, reassess_quality_snapshot
 
     snap = load_snapshot(max_age=24 * 3600)
     if snap and snap.get("quality"):
-        quality = snap["quality"]
+        quality = reassess_quality_snapshot(snap["quality"])
         latency = snap.get("latency") or {}
         ops = snap.get("ops") or operational_kpis()
         stale = bool(snap.get("stale"))
+        generated_at = snap.get("generated_at")
+        try:
+            generated_at = datetime.fromtimestamp(
+                float(generated_at), tz=timezone.utc,
+            ).isoformat(timespec="seconds")
+        except (TypeError, ValueError, OSError):
+            generated_at = None
     else:
         # Soft fail: empty charts + note — do NOT run heavy golden eval inline
         quality = {
@@ -458,6 +662,7 @@ async def ui_benchmarks(request: Request):
         latency = {}
         ops = operational_kpis()
         stale = True
+        generated_at = None
 
     max_lat = 1.0
     for lat in (latency or {}).values():
@@ -476,7 +681,8 @@ async def ui_benchmarks(request: Request):
     return templates.TemplateResponse(
         request, "benchmarks.html",
         _ctx(request, active="benchmarks", quality=quality, latency=latency,
-             ops=ops, assist=assist, max_lat_ms=max_lat, snapshot_stale=stale))
+             ops=ops, assist=assist, max_lat_ms=max_lat, snapshot_stale=stale,
+             snapshot_generated_at=generated_at))
 
 
 def _request_is_https(request: Request) -> bool:
@@ -498,7 +704,7 @@ def _safe_app_redirect_target(target: str, fallback: str = "/app/dashboard") -> 
         return fallback
     if value.startswith("//"):
         return fallback
-    if not value.startswith("/app"):
+    if value != "/app" and not value.startswith("/app/"):
         return fallback
     return value
 
@@ -512,7 +718,7 @@ async def ui_signup_get(request: Request, next: str = "/app/dashboard", error: s
     if _current_user(request):
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=safe_next, status_code=303)
-    err = error or None
+    err = _SIGNUP_ERRORS.get(error) if error else None
     if not signup_open():
         err = err or "Signup is closed. Ask the operator, or use an existing account."
     return templates.TemplateResponse(
@@ -572,19 +778,12 @@ async def ui_signup_post(request: Request,
 
 @router.get("/app/login", response_class=HTMLResponse)
 async def ui_login_get(request: Request, next: str = "/app/dashboard", error: str = ""):
+    dest = _safe_app_redirect_target(next)
     if _current_user(request):  # already signed in → straight to the portal
         from fastapi.responses import RedirectResponse
-        dest = next if next.startswith("/app") else "/app/dashboard"
         return RedirectResponse(url=dest, status_code=303)
-    err = error or None
-    if err == "oauth_not_configured":
-        err = "OAuth provider keys missing in .env — use password sign-in, or add GOOGLE_OAUTH_* / MICROSOFT_OAUTH_*."
-    elif err == "oauth_exchange_failed":
-        err = "OAuth failed — try again or use password."
-    elif err == "provider_pending":
-        err = "That provider’s buttons are live; token exchange still needs keys wired."
+    err = _LOGIN_ERRORS.get(error) if error else None
     from common.accounts import signup_open
-    dest = next if next.startswith("/app") else "/app/dashboard"
     return templates.TemplateResponse(
         request, "login.html",
         {"channels": CHANNELS, "active": "login", "error": err, "username": "",
@@ -592,11 +791,12 @@ async def ui_login_get(request: Request, next: str = "/app/dashboard", error: st
 
 
 @router.get("/app/auth/oauth/{provider}")
-async def ui_auth_oauth_start(provider: str, next: str = "/app/dashboard"):
+async def ui_auth_oauth_start(request: Request, provider: str,
+                              next: str = "/app/dashboard"):
     """Account OAuth — same-window redirect (session cookie on this origin)."""
     from fastapi.responses import RedirectResponse
     from common.oauth_account import start_account_oauth
-    dest = next if (next or "").startswith("/app") else "/app/dashboard"
+    dest = _safe_app_redirect_target(next)
     result = start_account_oauth(provider, dest)
     if result.get("error") == "oauth_not_configured" or not result.get("authorize_url"):
         from urllib.parse import quote
@@ -610,7 +810,22 @@ async def ui_auth_oauth_start(provider: str, next: str = "/app/dashboard"):
             f"/app/login?next={quote(dest, safe='')}&error=provider_pending",
             status_code=303,
         )
-    return RedirectResponse(result["authorize_url"], status_code=303)
+    oauth_state = str(result.get("state") or "").strip()
+    if not oauth_state:
+        logger.warning("account OAuth start returned no state [%s]", provider)
+        return RedirectResponse(
+            f"/app/login?next={quote(dest, safe='')}&error=oauth_exchange_failed",
+            status_code=303,
+        )
+    response = RedirectResponse(result["authorize_url"], status_code=303)
+    # Bind process-side OAuth state to the browser that initiated sign-in.
+    # State alone is not sufficient when the server store is shared globally.
+    response.set_cookie(
+        "np_oauth_state", oauth_state, httponly=True, samesite="lax",
+        secure=_request_is_https(request), max_age=15 * 60,
+        path="/app/auth",
+    )
+    return response
 
 
 @router.get("/app/auth/callback/{provider}")
@@ -618,15 +833,27 @@ async def ui_auth_oauth_callback(request: Request, provider: str, code: str = ""
                                  error: str = ""):
     from fastapi.responses import RedirectResponse
     from urllib.parse import quote
+    expected_state = request.cookies.get("np_oauth_state") or ""
+
+    def _oauth_failure(url: str = "/app/login?error=oauth_exchange_failed"):
+        response = RedirectResponse(url, status_code=303)
+        response.delete_cookie("np_oauth_state", path="/app/auth")
+        return response
+
     if error or not code:
-        return RedirectResponse(
-            f"/app/login?error=oauth_exchange_failed", status_code=303)
+        return _oauth_failure()
+    if (not state or not expected_state
+            or not hmac.compare_digest(state, expected_state)):
+        logger.warning("account OAuth browser-state mismatch [%s]", provider)
+        return _oauth_failure()
     from common.oauth_account import finish_account_oauth
     result = finish_account_oauth(provider, code, state)
     if not result.get("ok"):
-        nxt = quote(result.get("next") or "/app/dashboard", safe="")
-        err = result.get("error") or "oauth_exchange_failed"
-        return RedirectResponse(f"/app/login?next={nxt}&error={err}", status_code=303)
+        nxt = quote(_safe_app_redirect_target(result.get("next") or ""), safe="")
+        internal_error = result.get("error") or "oauth_exchange_failed"
+        logger.warning("account OAuth callback failed [%s]: %s", provider, internal_error)
+        err = internal_error if internal_error in _LOGIN_ERRORS else "oauth_exchange_failed"
+        return _oauth_failure(f"/app/login?next={nxt}&error={err}")
     dest = _safe_app_redirect_target(result.get("next") or "/app/dashboard")
     resp = RedirectResponse(dest, status_code=303)
     resp.set_cookie(
@@ -634,6 +861,7 @@ async def ui_auth_oauth_callback(request: Request, provider: str, code: str = ""
         secure=_request_is_https(request),
         max_age=12 * 3600, path="/",
     )
+    resp.delete_cookie("np_oauth_state", path="/app/auth")
     return resp
 
 
@@ -666,15 +894,17 @@ async def ui_login_post(request: Request,
     return resp
 
 
-@router.get("/app/logout")
-async def ui_logout():
+@router.post("/app/logout")
+async def ui_logout(request: Request):
     from fastapi.responses import RedirectResponse
+    if not _current_user(request):
+        return RedirectResponse(url="/app/login", status_code=303)
     resp = RedirectResponse(url="/app/login", status_code=303)
     resp.delete_cookie("np_access", path="/")
     return resp
 
 
-def _dashboard_context(tz: str = "UTC", hour12: bool = False) -> dict:
+def _dashboard_context(account_sub: str, tz: str = "UTC", hour12: bool = False) -> dict:
     from datetime import datetime
     from common.timefmt import format_local
     live, geo, active_threats = [], [], []
@@ -682,12 +912,14 @@ def _dashboard_context(tz: str = "UTC", hour12: bool = False) -> dict:
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_threats_page, get_review_queue
         try:
-            _, review_counts = get_review_queue(limit=50)
+            _, review_counts = get_review_queue(limit=50, account_sub=account_sub)
             stats["quarantined"] = review_counts.get("total", 0)
         except Exception:
             pass
-        rows, _ = get_threats_page(threat_type=None, after_id=None, limit=40,
-                                    max_confidence=0.85)
+        rows, _ = get_threats_page(
+            threat_type=None, after_id=None, limit=40,
+            account_sub=account_sub, max_confidence=0.85,
+        )
         rows = rows or []
         stats["total"] = len(rows)
         for i, r in enumerate(rows):
@@ -736,7 +968,10 @@ def _dashboard_context(tz: str = "UTC", hour12: bool = False) -> dict:
 
 @router.get("/app/dashboard", response_class=HTMLResponse)
 async def ui_dashboard(request: Request):
-    ctx = _dashboard_context(tz=_request_tz(request), hour12=_request_hour12(request))
+    account_sub = str((_current_user(request) or {}).get("sub") or "")
+    ctx = _dashboard_context(
+        account_sub, tz=_request_tz(request), hour12=_request_hour12(request),
+    )
     ctx.update(_ctx(request, active="dashboard"))
     return templates.TemplateResponse(request, "dashboard.html", ctx)
 
@@ -747,12 +982,13 @@ async def ui_quarantine(request: Request):
     rows, counts = [], {"total": 0, "quarantined": 0, "potential": 0, "unsure": 0}
     tz = _request_tz(request)
     hour12 = _request_hour12(request)
+    account_sub = str((_current_user(request) or {}).get("sub") or "")
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_review_queue
         from common.explain import plain_english_math
         from common.timefmt import format_local
         from common.pills import build_pills
-        rows, counts = get_review_queue(limit=100)
+        rows, counts = get_review_queue(limit=100, account_sub=account_sub)
         for r in rows:
             text = " ".join([
                 r.get("subject") or "",
@@ -794,11 +1030,14 @@ async def ui_quarantine_siblings(request: Request, mid: int = 0):
     """List same-sender ungraded rows for the cascade confirm modal."""
     from fastapi.responses import JSONResponse
     from common.timefmt import format_local
+    user, err = _require_user_json(request)
+    if err:
+        return err
     if not mid:
         return JSONResponse({"ok": False, "error": "need_mid"}, status_code=400)
     try:
         from Autobot.VectorDB.NullPoint_Vector import list_sender_siblings
-        data = list_sender_siblings(mid)
+        data = list_sender_siblings(mid, account_sub=str(user["sub"]))
     except Exception as e:
         logger.error("siblings failed: %s", e)
         return JSONResponse({"ok": False, "error": "lookup_failed"}, status_code=500)
@@ -861,7 +1100,7 @@ async def ui_user_report(
     if not sender and mid_i:
         try:
             from Autobot.VectorDB.NullPoint_Vector import get_message_detail
-            msg = get_message_detail(mid_i) or {}
+            msg = get_message_detail(mid_i, account_sub=account) or {}
             sender = msg.get("sender") or msg.get("from") or ""
             channel = channel or msg.get("channel") or "email"
         except Exception:
@@ -909,6 +1148,7 @@ async def ui_quarantine_grade(request: Request,
     user, err = _require_user_json(request)
     if err:
         return err
+    account_sub = str(user["sub"])
     if verdict not in ("block", "unsure", "safe"):
         return JSONResponse({"ok": False, "error": "bad_verdict"}, status_code=400)
     label = {"block": 1, "safe": 0}.get(verdict)
@@ -925,6 +1165,7 @@ async def ui_quarantine_grade(request: Request,
         from Autobot.VectorDB.NullPoint_Vector import set_message_grade
         graded = set_message_grade(
             mid, label=label, status=status,
+            account_sub=account_sub,
             cascade_sender=(cascade == "all" and extras is None),
             also_ids=extras,
         )
@@ -959,7 +1200,9 @@ async def ui_quarantine_grade(request: Request,
         ids = list(graded.get("cascaded_ids") or [mid])
         try:
             from common.provider_sync import enqueue_provider_moves, process_provider_queue
-            queue_info = enqueue_provider_moves(ids, action="junk")
+            queue_info = enqueue_provider_moves(
+                ids, account_sub=account_sub, action="junk",
+            )
             background_tasks.add_task(process_provider_queue, limit=10)
             cascaded_n = int(graded.get("cascaded") or 0)
             provider_note = (
@@ -988,14 +1231,15 @@ async def ui_quarantine_grade(request: Request,
 async def ui_message_detail(request: Request, mid: int):
     """Open full message body for analyst review (console; encrypted-at-rest)."""
     from fastapi.responses import RedirectResponse
-    if not _current_user(request):
+    user = _current_user(request)
+    if not user:
         return RedirectResponse(f"/app/login?next=/app/message/{mid}", status_code=303)
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_message_detail
         from common.explain import plain_english_math
         from common.timefmt import format_local
         from common.pills import build_pills
-        msg = get_message_detail(mid)
+        msg = get_message_detail(mid, account_sub=str(user["sub"]))
     except Exception as e:
         logger.warning("message detail unavailable: %s", e)
         msg = None
@@ -1039,13 +1283,18 @@ async def ui_calls_grade(request: Request,
                          _rl: None = Depends(rate_limit())):
     """Grade a call-screen event (vishing feedback loop)."""
     from fastapi.responses import JSONResponse
+    # Events carry account_sub; grade only within the caller's tenant.
+    user, err = _require_role_json(request, "analyst")
+    if err:
+        return err
     if verdict not in ("block", "unsure", "safe"):
         return JSONResponse({"ok": False, "error": "bad_verdict"}, status_code=400)
     from common.call_events import get_screen, mark_graded
-    event = get_screen(eid)
+    sub = str(user["sub"])
+    event = get_screen(eid, account_sub=sub)
     if not event:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    mark_graded(eid, verdict)
+    mark_graded(eid, verdict, account_sub=sub)
     learn = None
     if verdict in ("block", "safe"):
         from common.grading import record_grade
@@ -1066,13 +1315,16 @@ async def ui_inbox(request: Request):
     rows, counts = [], {"all": 0, "threat": 0, "cleared": 0}
     tz = _request_tz(request)
     hour12 = _request_hour12(request)
+    account_sub = str((_current_user(request) or {}).get("sub") or "")
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_threats_page
         from common.timefmt import format_local
         from common.pills import build_pills
         from common.explain import plain_english_math
-        raw, _ = get_threats_page(threat_type=None, after_id=None, limit=80,
-                                  max_confidence=0.85)
+        raw, _ = get_threats_page(
+            threat_type=None, after_id=None, limit=80,
+            account_sub=account_sub, max_confidence=0.85,
+        )
         for r in (raw or []):
             conf = float(r.get("confidence") or 0)
             label = r.get("label")
@@ -1161,13 +1413,16 @@ async def ui_feed(request: Request, channel: str = ""):
     rows = []
     tz = _request_tz(request)
     hour12 = _request_hour12(request)
+    account_sub = str((_current_user(request) or {}).get("sub") or "")
     try:
         from Autobot.VectorDB.NullPoint_Vector import get_threats_page
         from common.timefmt import format_local
         from common.pills import build_pills
         ch = channel if channel in CHANNELS else None
-        raw, _ = get_threats_page(threat_type=ch, after_id=None, limit=12,
-                                  max_confidence=0.85)
+        raw, _ = get_threats_page(
+            threat_type=ch, after_id=None, limit=12,
+            account_sub=account_sub, max_confidence=0.85,
+        )
         for r in (raw or []):
             conf = float(r.get("confidence") or 0)
             sender = r.get("sender") or ""
@@ -1201,17 +1456,38 @@ async def ui_connectors(request: Request):
     user = _current_user(request)
     sub = (user or {}).get("sub") or "anonymous"
     saved = list_for_user(sub)
+    saved_providers = {
+        str(row.get("provider") or "").strip().lower() for row in saved
+    }
+    # oauth_email keeps a process-local pilot status cache. Never render its
+    # global account identity into another tenant's page; tenant persistence is
+    # the source of truth for whether this user's provider is connected.
+    connectors = []
+    for raw in connector_status():
+        row = dict(raw)
+        provider = str(row.get("provider") or "").strip().lower()
+        row["connected"] = provider in saved_providers
+        row["account"] = ""
+        connectors.append(row)
+    connector_error = _CONNECTOR_ERRORS.get(request.query_params.get("err") or "")
     return templates.TemplateResponse(
         request, "connectors.html",
-        _ctx(request, active="connectors", connectors=connector_status(),
-             mailboxes=saved, account_sub=sub))
+        _ctx(request, active="connectors", connectors=connectors,
+             mailboxes=saved, account_sub=sub, connector_error=connector_error))
 
 
 @router.post("/app/connectors/env/{provider}")
-async def ui_connectors_env(provider: str, _rl: None = Depends(rate_limit())):
+async def ui_connectors_env(provider: str, request: Request,
+                            _rl: None = Depends(rate_limit())):
     from fastapi.responses import JSONResponse
+    _user, err = _require_role_json(request, "admin")
+    if err:
+        return err
     from common.oauth_email import mark_env_connected
-    return JSONResponse(mark_env_connected(provider))
+    result = mark_env_connected(provider)
+    if not result.get("ok"):
+        return JSONResponse({"ok": False, "error": "connector_unavailable"}, status_code=400)
+    return JSONResponse({"ok": True, "provider": result.get("provider") or provider})
 
 
 @router.post("/app/connectors/app-password")
@@ -1228,7 +1504,7 @@ async def ui_connectors_app_password(
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
     result = upsert_app_password(
-        account_sub=user.get("sub") or "anonymous",
+        account_sub=str(user["sub"]),
         provider=provider,
         account_email=account_email,
         app_password=app_password,
@@ -1255,7 +1531,7 @@ async def ui_connectors_request_provider(
     if len(name) < 2:
         return JSONResponse({"ok": False, "error": "need_provider_name"}, status_code=400)
     entry = {
-        "account_sub": user.get("sub"),
+        "account_sub": str(user["sub"]),
         "provider_name": name,
         "imap_host": (imap_host or "").strip()[:120],
         "notes": (notes or "").strip()[:240],
@@ -1272,17 +1548,26 @@ async def ui_connectors_request_provider(
     return JSONResponse({"ok": True, "provider": name})
 
 
-@router.get("/app/connectors/oauth/{provider}")
-async def ui_connectors_oauth_start(provider: str, request: Request):
+@router.post("/app/connectors/oauth/{provider}")
+async def ui_connectors_oauth_start(provider: str, request: Request,
+                                    consented: str = Form("")):
     from fastapi.responses import JSONResponse, RedirectResponse
     from common.oauth_email import start_oauth
     user = _current_user(request)
     if not user:
         return RedirectResponse("/app/login?next=/app/connectors", status_code=303)
-    result = start_oauth(provider, account_sub=str(user.get("sub") or ""))
+    if consented.lower() not in ("1", "true", "yes", "on"):
+        return JSONResponse({"ok": False, "error": "consent_required"}, status_code=400)
+    result = start_oauth(provider, account_sub=str(user["sub"]))
     if result.get("authorize_url"):
-        return RedirectResponse(result["authorize_url"])
-    return JSONResponse(result, status_code=400)
+        # Convert the consent POST to a provider authorization GET. A 307/308
+        # would replay the form body (including our CSRF token) cross-origin.
+        return RedirectResponse(result["authorize_url"], status_code=303)
+    logger.warning("mailbox OAuth start failed [%s]: %s", provider,
+                   result.get("error") or "oauth_unavailable")
+    return JSONResponse(
+        {"ok": False, "error": "connector_unavailable"}, status_code=400,
+    )
 
 
 @router.get("/app/connectors/callback/{provider}")
@@ -1291,16 +1576,26 @@ async def ui_connectors_oauth_callback(provider: str, code: str = "", state: str
     from fastapi.responses import RedirectResponse
     from common.oauth_email import finish_oauth
     if error or not code:
-        return RedirectResponse(f"/app/connectors?err={error or 'denied'}")
+        return RedirectResponse("/app/connectors?err=oauth_denied")
     result = finish_oauth(provider, code, state)
     if result.get("ok"):
         return RedirectResponse("/app/connectors?ok=1")
-    return RedirectResponse(f"/app/connectors?err={result.get('error', 'oauth_failed')}")
+    logger.warning("mailbox OAuth callback failed [%s]: %s", provider,
+                   result.get("error") or "oauth_failed")
+    return RedirectResponse("/app/connectors?err=oauth_failed")
 
 
 @router.get("/app/calls", response_class=HTMLResponse)
 async def ui_calls(request: Request):
+    from fastapi.responses import RedirectResponse
+    user, err = _require_role_json(request, "analyst")
+    if err:
+        # HTML route: send browsers to login instead of a bare JSON 401.
+        if getattr(err, "status_code", None) == 401:
+            return RedirectResponse("/app/login?next=/app/calls", status_code=303)
+        return err
     from common.call_events import list_screens
     return templates.TemplateResponse(
         request, "calls.html",
-        _ctx(request, active="calls", events=list_screens(80)))
+        _ctx(request, active="calls",
+             events=list_screens(80, account_sub=str(user["sub"]))))
