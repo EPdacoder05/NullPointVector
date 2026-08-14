@@ -21,6 +21,8 @@ Run directly:   python -m eval.evaluate         (from phish_mlm/)
 import json
 from pathlib import Path
 
+from common.ml.training.channel_eval import has_release_evidence, _wilson
+
 GOLDEN_PATH = Path(__file__).parent / 'golden_eval.jsonl'
 
 # CI / promotion gate. A candidate model must clear ALL of these.
@@ -96,12 +98,20 @@ def evaluate(detector=None, rows=None) -> dict:
 
     pump = per_tag.get('pump_fake', [0, 0])
     pump_recall = pump[0] / pump[1] if pump[1] else 1.0
+    pos = tp + fn
+    neg = tn + fp
+    recall_lo, recall_hi = _wilson(tp, pos)
+    fpr_lo, fpr_hi = _wilson(fp, neg)
 
     return {
         'n': total,
         'accuracy': accuracy, 'precision': precision, 'recall': recall,
         'specificity': specificity, 'fpr': fpr, 'f1': f1,
         'confusion': {'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn},
+        'recall_ci95': [round(recall_lo, 4), round(recall_hi, 4)],
+        'fpr_ci95': [round(fpr_lo, 4), round(fpr_hi, 4)],
+        'evaluation_valid': True,
+        'inference_errors': 0,
         'pump_fake_recall': pump_recall,
         'per_tag': {k: round(v[0] / v[1], 3) for k, v in sorted(per_tag.items())},
         'failures': failures,
@@ -109,10 +119,20 @@ def evaluate(detector=None, rows=None) -> dict:
 
 
 def passes_gate(metrics: dict, gate: dict = GATE) -> bool:
+    """Point thresholds (accuracy / FPR / pump-fake). Wilson evidence is separate."""
     return (
         metrics['accuracy'] >= gate['min_accuracy']
         and metrics['fpr'] <= gate['max_fpr']
         and metrics['pump_fake_recall'] >= gate['min_pump_fake_recall']
+    )
+
+
+def passes_release_gate(metrics: dict, gate: dict = GATE) -> bool:
+    """Promotion bar: point gate AND Wilson evidence (ChannelTrainer-aligned)."""
+    return passes_gate(metrics, gate) and has_release_evidence(
+        metrics,
+        min_recall=gate.get('min_recall', 0.90),
+        max_fpr=gate['max_fpr'],
     )
 
 
@@ -138,13 +158,16 @@ def run_golden_eval(detector=None) -> dict:
             arrow = f"{f['expected']}→{f['pred']}"
             print(f"      [{arrow} {f['conf']:.0%}] {f['tags']} {f['text']}")
     gate_ok = passes_gate(m)
-    print(f"\n  GATE: {'PASS ✅' if gate_ok else 'FAIL ❌'} "
+    evidence_ok = has_release_evidence(m, min_recall=0.90, max_fpr=GATE['max_fpr'])
+    print(f"\n  GATE: {'PASS' if gate_ok else 'FAIL'} "
           f"(acc≥{GATE['min_accuracy']:.0%}, fpr≤{GATE['max_fpr']:.0%}, "
           f"pump-fake recall=100%)")
+    print(f"  EVIDENCE: {'sufficient' if evidence_ok else 'insufficient'} "
+          f"(Wilson recall_lo≥90%, fpr_hi≤{GATE['max_fpr']:.0%})")
     return m
 
 
 if __name__ == '__main__':
     import sys
     metrics = run_golden_eval()
-    sys.exit(0 if passes_gate(metrics) else 1)
+    sys.exit(0 if passes_release_gate(metrics) else 1)

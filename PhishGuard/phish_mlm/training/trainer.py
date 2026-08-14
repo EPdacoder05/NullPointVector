@@ -20,6 +20,7 @@ can never silently degrade production — it must survive the gate first.
 """
 import hashlib
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -83,12 +84,16 @@ class Trainer:
 
         # Durable feedback (reservoir-capped so the set can't grow unbounded).
         fb = self.feedback.reservoir_sample(_MAX_FEEDBACK, seed=42)
+        from common.grading import trusted_feedback_label
         for row in fb:
+            label = trusted_feedback_label(row)
+            if label is None:
+                continue
             email = row.get("email", {})
             t = extract_email_text(email)
             if t:
                 texts.append(t)
-                labels.append(int(row.get("label", 0)))
+                labels.append(label)
                 metas.append(email)
 
         # Labeled threats from the vector DB (best-effort; skip if unreachable).
@@ -101,20 +106,21 @@ class Trainer:
 
     @staticmethod
     def _labeled_threats_from_db() -> List[Tuple[str, int, dict]]:
+        # Cross-tenant model development is a distinct, consented operator
+        # workflow. Never consume customer rows merely because the DB is there.
+        if os.getenv("ALLOW_FLEET_TRAINING", "").lower() not in ("1", "true"):
+            return []
         try:
             sys.path.insert(0, str(_PHISH_MLM_DIR.parent.parent))
             from Autobot.VectorDB.NullPoint_Vector import get_all_threats
-            rows = get_all_threats(limit=5_000) or []
+            rows = get_all_threats(limit=5_000, bypass=True) or []
         except Exception as e:
             logger.info(f"Trainer: DB labeled threats unavailable ({e}); skipping.")
             return []
         out = []
+        from common.grading import trusted_db_label
         for r in rows:
-            meta = r.get("metadata", {}) or {}
-            label = meta.get("label")
-            if label is None:
-                # threats stored without an explicit label are assumed phish
-                label = 1 if r.get("threat_type") else None
+            label = trusted_db_label(r)
             if label is None:
                 continue
             content = r.get("content") or r.get("preprocessed_text") or ""
@@ -183,13 +189,18 @@ class Trainer:
 
     @staticmethod
     def _decide(cand: Dict, champ: Dict, force: bool) -> Tuple[bool, str]:
+        from eval.evaluate import passes_release_gate
+        from common.ml.training.channel_eval import has_release_evidence
+        gate_ok = passes_release_gate(cand)
+        evidence = has_release_evidence(cand, max_fpr=0.10)
         return decide_promotion(
             cand, champ, force,
-            gate_ok=passes_gate(cand),
+            gate_ok=gate_ok,
             gate_fail_reason=(
                 f"candidate failed gate "
                 f"(acc={cand['accuracy']:.3f}, fpr={cand['fpr']:.3f}, "
-                f"pump={cand['pump_fake_recall']:.2f})"
+                f"pump={cand['pump_fake_recall']:.2f}, "
+                f"evidence={'sufficient' if evidence else 'insufficient'})"
             ),
             primary_key="pump_fake_recall",
             primary_eps=0.0,  # historical: any pump_fake drop is regression
