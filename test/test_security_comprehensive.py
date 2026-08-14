@@ -5,6 +5,7 @@ Tests all 32 attack patterns and security controls.
 """
 
 import pytest
+import re
 import sys
 import time
 from pathlib import Path
@@ -577,6 +578,228 @@ class TestSupplyChainValidator:
         # Verify the validator exists and has expected methods
         assert hasattr(validator, 'verify_hash')
         assert hasattr(validator, 'check_requirements_hash')
+
+
+class TestIOSReleaseBoundary:
+    """Static guardrails for the iOS Release credential and API boundary."""
+
+    def test_release_excludes_pilot_credentials_source(self):
+        project_config = (project_root / "ios" / "project.yml").read_text()
+        generated_project = (
+            project_root / "ios" / "NullPointGuard.xcodeproj" / "project.pbxproj"
+        ).read_text()
+
+        assert re.search(
+            r"Release:\s*\n\s+API_BASE_URL:\s+\"\"\s*\n"
+            r"\s+EXCLUDED_SOURCE_FILE_NAMES:\s+PilotSecrets\.swift",
+            project_config,
+        )
+        release_blocks = re.findall(
+            r"/\* Release \*/ = \{.*?\n\s*name = Release;\n\s*\};",
+            generated_project,
+            flags=re.DOTALL,
+        )
+        assert any(
+            'API_BASE_URL = "";' in block
+            and "EXCLUDED_SOURCE_FILE_NAMES = PilotSecrets.swift;" in block
+            for block in release_blocks
+        )
+
+    def test_pilot_credential_references_are_debug_only(self):
+        api_source = (
+            project_root / "ios" / "Sources" / "NullPointGuard" / "APIService.swift"
+        ).read_text()
+        app_source = (
+            project_root / "ios" / "Sources" / "NullPointGuard" / "App.swift"
+        ).read_text()
+
+        release_source = re.sub(
+            r"#if DEBUG.*?#endif",
+            "",
+            api_source,
+            flags=re.DOTALL,
+        )
+        release_app_source = re.sub(
+            r"#if DEBUG.*?#endif",
+            "",
+            app_source,
+            flags=re.DOTALL,
+        )
+        assert "PilotSecrets." not in release_source
+        assert "KeychainTokenStore.loadRefreshToken()" not in release_source
+        assert "KeychainTokenStore.loadToken()" not in release_app_source
+        assert ".pilotConnect(" not in app_source
+        assert "ensureAuthenticatedSession()" in app_source
+
+    def test_release_api_contract_is_https_and_fail_closed(self):
+        api_source = (
+            project_root / "ios" / "Sources" / "NullPointGuard" / "APIService.swift"
+        ).read_text()
+
+        assert "private(set) var baseURL: URL?" in api_source
+        assert "validatedBaseURL(base, allowLocalHTTP: false)" in api_source
+        assert 'guard scheme == "https", !local, !placeholder' in api_source
+        assert "throw APIError.configurationUnavailable" in api_source
+
+    def test_app_group_capability_survives_project_regeneration(self):
+        group = "group.com.nullpoint.guard"
+        project_config = (project_root / "ios" / "project.yml").read_text()
+        app_entitlements = (
+            project_root / "ios" / "Config" / "NullPointGuard.entitlements"
+        ).read_text()
+        directory_entitlements = (
+            project_root / "ios" / "Config" / "NullPointDirectory.entitlements"
+        ).read_text()
+        sms_entitlements = (
+            project_root / "ios" / "Config" / "NullPointSMSFilter.entitlements"
+        ).read_text()
+
+        assert project_config.count(group) >= 3
+        assert group in app_entitlements
+        assert group in directory_entitlements
+        assert group in sms_entitlements
+        assert "com.apple.security.application-groups" in app_entitlements
+        assert "com.apple.security.application-groups" in directory_entitlements
+        assert "com.apple.security.application-groups" in sms_entitlements
+
+
+class TestTenantEventIsolation:
+    def setup_method(self):
+        import common.call_events as call_events
+        with call_events._LOCK:
+            call_events._EVENTS.clear()
+
+    def test_call_events_are_tenant_scoped(self):
+        from common.call_events import (
+            get_screen,
+            list_screens,
+            mark_graded,
+            record_screen,
+        )
+
+        record_screen({"account_sub": "tenant-a", "caller_id": "+12025550101"})
+        record_screen({"account_sub": "tenant-b", "caller_id": "+12025550102"})
+
+        a_rows = list_screens(account_sub="tenant-a")
+        b_rows = list_screens(account_sub="tenant-b")
+        assert [row["caller_id"] for row in a_rows] == ["+12025550101"]
+        assert [row["caller_id"] for row in b_rows] == ["+12025550102"]
+        assert get_screen(a_rows[0]["id"], account_sub="tenant-b") is None
+        assert mark_graded(a_rows[0]["id"], "safe", account_sub="tenant-b") is False
+        assert mark_graded(a_rows[0]["id"], "safe", account_sub="tenant-a") is True
+
+    def test_tenantless_call_event_is_rejected(self):
+        from common.call_events import record_screen
+        from common.tenant_rls import TenantContextError
+
+        with pytest.raises(TenantContextError):
+            record_screen({"caller_id": "+12025550101"})
+
+
+class TestIdempotencyPayloadBinding:
+    def test_same_key_different_payload_is_rejected(self):
+        from common.idempotency import (
+            IdempotencyConflictError,
+            InMemoryIdempotencyStore,
+            idempotent,
+        )
+
+        store = InMemoryIdempotencyStore()
+        with idempotent(store, "tenant-route-key", request_hash="payload-a") as ctx:
+            ctx.result = {"ok": True}
+
+        with pytest.raises(IdempotencyConflictError):
+            with idempotent(
+                store, "tenant-route-key", request_hash="payload-b"
+            ):
+                pass
+
+    def test_same_key_same_payload_replays_result(self):
+        from common.idempotency import InMemoryIdempotencyStore, idempotent
+
+        store = InMemoryIdempotencyStore()
+        with idempotent(store, "tenant-route-key", request_hash="payload-a") as ctx:
+            ctx.result = {"id": 7}
+        with idempotent(store, "tenant-route-key", request_hash="payload-a") as ctx:
+            assert ctx.already_completed is True
+            assert ctx.stored_result == {"id": 7}
+
+
+class TestRateLimitIdentityAndBounds:
+    def test_bearer_identity_hashes_entire_token(self):
+        from starlette.requests import Request
+        from common.rate_limit import client_key
+
+        prefix = "same-jwt-prefix-for-both-tokens."
+        first = Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"authorization", f"Bearer {prefix}a".encode())],
+            "client": ("127.0.0.1", 1234),
+        })
+        second = Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"authorization", f"Bearer {prefix}b".encode())],
+            "client": ("127.0.0.1", 1234),
+        })
+
+        assert client_key(first) != client_key(second)
+        assert prefix not in client_key(first)
+
+    def test_untrusted_forwarded_ip_is_ignored(self):
+        from starlette.requests import Request
+        from common.rate_limit import client_key
+
+        request = Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"203.0.113.50")],
+            "client": ("127.0.0.9", 1234),
+        })
+        assert client_key(request) == "ip:127.0.0.9"
+
+    def test_in_memory_bucket_count_is_bounded(self):
+        from common.rate_limit import TokenBucketRateLimiter
+
+        limiter = TokenBucketRateLimiter(max_buckets=2)
+        for key in ("one", "two", "three"):
+            limiter.check(key)
+        assert len(limiter._buckets) == 2
+        assert "one" not in limiter._buckets
+
+
+class TestAnomalyActionBoundary:
+    def test_unsupervised_extreme_never_quarantines_by_itself(self):
+        from PhishGuard.phish_mlm.risk import Action, assess
+        from common.ml.anomaly import AnomalyLevel, AnomalyResult
+
+        class SafeDetector:
+            @staticmethod
+            def predict(_record):
+                return 0, 0.5
+
+        class ExtremeNovelty:
+            @staticmethod
+            def score(_record):
+                return AnomalyResult(
+                    novelty=1.0,
+                    score=-1.0,
+                    level=AnomalyLevel.EXTREME,
+                    is_anomalous=True,
+                    explanation="synthetic novelty",
+                )
+
+        result = assess(
+            {"body": "synthetic fixture", "from": ""},
+            detector=SafeDetector(),
+            anomaly_detector=ExtremeNovelty(),
+        )
+        assert result.action == Action.TRIAGE_NOVEL
+        assert result.is_threat is False
 
 
 if __name__ == "__main__":

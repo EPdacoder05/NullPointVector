@@ -19,6 +19,26 @@ from typing import Optional
 logger = logging.getLogger("tenant_rls")
 
 _RLS_ROLE = "nullpoint_rls"
+_RESERVED_TENANTS = frozenset({"anon", "anonymous", "public", "*"})
+
+
+class TenantContextError(ValueError):
+    """Raised when a tenant-bound operation has no trustworthy tenant id."""
+
+
+def require_account_sub(account_sub: Optional[str]) -> str:
+    """Return a canonical tenant id or fail closed.
+
+    Placeholder tenants made unrelated unauthenticated users share a namespace.
+    They are intentionally rejected; internal fleet/admin work must use the
+    explicit ``bypass=True`` path instead of inventing a pseudo-user.
+    """
+    sub = (account_sub or "").strip()
+    if not sub or sub.lower() in _RESERVED_TENANTS:
+        raise TenantContextError("authenticated tenant is required")
+    if len(sub) > 200 or "\x00" in sub:
+        raise TenantContextError("invalid tenant identifier")
+    return sub
 
 # Per-table policy bodies (applied only when the relation exists).
 _TABLE_POLICIES: tuple[tuple[str, str, str], ...] = (
@@ -37,6 +57,21 @@ _TABLE_POLICIES: tuple[tuple[str, str, str], ...] = (
         "accounts_tenant",
         "email = current_setting('app.account_sub', true)",
     ),
+    (
+        "messages",
+        "messages_tenant",
+        "account_sub = current_setting('app.account_sub', true)",
+    ),
+    (
+        "provider_action_queue",
+        "provider_actions_tenant",
+        "account_sub = current_setting('app.account_sub', true)",
+    ),
+    (
+        "safe_senders",
+        "safe_senders_tenant",
+        "account_sub = current_setting('app.account_sub', true)",
+    ),
 )
 
 # Exported for unit tests (shape check): describes the tables and GUCs protected by RLS.
@@ -52,6 +87,18 @@ def _table_exists(cur, name: str) -> bool:
         "SELECT 1 FROM information_schema.tables "
         "WHERE table_schema = 'public' AND table_name = %s",
         (name,),
+    )
+    return cur.fetchone() is not None
+
+
+def _tenant_column_ready(cur, table: str, tenant_pred: str) -> bool:
+    """Skip FORCE policies until the tenant column exists (legacy DBs)."""
+    # Predicates are either "account_sub = ..." or "email = ...".
+    col = "email" if tenant_pred.strip().startswith("email ") else "account_sub"
+    cur.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = %s AND column_name = %s",
+        (table, col),
     )
     return cur.fetchone() is not None
 
@@ -102,6 +149,12 @@ def ensure_rls(conn) -> None:
             for table, policy, tenant_pred in _TABLE_POLICIES:
                 if not _table_exists(cur, table):
                     continue
+                if not _tenant_column_ready(cur, table, tenant_pred):
+                    logger.warning(
+                        "ensure_rls: skip %s — tenant column missing (run schema migrate)",
+                        table,
+                    )
+                    continue
                 # Fresh grants if table was created after role bootstrap.
                 cur.execute(
                     f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO {_RLS_ROLE}"
@@ -147,7 +200,7 @@ def set_tenant(conn, account_sub: Optional[str] = None, *, bypass: bool = False)
     """Bind this transaction to a tenant (or bypass for ingest/admin)."""
     if not conn:
         return
-    sub = (account_sub or "").strip()
+    sub = "" if bypass else require_account_sub(account_sub)
     with conn.cursor() as cur:
         # Drop to NOSUPERUSER for this txn so FORCE RLS applies.
         cur.execute(f"SET LOCAL ROLE {_RLS_ROLE}")

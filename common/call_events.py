@@ -20,13 +20,17 @@ import uuid
 from collections import deque
 from typing import Any, Optional
 
+from common.tenant_rls import require_account_sub
+
 _LOCK = threading.Lock()
 _EVENTS: deque[dict[str, Any]] = deque(maxlen=200)
 
 
 def record_screen(event: dict[str, Any]) -> None:
+    account_sub = require_account_sub(event.get("account_sub"))
     row = {
         "id": uuid.uuid4().hex[:12],
+        "account_sub": account_sub,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "caller_id": event.get("caller_id") or "",
         "action": event.get("action") or "",
@@ -43,23 +47,36 @@ def record_screen(event: dict[str, Any]) -> None:
         _EVENTS.appendleft(row)
 
 
-def list_screens(limit: int = 50) -> list[dict[str, Any]]:
+def list_screens(limit: int = 50, *, account_sub: str | None = None,
+                 bypass: bool = False) -> list[dict[str, Any]]:
+    tenant = "" if bypass else require_account_sub(account_sub)
     with _LOCK:
-        return list(_EVENTS)[:limit]
+        rows = list(_EVENTS) if bypass else [
+            row for row in _EVENTS if row.get("account_sub") == tenant
+        ]
+        return [dict(row) for row in rows[:limit]]
 
 
-def get_screen(event_id: str) -> Optional[dict[str, Any]]:
+def get_screen(event_id: str, *, account_sub: str | None = None,
+               bypass: bool = False) -> Optional[dict[str, Any]]:
+    tenant = "" if bypass else require_account_sub(account_sub)
     with _LOCK:
         for row in _EVENTS:
-            if row.get("id") == event_id:
+            if row.get("id") == event_id and (
+                bypass or row.get("account_sub") == tenant
+            ):
                 return dict(row)
     return None
 
 
-def mark_graded(event_id: str, verdict: str) -> bool:
+def mark_graded(event_id: str, verdict: str, *, account_sub: str | None = None,
+                bypass: bool = False) -> bool:
+    tenant = "" if bypass else require_account_sub(account_sub)
     with _LOCK:
         for row in _EVENTS:
-            if row.get("id") == event_id:
+            if row.get("id") == event_id and (
+                bypass or row.get("account_sub") == tenant
+            ):
                 row["graded"] = verdict
                 return True
     return False
