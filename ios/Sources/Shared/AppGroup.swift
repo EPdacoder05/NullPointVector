@@ -3,17 +3,26 @@ import Foundation
 enum AppGroup {
     static let id = "group.com.nullpoint.guard"
 
-    /// Writable shared container. On Mac (Designed for iPhone) the App Group
-    /// path exists but is not writable — never use it there.
+    /// Writable shared container. Release builds and extensions fail closed
+    /// when the signed App Group capability is missing or unavailable.
     static var containerURL: URL? {
-        if ProcessInfo.processInfo.isiOSAppOnMac {
-            return localSupportURL()
-        }
         if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id),
            isWritableDirectory(group) {
             return group
         }
-        return localSupportURL()
+
+#if DEBUG
+        // Keep local app development usable without disguising a broken
+        // extension configuration: each extension must use the App Group.
+        if !isAppExtension {
+            return localSupportURL()
+        }
+#endif
+        return nil
+    }
+
+    private static var isAppExtension: Bool {
+        Bundle.main.bundleURL.pathExtension == "appex"
     }
 
     private static func localSupportURL() -> URL {

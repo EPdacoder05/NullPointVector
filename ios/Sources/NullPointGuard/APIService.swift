@@ -4,19 +4,25 @@ import Foundation
 final class APIService {
     static let shared = APIService()
 
-    /// Default API host (overridden at app startup via PilotSecrets/Info.plist).
-    var baseURL = URL(string: "http://127.0.0.1:8088")!
+    /// Release starts unconfigured and accepts one HTTPS URL from Info.plist.
+    /// Debug retains an explicit localhost default for local pilot work.
+    private(set) var baseURL: URL?
 
     var accessToken: String? = nil
     var refreshToken: String? = nil
 
-    init() {}
+    init() {
+#if DEBUG
+        baseURL = URL(string: "http://127.0.0.1:8088")
+#endif
+    }
 
     static var isRunningOnMac: Bool {
         ProcessInfo.processInfo.isiOSAppOnMac
     }
 
-    /// Prefer localhost on Mac; on phone try Funnel host (works with or without Tailscale app).
+#if DEBUG
+    /// Debug-only pilot host selection. Release is configured from Info.plist.
     static func preferredBaseURLString() -> String {
         if isRunningOnMac {
             return "http://127.0.0.1:8088"
@@ -36,34 +42,76 @@ final class APIService {
 
     @discardableResult
     func setBaseURL(_ urlString: String) -> Bool {
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), let host = url.host else {
-            return false
-        }
-        let local = host == "localhost" || host == "127.0.0.1"
-        if scheme == "https" || (scheme == "http" && local) {
-            self.baseURL = url
-            return true
-        }
-        return false
+        guard let url = Self.validatedBaseURL(urlString, allowLocalHTTP: true) else { return false }
+        baseURL = url
+        return true
     }
+#endif
 
     func setAccessToken(_ token: String?) { accessToken = token }
     func setRefreshToken(_ token: String?) { refreshToken = token }
 
-    func loadFromInfoPlist() {
-        let info = Bundle.main.infoDictionary
-        if let base = info?["API_BASE_URL"] as? String,
-           !base.isEmpty,
-           !base.hasPrefix("$(") {
-            _ = setBaseURL(base)
+    @discardableResult
+    func loadFromInfoPlist() -> Bool {
+#if !DEBUG
+        // A Release process cannot switch API origins after launch.
+        if baseURL != nil { return true }
+#endif
+        guard let base = Bundle.main.infoDictionary?["API_BASE_URL"] as? String,
+              !base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !base.hasPrefix("$(") else {
+            return false
         }
+
+#if DEBUG
+        return setBaseURL(base)
+#else
+        guard let url = Self.validatedBaseURL(base, allowLocalHTTP: false) else { return false }
+        baseURL = url
+        return true
+#endif
     }
 
-    private func endpoint(_ path: String) -> URL {
+    private static func validatedBaseURL(_ urlString: String, allowLocalHTTP: Bool) -> URL? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.isEmpty || url.path == "/" else {
+            return nil
+        }
+
+        let local = host == "localhost"
+            || host == "127.0.0.1"
+            || host == "0.0.0.0"
+            || host == "::1"
+            || host == "::"
+        if allowLocalHTTP && local && scheme == "http" {
+            return url
+        }
+
+        let placeholder = host == "example.com"
+            || host.hasSuffix(".example.com")
+            || host.hasSuffix(".example")
+            || host.hasSuffix(".invalid")
+            || host.hasSuffix(".localhost")
+            || host.hasSuffix(".test")
+        guard scheme == "https", !local, !placeholder else { return nil }
+        return url
+    }
+
+    private func endpoint(_ path: String) throws -> URL {
+        guard let baseURL else { throw APIError.configurationUnavailable }
         let clean = path.hasPrefix("/") ? path : "/" + path
-        return URL(string: clean, relativeTo: baseURL)!.absoluteURL
+        guard let url = URL(string: clean, relativeTo: baseURL)?.absoluteURL else {
+            throw APIError.configurationUnavailable
+        }
+        return url
     }
 
     struct TokenResponse: Decodable {
@@ -73,22 +121,39 @@ final class APIService {
     }
 
     enum APIError: LocalizedError {
-        case httpStatus(Int, String)
+        case configurationUnavailable
+        case authenticationRequired
+        case httpStatus(Int)
         case message(String)
 
         var errorDescription: String? {
             switch self {
-            case .httpStatus(let code, let body):
-                return "HTTP \(code) \(body.prefix(120))"
+            case .configurationUnavailable:
+                return "The service is not configured for this build."
+            case .authenticationRequired:
+                return "Account sign-in is required before protection can sync."
+            case .httpStatus(let code):
+                switch code {
+                case 401:
+                    return "Your session expired. Sign in again."
+                case 403:
+                    return "This account does not have access to that request."
+                case 429:
+                    return "Too many requests. Try again shortly."
+                case 500...599:
+                    return "The service is temporarily unavailable. Try again later."
+                default:
+                    return "The request failed (HTTP \(code))."
+                }
             case .message(let m):
                 return m
             }
         }
     }
 
-    /// Pilot: username/password from PilotSecrets — no UI typing.
+    /// Exchanges explicit user-provided credentials for a token.
     func login(username: String, password: String) async throws {
-        var req = URLRequest(url: endpoint("/api/v1/token"))
+        var req = URLRequest(url: try endpoint("/api/v1/token"))
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         var allowed = CharacterSet.urlQueryAllowed
@@ -101,19 +166,19 @@ final class APIService {
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw APIError.message("No HTTP response") }
         guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw APIError.httpStatus(http.statusCode, body)
+            throw APIError.httpStatus(http.statusCode)
         }
         let tok = try JSONDecoder().decode(TokenResponse.self, from: data)
         applySession(access: tok.access_token, refresh: tok.refresh_token)
     }
 
-    /// Auto-connect — requires PilotSecrets (or env-backed) credentials. No baked password.
+#if DEBUG
+    /// Debug-only auto-connect for local pilot builds.
     func pilotConnect() async throws {
         let user = PilotSecrets.username.trimmingCharacters(in: .whitespacesAndNewlines)
         let pass = PilotSecrets.password.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !user.isEmpty, !pass.isEmpty else {
-            throw APIError.message("PilotSecrets username/password not set")
+            throw APIError.message("Pilot access is not configured.")
         }
 
         var lastError: Error?
@@ -130,15 +195,31 @@ final class APIService {
             applySession(access: token, refresh: nil)
             return
         }
-        throw lastError ?? APIError.message("Could not reach API as \(user)")
+        throw lastError ?? APIError.message("Could not connect to the service.")
+    }
+#endif
+
+    func ensureAuthenticatedSession() async throws {
+        guard baseURL != nil else { throw APIError.configurationUnavailable }
+        if accessToken?.isEmpty == false { return }
+#if DEBUG
+        try await pilotConnect()
+#else
+        throw APIError.authenticationRequired
+#endif
     }
 
     @discardableResult
     func refreshAccessTokenIfNeeded() async throws -> Bool {
-        guard let refresh = refreshToken ?? KeychainTokenStore.loadRefreshToken(), !refresh.isEmpty else {
+#if DEBUG
+        let storedRefresh = KeychainTokenStore.loadRefreshToken()
+#else
+        let storedRefresh: String? = nil
+#endif
+        guard let refresh = refreshToken ?? storedRefresh, !refresh.isEmpty else {
             return false
         }
-        var req = URLRequest(url: endpoint("/api/v1/token/refresh"))
+        var req = URLRequest(url: try endpoint("/api/v1/token/refresh"))
         req.httpMethod = "POST"
         req.setValue(refresh, forHTTPHeaderField: "X-Refresh-Token")
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -236,8 +317,8 @@ final class APIService {
         method: String,
         jsonBody: Data?
     ) async throws -> Out {
-        func makeRequest(token: String?) -> URLRequest {
-            var req = URLRequest(url: endpoint(path))
+        func makeRequest(token: String?) throws -> URLRequest {
+            var req = URLRequest(url: try endpoint(path))
             req.httpMethod = method
             req.timeoutInterval = 30
             if let token, !token.isEmpty {
@@ -250,20 +331,24 @@ final class APIService {
             return req
         }
 
-        var req = makeRequest(token: accessToken)
+        var req = try makeRequest(token: accessToken)
         var (data, resp) = try await URLSession.shared.data(for: req)
         if let http = resp as? HTTPURLResponse, http.statusCode == 401 {
-            // Re-login via pilot secrets if refresh fails
+            // Debug may reconnect the pilot; Release fails authentication closed.
             if !(try await refreshAccessTokenIfNeeded()) {
+#if DEBUG
                 try await pilotConnect()
+#else
+                signOut()
+                throw APIError.authenticationRequired
+#endif
             }
-            req = makeRequest(token: accessToken)
+            req = try makeRequest(token: accessToken)
             (data, resp) = try await URLSession.shared.data(for: req)
         }
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw APIError.httpStatus(code, body)
+            throw APIError.httpStatus(code)
         }
         return try JSONDecoder().decode(Out.self, from: data)
     }

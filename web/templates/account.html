@@ -20,15 +20,19 @@
     <p><span class="kbd">Subject</span> {{ user.sub }}</p>
     <p><span class="kbd">Role</span> {{ user.role }}</p>
     <p class="hint"><a href="/app/privacy">Privacy</a> · <a href="/app/terms">Terms</a></p>
-    <a class="btn secondary" href="/app/logout">Sign out</a>
+    <form method="post" action="/app/logout">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button type="submit" class="btn secondary">Sign out</button>
+    </form>
   </div>
 </section>
 
 <section class="card">
   <div class="hd"><h2>Delete account</h2></div>
   <div class="bd stack">
-    <p class="hint">Removes your saved mailboxes, personal threat reports, and provider requests. Signs you out. Does not undo fleet promotions already shared with other users.</p>
+    <p class="hint">Pilot only. Production deletion remains disabled until database deletion, queued data cleanup, and token revocation are one retryable operation.</p>
     <form id="delete-account-form" method="post" action="/app/account/delete">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label class="check-row">
         <input type="checkbox" name="confirm" id="delete-confirm" value="1" required>
         <span>I understand this cannot be undone</span>

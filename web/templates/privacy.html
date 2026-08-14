@@ -15,14 +15,14 @@
     <h2 style="font-size:15px;margin:18px 0 6px">What I collect and why</h2>
     <p><strong>Your account:</strong> email address and password (hashed — I can never see your actual password) so you can log in.</p>
     <p><strong>Mailbox credentials:</strong> if you connect Gmail, Yahoo, or Outlook, I store your app password or OAuth token, encrypted. I need it to read your incoming mail and check it for threats. I never read mail unless you've connected a mailbox.</p>
-    <p><strong>Message content:</strong> subject lines, sender addresses, and body text from mail you've connected. I use this to score threats. I do not forward your emails anywhere. Raw message content may be deleted after 90 days.</p>
-    <p><strong>Your grades and reports:</strong> when you mark something safe or block it, I remember that. It helps the system get smarter for you and for everyone else over time.</p>
-    <p><strong>Phone numbers:</strong> if you add numbers to your Call Directory, I store those to sync your block/label list to your phone. I do not access your call history or listen to calls.</p>
-    <p><strong>Billing:</strong> if you subscribe, Stripe handles your card. I never see your card number.</p>
+    <p><strong>Message content:</strong> subject lines, sender addresses, and body text from mail you've connected. I use this to score threats. Automated 90-day deletion is not implemented in this pilot, so connected content remains until the retention job or account deletion workflow is completed.</p>
+    <p><strong>Your grades and reports:</strong> when you mark something safe or report it, the decision is stored in your account namespace. Automatic fleet-wide promotion is disabled in production.</p>
+    <p><strong>Phone intelligence:</strong> the current iOS directory synchronizes service and vendor number intelligence. Personal phone-number enrollment is not implemented, and NullPoint does not receive carrier-call audio or your native call history.</p>
+    <p><strong>Billing:</strong> production billing is disabled. If enabled after its release gate, Stripe will handle card data; NullPoint will not store card numbers.</p>
 
     <h2 style="font-size:15px;margin:18px 0 6px">What I don't do</h2>
     <p>I don't sell your data. Ever.</p>
-    <p>I don't share your inbox with other users. Threat patterns (like "this scam campaign uses these numbers") are shared anonymously — not your emails.</p>
+    <p>I don't share your inbox with other users. Cross-account model training and automatic fleet promotion are disabled for this pilot.</p>
     <p>I don't use your data to train models for other companies.</p>
     <p>I don't track you across other websites.</p>
 
@@ -30,13 +30,13 @@
     <p>When you run a phone or email lookup in the Identity tab, I send that identifier to a vendor (like IPQS or Have I Been Pwned) to check for known scams or data breaches. I only do this when you ask. Those vendors have their own privacy policies.</p>
 
     <h2 style="font-size:15px;margin:18px 0 6px">How long I keep your data</h2>
-    <p>Raw email content: up to 90 days, then purged.</p>
-    <p>Your grades and block decisions: kept to improve detection.</p>
+    <p>Raw email content: retained during the pilot until an automated retention job is deployed; this is an App Store/public-pilot blocker.</p>
+    <p>Your grades and block decisions: retained in your account namespace.</p>
     <p>Your account info: until you delete your account.</p>
     <p>Billing records: as long as legally required.</p>
 
     <h2 style="font-size:15px;margin:18px 0 6px">Your rights</h2>
-    <p>You can delete your account at any time from <a href="/app/account">Account → Delete account</a>. This removes your login, connected mailboxes, and personal data. Under GDPR and CCPA you can also ask to see, correct, or export what I hold.</p>
+    <p>Self-service deletion is disabled on production until deletion, token revocation, and cross-store cleanup run as one retryable workflow. This pilot must not be opened publicly before that gate is complete. Access, correction, and export are also manual pilot processes rather than finished self-service features.</p>
 
     <h2 style="font-size:15px;margin:18px 0 6px">Kids</h2>
     <p>NullPoint is not for children under 13. If you believe a child has signed up, contact me and I'll remove the account.</p>

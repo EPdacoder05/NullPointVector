@@ -36,6 +36,7 @@
       {# Same paste path for phishing / smishing / vishing #}
       <div id="panel-paste" class="panel-manual">
         <form id="analyze-form" class="stack" action="/app/analyze" method="post">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <input type="hidden" name="channel" value="{{ active }}">
           {% if active == 'smishing' %}
           <div class="fld">
@@ -66,6 +67,7 @@
       {# Hybrid CallKit path — reputation on number + optional transcript #}
       <div id="panel-screen" class="panel-live" hidden>
         <form id="screen-form" class="stack" action="/app/screen" method="post">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <div class="fld">
             <label for="caller_id">Caller ID</label>
             <input id="caller_id" name="caller_id" type="text" class="input" placeholder="+1 800 555 0199" required autocomplete="off">

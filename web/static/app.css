@@ -808,6 +808,9 @@ a.kpi-link:hover { border-color: var(--brass); }
 .acct-meta { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .08em; }
 .acct-meta a { color: var(--brass); text-decoration: none; }
 .acct-meta a:hover { text-decoration: underline; }
+.inline-logout { display: inline; }
+.logout-link { padding: 0; border: 0; background: none; color: var(--brass); cursor: pointer; font: inherit; text-transform: inherit; letter-spacing: inherit; }
+.logout-link:hover { text-decoration: underline; }
 .tz-picker {
   display: flex; align-items: center; gap: 8px; margin: 10px 0 8px;
   color: var(--faint); font-size: 11px;

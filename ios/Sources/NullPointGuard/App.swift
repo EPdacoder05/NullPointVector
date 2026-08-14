@@ -22,17 +22,22 @@ private enum GuardPrefs {
 @main
 struct NullPointGuardApp: App {
     init() {
-        _ = KeychainTokenStore.deleteBaseURL()
+#if DEBUG
         _ = APIService.shared.setBaseURL(APIService.preferredBaseURLString())
         if !APIService.isRunningOnMac {
-            APIService.shared.loadFromInfoPlist()
+            _ = APIService.shared.loadFromInfoPlist()
         }
+#else
+        _ = APIService.shared.loadFromInfoPlist()
+#endif
+#if DEBUG
         if let token = KeychainTokenStore.loadToken(), !token.isEmpty {
             APIService.shared.setAccessToken(token)
         }
         if let refresh = KeychainTokenStore.loadRefreshToken(), !refresh.isEmpty {
             APIService.shared.setRefreshToken(refresh)
         }
+#endif
     }
 
     var body: some Scene {
@@ -45,7 +50,8 @@ struct NullPointGuardApp: App {
 
 struct ContentView: View {
     @AppStorage(GuardPrefs.autoModeKey) private var autoMode = true
-    @State private var protected = false
+    @State private var callDirectoryStatus: CXCallDirectoryManager.EnabledStatus = .unknown
+    @State private var lastDirectoryReloadSucceeded = false
     @State private var busy = false
     @State private var scanning = false
     @State private var checking = false
@@ -94,6 +100,7 @@ struct ContentView: View {
                 }
             }
             .task {
+                await refreshCallDirectoryStatus()
                 if autoMode {
                     await scanThreats()
                 }
@@ -115,7 +122,7 @@ struct ContentView: View {
             .alert("Auto-mode", isPresented: $showAutoInfo) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("When on, Guard keeps Call Directory + SMS filter lists fresh (sync + reload). Apple still only blocks from that list before the ring — it does not stream live calls into the app.")
+                Text("While Guard is open, auto-mode periodically syncs and reloads the Call Directory list. iOS applies that exact-number list before the ring. Guard does not stream carrier calls or guarantee background refresh.")
             }
         }
     }
@@ -131,11 +138,11 @@ struct ContentView: View {
                 .foregroundStyle(NP.text)
             HStack(spacing: 8) {
                 Circle()
-                    .fill(protected ? NP.signal : NP.danger)
+                    .fill(callDirectoryStatusColor)
                     .frame(width: 8, height: 8)
-                Text(protected ? "Protected" : "Offline")
+                Text(callDirectoryStatusText)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(protected ? NP.signal : NP.danger)
+                    .foregroundStyle(callDirectoryStatusColor)
                 Text("·")
                     .foregroundStyle(NP.muted)
                 Text(scanSummary)
@@ -170,7 +177,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("About auto-mode")
                 }
-                Text("Keeps blocklists synced in the background.")
+                Text("Periodically syncs while Guard is open.")
                     .font(.caption)
                     .foregroundStyle(NP.muted)
             }
@@ -201,7 +208,7 @@ struct ContentView: View {
             .foregroundStyle(NP.ink)
         }
         .disabled(scanning || busy)
-        .accessibilityHint("Sync Call Directory and Message Filter lists from NullPoint")
+        .accessibilityHint("Sync and reload the NullPoint Call Directory list")
     }
 
     private var activeRecon: some View {
@@ -349,9 +356,9 @@ struct ContentView: View {
             }
             if showSetup {
                 Text("""
-                Settings → Phone → Call Blocking → enable Directory.
-                Messages → Unknown & Spam → enable SMS Filter.
-                Force-quit Phone + Messages after toggling.
+                In Settings, enable NullPoint Directory under Phone → Call Blocking & Identification.
+                Enable NullPoint SMS Filter under Messages → Unknown & Spam.
+                Return to Guard and scan after enabling Call Directory.
                 """)
                 .font(.caption)
                 .foregroundStyle(NP.muted)
@@ -365,6 +372,28 @@ struct ContentView: View {
             .font(.system(size: 11, weight: .bold, design: .rounded))
             .tracking(1.1)
             .foregroundStyle(NP.brass)
+    }
+
+    private var callDirectoryStatusText: String {
+        switch callDirectoryStatus {
+        case .enabled where lastDirectoryReloadSucceeded:
+            return "Call directory synced"
+        case .enabled:
+            return "Call directory enabled"
+        case .disabled:
+            return "Call blocking off"
+        case .unknown:
+            return "Call status unavailable"
+        @unknown default:
+            return "Call status unavailable"
+        }
+    }
+
+    private var callDirectoryStatusColor: Color {
+        if callDirectoryStatus == .enabled && lastDirectoryReloadSucceeded {
+            return NP.signal
+        }
+        return callDirectoryStatus == .disabled ? NP.danger : NP.brass
     }
 
     private func startAutoTimerIfNeeded() {
@@ -385,21 +414,23 @@ struct ContentView: View {
         }
         lastError = nil
         do {
-            try await APIService.shared.pilotConnect()
+            try await APIService.shared.ensureAuthenticatedSession()
             let file = try await APIService.shared.fetchDirectory()
             try BlocklistFile.save(file)
-            await reloadCallDirectory()
+            try await reloadCallDirectory()
+            lastDirectoryReloadSucceeded = true
+            await refreshCallDirectoryStatus()
             blocks = file.block
             labelEntries = file.label
             blockCount = file.block.count
             labelCount = file.label.count
-            protected = true
             if let fetched = try? await APIService.shared.fetchScreens(limit: 40) {
                 events = fetched
             }
             scanSummary = "\(blockCount) blocks · \(labelCount) labels"
         } catch {
-            protected = false
+            lastDirectoryReloadSucceeded = false
+            await refreshCallDirectoryStatus()
             lastError = error.localizedDescription
             scanSummary = "Scan failed"
         }
@@ -412,9 +443,7 @@ struct ContentView: View {
         defer { checking = false }
         checkResult = nil
         do {
-            if !protected {
-                try await APIService.shared.pilotConnect()
-            }
+            try await APIService.shared.ensureAuthenticatedSession()
             let result = try await APIService.shared.screenCall(
                 callerId: raw,
                 transcript: nil,
@@ -428,12 +457,26 @@ struct ContentView: View {
         }
     }
 
-    private func reloadCallDirectory() async {
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+    private func reloadCallDirectory() async throws {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             CXCallDirectoryManager.sharedInstance.reloadExtension(
                 withIdentifier: "com.nullpoint.guard.directory"
-            ) { _ in
-                cont.resume()
+            ) { error in
+                if let error {
+                    cont.resume(throwing: error)
+                } else {
+                    cont.resume()
+                }
+            }
+        }
+    }
+
+    private func refreshCallDirectoryStatus() async {
+        callDirectoryStatus = await withCheckedContinuation { continuation in
+            CXCallDirectoryManager.sharedInstance.getEnabledStatusForExtension(
+                withIdentifier: "com.nullpoint.guard.directory"
+            ) { status, error in
+                continuation.resume(returning: error == nil ? status : .unknown)
             }
         }
     }
