@@ -38,6 +38,7 @@ class IdempotencyRecord:
     created_at: float = field(default_factory=time.monotonic)
     result: Optional[Any] = None
     key_hash: str = ""
+    request_hash: str = ""
 
     def __post_init__(self):
         if not self.key_hash:
@@ -50,6 +51,10 @@ class IdempotencyRecord:
 
 class DuplicateRequestError(Exception):
     """Raised when a same-key request is still PROCESSING → caller returns 409."""
+
+
+class IdempotencyConflictError(Exception):
+    """The caller reused a key for a different operation payload."""
 
 
 class InMemoryIdempotencyStore:
@@ -69,15 +74,21 @@ class InMemoryIdempotencyStore:
                 return None
             return rec
 
-    def cas(self, key: str) -> IdempotencyRecord:
+    def cas(self, key: str, request_hash: str = "") -> IdempotencyRecord:
         """Atomically create a PROCESSING record; raise if one already exists."""
         with self._lock:
             rec = self._store.get(key)
             if rec and not self._expired(rec):
+                if rec.request_hash != request_hash:
+                    raise IdempotencyConflictError(rec.key_hash)
                 if rec.is_terminal:
                     return rec               # replay terminal result
                 raise DuplicateRequestError(rec.key_hash)
-            new = IdempotencyRecord(key=key, state=IdempotencyState.PROCESSING)
+            new = IdempotencyRecord(
+                key=key,
+                state=IdempotencyState.PROCESSING,
+                request_hash=request_hash,
+            )
             self._store[key] = new
             return new
 
@@ -110,7 +121,8 @@ class _Ctx:
 
 
 @contextmanager
-def idempotent(store: InMemoryIdempotencyStore, key: str) -> Generator[_Ctx, None, None]:
+def idempotent(store: InMemoryIdempotencyStore, key: str,
+               request_hash: str = "") -> Generator[_Ctx, None, None]:
     """
     Usage:
         with idempotent(store, key) as ctx:
@@ -120,7 +132,7 @@ def idempotent(store: InMemoryIdempotencyStore, key: str) -> Generator[_Ctx, Non
         return ctx.result
     """
     validate_key(key)
-    rec = store.cas(key)
+    rec = store.cas(key, request_hash=request_hash)
     if rec.is_terminal:
         yield _Ctx(already_completed=True, stored_result=rec.result)
         return
@@ -161,19 +173,32 @@ class RedisIdempotencyStore:
         return IdempotencyRecord(
             key=key, state=IdempotencyState(data["state"]),
             result=data.get("result"), key_hash=data.get("key_hash", ""),
+            request_hash=data.get("request_hash", ""),
         )
 
-    def cas(self, key: str) -> IdempotencyRecord:
+    def cas(self, key: str, request_hash: str = "") -> IdempotencyRecord:
         rk = self._rk(key)
         existing = self.get(key)
         if existing:
+            if existing.request_hash != request_hash:
+                raise IdempotencyConflictError(existing.key_hash or key[:16])
             if existing.is_terminal:
                 return existing
             raise DuplicateRequestError(existing.key_hash or key[:16])
-        rec = IdempotencyRecord(key=key, state=IdempotencyState.PROCESSING)
-        payload = self._json.dumps({"state": rec.state.value, "key_hash": rec.key_hash})
+        rec = IdempotencyRecord(
+            key=key,
+            state=IdempotencyState.PROCESSING,
+            request_hash=request_hash,
+        )
+        payload = self._json.dumps({
+            "state": rec.state.value,
+            "key_hash": rec.key_hash,
+            "request_hash": request_hash,
+        })
         if not self._r.set(rk, payload, nx=True, ex=self.ttl):
             existing = self.get(key)
+            if existing and existing.request_hash != request_hash:
+                raise IdempotencyConflictError(existing.key_hash or key[:16])
             if existing and existing.is_terminal:
                 return existing
             raise DuplicateRequestError(key[:16])
@@ -187,6 +212,7 @@ class RedisIdempotencyStore:
                 "state": IdempotencyState.COMPLETED.value,
                 "result": _serialize_result(result),
                 "key_hash": rec.key_hash,
+                "request_hash": rec.request_hash,
             })
             self._r.set(rk, payload, ex=self.ttl)
 

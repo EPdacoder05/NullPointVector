@@ -268,6 +268,29 @@ def refresh_gmail_access(refresh_token: str) -> str:
         return ""
 
 
+def refresh_microsoft_access(refresh_token: str) -> str:
+    """Return a fresh Microsoft IMAP access token, or empty string."""
+    if not (refresh_token or "").strip():
+        return ""
+    try:
+        tenant = os.getenv("MICROSOFT_OAUTH_TENANT", "common")
+        data = requests.post(
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+            data={
+                "client_id": os.getenv("MICROSOFT_OAUTH_CLIENT_ID"),
+                "client_secret": os.getenv("MICROSOFT_OAUTH_CLIENT_SECRET"),
+                "refresh_token": refresh_token.strip(),
+                "grant_type": "refresh_token",
+                "scope": "openid profile email offline_access https://outlook.office.com/IMAP.AccessAsUser.All",
+            },
+            timeout=15,
+        ).json()
+        return str(data.get("access_token") or "")
+    except Exception as e:
+        logger.warning("microsoft refresh failed: %s", e)
+        return ""
+
+
 def mark_env_connected(provider: str) -> dict[str, Any]:
     """Pilot: mark Yahoo/Gmail/Outlook env credentials as the active connector."""
     mapping = {

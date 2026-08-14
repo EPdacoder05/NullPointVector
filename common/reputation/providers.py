@@ -38,26 +38,32 @@ logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- local
 class LocalThreatDBProvider(ReputationProvider):
-    """Score a number against threats WE have already confirmed + stored.
+    """Fleet-admin view over tenant observations.
 
-    This is the always-on baseline: every vishing/smishing detection the platform
-    makes is persisted with its sender/caller_id, so a number that burned one user
-    is instantly known for the next. No external dependency, no key, no cost.
+    This deliberately is not part of customer-request aggregation: raw tenant
+    observations are not a fleet reputation feed. Only an explicitly constructed
+    admin instance may use RLS bypass while the verified promotion table is built.
     """
     name = "local"
     weight = 1.0
 
+    def __init__(self, *, fleet_admin: bool = False):
+        self._fleet_admin = bool(fleet_admin)
+
     @property
     def enabled(self) -> bool:
-        return os.getenv("REPUTATION_LOCAL_DISABLED", "").lower() not in ("1", "true")
+        disabled = os.getenv("REPUTATION_LOCAL_DISABLED", "").lower() in ("1", "true")
+        return self._fleet_admin and not disabled
 
     def _lookup(self, number: str) -> Optional[ReputationScore]:
+        if not self._fleet_admin:
+            return None
         try:
             from Autobot.VectorDB.NullPoint_Vector import get_threats_by_sender
         except Exception:
             # helper not present in this build → degrade gracefully (no local hits)
             return None
-        rows = get_threats_by_sender(number, limit=50) or []
+        rows = get_threats_by_sender(number, limit=50, bypass=True) or []
         if not rows:
             return None
         n = len(rows)
@@ -406,7 +412,6 @@ def check_urlhaus(url: str) -> Optional[dict]:
 
 
 _PROVIDER_CLASSES = [
-    LocalThreatDBProvider,
     FTCProvider,
     NomoroboProvider,
     HiyaProvider,
@@ -422,8 +427,13 @@ _ENRICHMENT_CLASSES = [
 
 
 def default_providers() -> list[ReputationProvider]:
-    """Instantiate all providers; the aggregator filters to the enabled ones."""
+    """Customer-safe providers; excludes cross-tenant raw observations."""
     return [cls() for cls in _PROVIDER_CLASSES]
+
+
+def fleet_admin_providers() -> list[ReputationProvider]:
+    """Explicit admin-only provider set; never call from customer request paths."""
+    return [LocalThreatDBProvider(fleet_admin=True), *default_providers()]
 
 
 def enabled_provider_names() -> list[str]:

@@ -1,6 +1,6 @@
 """Disposable / burn-email domains for signup.
 
-Apple Hide My Email (`privaterelay.appleid.com`) is NEVER disposable.
+Apple private-relay aliases are NEVER disposable.
 Shape-valid fakes (instaddr, guerrilla, etc.) die here.
 """
 from __future__ import annotations
@@ -27,7 +27,10 @@ _DISPOSABLE: frozenset[str] = frozenset({
     "trashymail.com", "mailexpire.com", "tempomail.fr", "tmpeml.com",
 })
 
-_APPLE_RELAY = "privaterelay.appleid.com"
+_APPLE_RELAY_DOMAINS: frozenset[str] = frozenset({
+    "privaterelay.appleid.com",
+    "private.icloud.com",
+})
 
 
 def email_domain(email: str) -> str:
@@ -38,7 +41,8 @@ def email_domain(email: str) -> str:
 
 
 def is_apple_hide_my_email(email: str) -> bool:
-    return email_domain(email) == _APPLE_RELAY
+    dom = email_domain(email)
+    return dom in _APPLE_RELAY_DOMAINS
 
 
 def is_disposable_email(email: str) -> bool:
@@ -46,7 +50,7 @@ def is_disposable_email(email: str) -> bool:
     dom = email_domain(email)
     if not dom:
         return False
-    if dom == _APPLE_RELAY or dom.endswith("." + _APPLE_RELAY):
+    if dom in _APPLE_RELAY_DOMAINS:
         return False
     if dom in _DISPOSABLE:
         return True

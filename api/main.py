@@ -13,6 +13,8 @@ Production hardening (System-Design-Engineering-Universal-Reference aligned):
 """
 import logging
 import os as _os_sec
+import hashlib
+import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -29,16 +31,24 @@ from Autobot.VectorDB.NullPoint_Vector import (
 )
 from PhishGuard.phish_mlm.phishing_detector import detector
 from common.streaming.channel_pipeline import process_one
-from common.streaming.dlq import persist_threat_durable, start_dlq_drainer, depth as dlq_depth
+from common.streaming.dlq import persist_threat_durable, start_dlq_drainer
+from common.tenant_rls import require_account_sub
 
 from common.auth import (authenticate_user, create_access_token,
                          create_refresh_token, refresh_access_token,
                          get_current_user, require_role)
 from common.rate_limit import rate_limit
-from common.idempotency import build_idempotency_store, idempotent, DuplicateRequestError
+from common.idempotency import (
+    build_idempotency_store,
+    idempotent,
+    DuplicateRequestError,
+    IdempotencyConflictError,
+    validate_key,
+)
 from common.pagination import decode_cursor, page_envelope
 from common.observability import ObservabilityMiddleware, metrics_response
 from common.config import validate_production_config
+from common.config import is_production_environment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
@@ -54,20 +64,29 @@ async def lifespan(app: FastAPI):
     removed) so the startup sequence stays future-proof on current FastAPI.
     """
     validate_production_config()
+    # Optional embedding novelty is deliberately opt-in.  The warmer itself
+    # re-checks the flag and production never fits a missing artifact.
     import threading
     from common.streaming.channel_pipeline import warm_anomaly
     threading.Thread(target=warm_anomaly, name="warm-anomaly", daemon=True).start()
-    # Self-healing: drain any threats that were dead-lettered during a DB outage
-    # back into Postgres once it recovers (no data loss across restarts).
+    # Best-effort recovery: drain tenant-bound entries accepted by the DLQ.
     start_dlq_drainer("threat", interval=30.0)
     yield
 
+
+_docs_enabled = (
+    not is_production_environment()
+    or _os_sec.getenv("EXPOSE_API_DOCS", "").lower() in ("1", "true")
+)
 
 app = FastAPI(
     title="Yahoo_Phish IDPS API",
     description="Intrusion Detection & Prevention for Phishing/Smishing/Vishing",
     version="2.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 
@@ -84,7 +103,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
         )
-        if _os_sec.getenv("FORCE_HSTS", "").lower() in ("1", "true"):
+        if (is_production_environment()
+                or _os_sec.getenv("FORCE_HSTS", "").lower() in ("1", "true")):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
@@ -97,7 +117,8 @@ app.add_middleware(ObservabilityMiddleware)
 try:
     from pathlib import Path as _Path
     from fastapi.staticfiles import StaticFiles
-    from web.ui import router as _ui_router
+    from web.ui import ConsoleSecurityMiddleware, router as _ui_router
+    app.add_middleware(ConsoleSecurityMiddleware)
     app.mount("/static", StaticFiles(directory=str(_Path(__file__).resolve().parent.parent / "web" / "static")), name="static")
     app.include_router(_ui_router)
     logger.info("UI console mounted at /app")
@@ -122,6 +143,24 @@ app.add_middleware(
 
 # Idempotency store: Redis when REDIS_URL set, else in-memory (single instance).
 _idem = build_idempotency_store()
+
+
+def _scoped_idempotency(account_sub: str, route: str, raw_key: str,
+                        payload: dict) -> tuple[str, str]:
+    """Tenant/route scope plus canonical request fingerprint.
+
+    The raw client key and request body are never placed in Redis keys or logs.
+    Reusing a client key with a different payload is rejected by the store.
+    """
+    tenant = require_account_sub(account_sub)
+    validate_key(raw_key)
+    scope = hashlib.sha256(
+        f"{tenant}\x00{route}\x00{raw_key}".encode("utf-8")
+    ).hexdigest()
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), default=str,
+    ).encode("utf-8")
+    return scope, hashlib.sha256(canonical).hexdigest()
 
 
 # ============================================================ models
@@ -178,38 +217,44 @@ class TokenResponse(BaseModel):
 # ============================================================ public routes
 @app.get("/health")
 async def health_check():
+    """Compatibility readiness probe with a non-sensitive response body."""
+    from fastapi.responses import JSONResponse
+    ready = True
     try:
         from Autobot.VectorDB.NullPoint_Vector import connect_db
         conn = connect_db()
-        db_status = "healthy" if conn else "unhealthy"
+        db_ready = bool(conn)
         if conn:
             conn.close()
-    except Exception as e:
-        db_status = f"unhealthy: {e}"
-    # DLQ depth surfaces self-heal backlog: >0 means the DB was down and threats
-    # are buffered durably, waiting for the drainer to replay them.
-    try:
-        pending = dlq_depth("threat")
     except Exception:
-        pending = -1
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(),
-            "database": db_status, "model_loaded": detector.clf is not None,
-            "dlq_pending_threats": pending}
+        logger.exception("readiness database check failed")
+        db_ready = False
+    model_ready = detector.clf is not None
+    ready = db_ready and model_ready
+    return JSONResponse(
+        {"status": "ready" if ready else "unavailable"},
+        status_code=200 if ready else 503,
+    )
+
+
+@app.get("/livez")
+async def liveness_check():
+    """Process-only liveness; dependency failures must not cause restart loops."""
+    return {"status": "alive"}
+
+
+@app.get("/readyz")
+async def readiness_check():
+    return await health_check()
 
 
 @app.get("/")
 async def root():
-    return {
-        "service": "Yahoo_Phish IDPS API", "version": "2.0.0",
-        "auth": "POST /api/v1/token (OAuth2 password) → Bearer JWT",
-        "endpoints": ["/health", "/metrics", "/docs", "/api/v1/analyze",
-                      "/api/v1/threats", "/api/v1/feedback", "/api/v1/retrain",
-                      "/api/v1/model"],
-    }
+    return {"service": "NullPoint API", "status": "available"}
 
 
 @app.get("/metrics")
-async def metrics():
+async def metrics(user: Dict = Depends(require_role("admin"))):
     body, content_type = metrics_response()
     return Response(content=body, media_type=content_type)
 
@@ -239,18 +284,21 @@ async def refresh(refresh_token: str = Header(..., alias="X-Refresh-Token"),
 
 
 # ============================================================ detection
-def _run_analysis(req: ThreatAnalysisRequest) -> ThreatAnalysisResponse:
+def _run_analysis(req: ThreatAnalysisRequest, *, account_sub: str) -> ThreatAnalysisResponse:
+    tenant = require_account_sub(account_sub)
     start = datetime.now()
     # Route to the correct per-channel detector (phishing/smishing/vishing).
     # process_one normalizes the record and applies the channel's anomaly policy.
-    record = {"subject": req.metadata.get("subject", "") if req.metadata else "",
+    record = {"account_sub": tenant,
+              "subject": req.metadata.get("subject", "") if req.metadata else "",
               "body": req.content, "transcript": req.content,
               "from": req.sender or "", "caller_id": req.sender or ""}
 
     verdict = process_one(req.threat_type, record)
 
     similar = search_similar_threats(content=req.content,
-                                     threat_type=req.threat_type, top_k=5) or []
+                                     threat_type=req.threat_type, top_k=5,
+                                     account_sub=tenant) or []
 
     threat_id = f"{req.threat_type}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
     elapsed = (datetime.now() - start).total_seconds()
@@ -273,35 +321,60 @@ async def analyze_content(
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     """Unified classifier + anomaly verdict. Idempotent when Idempotency-Key is set."""
+    account_sub = require_account_sub(user.get("sub"))
+
     def _do() -> ThreatAnalysisResponse:
-        resp = _run_analysis(request)
+        resp = _run_analysis(request, account_sub=account_sub)
         if resp.is_threat:
-            # Durable persist: retried, and dead-lettered (never dropped) if the
-            # DB is momentarily down; the drainer replays it when DB is back.
+            # Persist as a model observation, not a trusted training label. A
+            # downstream outage may defer it to the tenant-bound DLQ.
             background_tasks.add_task(
-                persist_threat_durable, content=request.content,
+                persist_threat_durable, account_sub=account_sub,
+                content=request.content,
                 threat_type=request.threat_type, sender=request.sender or "unknown",
                 metadata={"risk_score": resp.risk_score, "action": resp.action,
-                          "label": 1, **(request.metadata or {})})
+                          "label_source": "model_prediction",
+                          "training_eligible": False,
+                          "destructive_action_eligible": False,
+                          **(request.metadata or {})})
         return resp
 
     if not idempotency_key:
         return _do()
     try:
-        with idempotent(_idem, idempotency_key) as ctx:
+        scoped_key, request_hash = _scoped_idempotency(
+            account_sub,
+            "/api/v1/analyze",
+            idempotency_key,
+            request.model_dump(mode="json"),
+        )
+        with idempotent(_idem, scoped_key, request_hash=request_hash) as ctx:
             if ctx.already_completed:
                 return ctx.stored_result
             ctx.result = _do()
         return ctx.result
-    except DuplicateRequestError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except DuplicateRequestError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An identical request is already in progress",
+        )
+    except IdempotencyConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key was already used with a different request",
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Idempotency-Key",
+        )
 
 
 @app.post("/api/v1/vish/screen")
 async def screen_call_endpoint(
     request: CallScreenRequest,
     background_tasks: BackgroundTasks,
-    user: Dict = Depends(require_role("analyst")),
+    user: Dict = Depends(require_role("customer")),
     _rl: None = Depends(rate_limit()),
 ):
     """Hybrid CallKit screening (R1): reputation (number) + transcription (content).
@@ -311,11 +384,13 @@ async def screen_call_endpoint(
     (allow/label/silence/block) with consumer-readable reasons. A confirmed threat
     is persisted durably (DLQ-safe) so the number feeds back into local reputation.
     """
+    account_sub = require_account_sub(user.get("sub"))
     from common.vish import screen_call, CallEvent
     result = screen_call(CallEvent.from_dict(request.model_dump()))
     try:
         from common.call_events import record_screen
-        record_screen(result.to_dict() | {"caller_id": request.caller_id,
+        record_screen(result.to_dict() | {"account_sub": account_sub,
+                                          "caller_id": request.caller_id,
                                           "transcript": request.transcript or ""})
     except Exception:
         pass
@@ -323,14 +398,17 @@ async def screen_call_endpoint(
         meta = {
             "risk_score": result.risk,
             "action": result.action.value,
-            "label": 1,
             "channel": "vishing",
             "verdict": result.verdict,
             "paths": result.paths,
             "via": "callkit",
+            "label_source": "model_prediction",
+            "training_eligible": False,
+            "destructive_action_eligible": False,
         }
         background_tasks.add_task(
             persist_threat_durable,
+            account_sub=account_sub,
             content=request.transcript or f"[call from {request.caller_id}]",
             threat_type="vishing", sender=request.caller_id or "unknown",
             metadata=meta,
@@ -343,6 +421,7 @@ async def screen_call_endpoint(
             ):
                 background_tasks.add_task(
                     persist_threat_durable,
+                    account_sub=account_sub,
                     content=f"[callback from transcript of {request.caller_id}] {request.transcript or ''}"[:2000],
                     threat_type="vishing",
                     sender=cb,
@@ -350,7 +429,10 @@ async def screen_call_endpoint(
                         **meta,
                         "via": "transcript-callback",
                         "parent_caller_id": request.caller_id,
-                        "action": "block",
+                        # A callback extracted from an unverified transcript is
+                        # campaign evidence, not sufficient for auto-blocking.
+                        "action": "label",
+                        "destructive_action_eligible": False,
                     },
                 )
         except Exception:
@@ -364,7 +446,8 @@ async def vish_directory_endpoint(
     _rl: None = Depends(rate_limit()),
 ):
     """Call Directory block/label sync payload for iOS CallKit extension."""
-    updated_at, block, label = get_vish_directory()
+    account_sub = require_account_sub(user.get("sub"))
+    updated_at, block, label = get_vish_directory(account_sub=account_sub)
     return {"updatedAt": updated_at, "block": block, "label": label}
 
 
@@ -377,7 +460,8 @@ async def vish_screens_endpoint(
     """Recent hybrid screen events for Guard activity feed."""
     from common.call_events import list_screens
     n = max(1, min(int(limit or 40), 80))
-    return {"events": list_screens(n)}
+    account_sub = require_account_sub(user.get("sub"))
+    return {"events": list_screens(n, account_sub=account_sub)}
 
 
 class IdentityEnrichRequest(BaseModel):
@@ -407,17 +491,28 @@ async def identity_enrich(
 
 @app.post("/api/v1/feedback")
 async def submit_feedback(req: FeedbackRequest,
-                          user: Dict = Depends(require_role("analyst")),
+                          user: Dict = Depends(require_role("admin")),
                           _rl: None = Depends(rate_limit())):
     """
     Record a human label. SAFE by design: this only appends to the durable
     feedback buffer (+ ephemeral in-memory update). The on-disk champion changes
     only when /retrain runs and the candidate passes the golden gate.
     """
+    # The legacy feedback buffer is process-local plaintext and is not yet a
+    # tenant-owned SaaS data store. Keep it operator-only and unavailable on a
+    # public/managed deployment until the durable feedback schema is migrated.
+    from common.config import is_production_environment
+    if is_production_environment():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Feedback ingestion is not enabled",
+        )
     email = {"subject": "", "body": req.content, "from": req.sender or ""}
-    detector.learn_from_feedback(email, req.is_phishing)
+    detector.learn_from_feedback(
+        email, req.is_phishing, source="api-analyst-feedback",
+    )
     return {"status": "recorded", "buffered": True,
-            "note": "folded into next gated retrain", "by": user["user_id"]}
+            "note": "folded into next gated retrain", "by": user["sub"]}
 
 
 # ============================================================ threats (read)
@@ -431,8 +526,10 @@ async def list_threats(
 ):
     """Keyset-paginated threat list. Pass back `next_cursor` for the next page."""
     after_id = decode_cursor(cursor)
+    account_sub = require_account_sub(user.get("sub"))
     rows, next_id = get_threats_page(threat_type=threat_type,
-                                     after_id=after_id, limit=limit)
+                                     after_id=after_id, limit=limit,
+                                     account_sub=account_sub)
     return page_envelope(rows, next_id, limit)
 
 
@@ -440,7 +537,8 @@ async def list_threats(
 async def get_threat_details(threat_id: str,
                              user: Dict = Depends(get_current_user),
                              _rl: None = Depends(rate_limit())):
-    threat = get_threat_by_id(threat_id)
+    account_sub = require_account_sub(user.get("sub"))
+    threat = get_threat_by_id(threat_id, account_sub=account_sub)
     if not threat:
         raise HTTPException(status_code=404, detail="Threat not found")
     return threat
@@ -488,17 +586,27 @@ async def report_threat(
     _rl: None = Depends(rate_limit()),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
+    account_sub = require_account_sub(user.get("sub"))
+
     def _do():
         result = store_threat(content=content, threat_type=threat_type,
-                              sender=sender or "user_reported", metadata=metadata or {})
+                              sender=sender or "user_reported", metadata=metadata or {},
+                              account_sub=account_sub)
         if not isinstance(result, dict) or result.get("error"):
-            # DB unavailable: buffer durably so the user report is never lost.
             from common.streaming.dlq import dead_letter
-            dead_letter("threat", {"content": content, "threat_type": threat_type,
-                                   "sender": sender or "user_reported",
-                                   "metadata": metadata or {}})
+            queued = dead_letter("threat", {
+                "account_sub": account_sub,
+                "content": content,
+                "threat_type": threat_type,
+                "sender": sender or "user_reported",
+                "metadata": metadata or {},
+            })
+            if not queued:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Report storage is temporarily unavailable",
+                )
             return {"status": "queued", "threat_id": None,
-                    "note": "buffered (DB unavailable); will persist on recovery",
                     "timestamp": datetime.now().isoformat()}
         return {"status": "success", "threat_id": result.get("id"),
                 "timestamp": datetime.now().isoformat()}
@@ -506,13 +614,37 @@ async def report_threat(
     if not idempotency_key:
         return _do()
     try:
-        with idempotent(_idem, idempotency_key) as ctx:
+        scoped_key, request_hash = _scoped_idempotency(
+            account_sub,
+            "/api/v1/threats/report",
+            idempotency_key,
+            {
+                "content": content,
+                "threat_type": threat_type,
+                "sender": sender,
+                "metadata": metadata or {},
+            },
+        )
+        with idempotent(_idem, scoped_key, request_hash=request_hash) as ctx:
             if ctx.already_completed:
                 return ctx.stored_result
             ctx.result = _do()
         return ctx.result
-    except DuplicateRequestError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except DuplicateRequestError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An identical request is already in progress",
+        )
+    except IdempotencyConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key was already used with a different request",
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Idempotency-Key",
+        )
 
 
 # ============================================================ admin / model ops
@@ -541,6 +673,13 @@ async def retrain_model(background_tasks: BackgroundTasks,
     Kick off a champion/challenger retrain. The candidate is promoted ONLY if it
     clears the golden gate and does not regress vs the current champion.
     """
+    from common.config import is_production_environment
+    if is_production_environment():
+        raise HTTPException(
+            status_code=409,
+            detail="online_retraining_disabled",
+        )
+
     def _train():
         try:
             from PhishGuard.phish_mlm.training.trainer import Trainer
@@ -558,7 +697,15 @@ async def retrain_model(background_tasks: BackgroundTasks,
 async def billing_webhook(request: Request):
     """Stripe (or mock) webhook — signature required. Vendor HMAC, not CSRF."""
     from common.billing import verify_stripe_webhook, append_audit_event, use_mock
+    content_length = request.headers.get("content-length") or ""
+    try:
+        if content_length and int(content_length) > 256 * 1024:
+            raise HTTPException(status_code=413, detail="payload_too_large")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid_content_length")
     payload = await request.body()
+    if len(payload) > 256 * 1024:
+        raise HTTPException(status_code=413, detail="payload_too_large")
     sig = request.headers.get("stripe-signature") or request.headers.get("Stripe-Signature") or ""
     verified = verify_stripe_webhook(payload, sig)
     if not verified.get("ok"):

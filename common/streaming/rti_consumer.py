@@ -12,7 +12,7 @@ latency, horizontal scalability):
     drop_policy decides: BLOCK (apply backpressure to producers) or DROP_NEW
     (shed load, increment a counter) — never silently OOM.
   * Worker pool    → N threads give parallelism for the I/O + CPU mix of a
-    single-message verdict (classifier is sub-ms; DB sink is the slow part).
+    single-message verdict (latency is measured per release artifact).
   * Decoupled      → the consumer knows nothing about SMS/voice/Kafka/webhooks;
     any producer just calls `submit(record)`. This is what lets one process
     front many sources, and many processes (pods) share one external queue

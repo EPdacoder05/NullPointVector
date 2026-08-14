@@ -18,6 +18,19 @@ import requests
 logger = logging.getLogger(__name__)
 
 _STATE: dict[str, dict] = {}
+_STATE_TTL_S = 15 * 60
+_PRODUCTION_ACCOUNT_OAUTH_READY = False
+
+
+def _prune_oauth_state(now: float | None = None) -> None:
+    """Bound abandoned account-login state and reject it after 15 minutes."""
+    ts_now = time.time() if now is None else now
+    expired = [
+        key for key, value in list(_STATE.items())
+        if ts_now - float(value.get("ts") or 0) > _STATE_TTL_S
+    ]
+    for key in expired:
+        _STATE.pop(key, None)
 
 
 def _public_base() -> str:
@@ -25,6 +38,9 @@ def _public_base() -> str:
 
 
 def provider_ready(provider: str) -> bool:
+    from common.config import is_production_environment
+    if is_production_environment() and not _PRODUCTION_ACCOUNT_OAUTH_READY:
+        return False
     p = (provider or "").lower()
     if p == "google":
         return bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID") and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"))
@@ -38,8 +54,13 @@ def provider_ready(provider: str) -> bool:
 
 
 def start_account_oauth(provider: str, next_path: str = "/app/dashboard") -> dict[str, Any]:
+    _prune_oauth_state()
     provider = (provider or "").lower().strip()
-    next_path = next_path if (next_path or "").startswith("/app") else "/app/dashboard"
+    next_path = (
+        next_path
+        if next_path == "/app" or (next_path or "").startswith("/app/")
+        else "/app/dashboard"
+    )
     if not provider_ready(provider):
         return {
             "error": "oauth_not_configured",
@@ -117,8 +138,11 @@ def start_account_oauth(provider: str, next_path: str = "/app/dashboard") -> dic
 
 
 def finish_account_oauth(provider: str, code: str, state: str) -> dict[str, Any]:
+    _prune_oauth_state()
     meta = _STATE.pop(state, None)
     if not meta or meta.get("provider") != provider:
+        return {"error": "invalid_state"}
+    if time.time() - float(meta.get("ts") or 0) > _STATE_TTL_S:
         return {"error": "invalid_state"}
     next_path = meta.get("next") or "/app/dashboard"
     redirect = f"{_public_base()}/app/auth/callback/{provider}"

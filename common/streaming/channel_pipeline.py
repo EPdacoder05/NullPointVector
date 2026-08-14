@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -99,7 +100,12 @@ def process_one(channel: str, record: dict, *, allow_anomaly_fit: bool = False):
     cfg = CHANNELS[channel]
     detector = get_detector(channel)
     anomaly = None
-    use_anomaly = cfg["use_anomaly"]
+    # Embedding inference is opt-in until each deployment has measured latency,
+    # memory and false-positive behavior.  It is never a destructive signal.
+    use_anomaly = (
+        cfg["use_anomaly"]
+        and os.getenv("ENABLE_EMBEDDING_ANOMALY", "").lower() in ("1", "true")
+    )
     if use_anomaly and channel != "phishing":
         # Hot path: load-only by default so a request never blocks on a fit.
         anomaly = get_channel_anomaly(channel, allow_fit=allow_anomaly_fit)
@@ -115,6 +121,9 @@ def process_one(channel: str, record: dict, *, allow_anomaly_fit: bool = False):
 def warm_anomaly(channels=("smishing", "vishing")):
     """Pre-fit & persist per-channel anomaly manifolds (call at startup, off the
     hot path). Idempotent: skips channels already cached/on-disk."""
+    if os.getenv("ENABLE_EMBEDDING_ANOMALY", "").lower() not in ("1", "true"):
+        logger.info("embedding anomaly warm-up disabled")
+        return
     for ch in channels:
         try:
             get_channel_anomaly(ch, allow_fit=True)
@@ -124,24 +133,32 @@ def warm_anomaly(channels=("smishing", "vishing")):
 
 
 def make_sink(channel: str):
-    """Persistence sink: store only confirmed threats (keeps the DB signal-rich).
+    """Persistence sink: store detected candidates without inventing labels.
 
     Uses the durable persist path: a transient DB outage is retried and, if it
-    still fails, the threat is dead-lettered (Redis/disk) and replayed later —
-    so a downstream blip never loses a confirmed detection.
+    still fails, the candidate is dead-lettered (Redis/disk) and replayed later —
+    so a downstream blip does not silently lose the observation.
     """
     cfg = CHANNELS[channel]
 
     def _sink(record: dict, verdict):
         if not getattr(verdict, "is_threat", False):
-            return
+            return True
+        from common.tenant_rls import TenantContextError, require_account_sub
+        try:
+            account_sub = require_account_sub(record.get("account_sub"))
+        except TenantContextError:
+            logger.error("[%s] refusing to persist tenantless observation", channel)
+            return False
         from common.streaming.dlq import persist_threat_durable
-        persist_threat_durable(
+        return persist_threat_durable(
+            account_sub=account_sub,
             content=_first(record, cfg["text_keys"]),
             threat_type=channel,
             sender=_first(record, cfg["sender_keys"]) or "unknown",
             metadata={"risk_score": verdict.risk_score, "action": verdict.action.value,
-                      "label": 1, "channel": channel,
+                      "label_source": "model_prediction",
+                      "training_eligible": False, "channel": channel,
                       "confidence": verdict.classifier_conf,
                       "anomaly_level": verdict.anomaly_level,
                       "anomaly_novelty": verdict.anomaly_novelty,
@@ -161,16 +178,28 @@ def make_consumer(channel: str, *, workers: int = 4, maxsize: int = 10_000,
     sink = make_sink(channel) if persist else None
 
     def _dead_letter(record: dict, exc: Exception):
-        # Handler itself failed (not just persistence): preserve the raw record
-        # so it can be re-driven once the dependency recovers.
+        # A handler failure is not a confirmed threat. Keep it in a separate,
+        # tenant-bound processing queue for an explicit re-driver.
+        from common.tenant_rls import TenantContextError, require_account_sub
+        try:
+            account_sub = require_account_sub(record.get("account_sub"))
+        except TenantContextError:
+            logger.error("[%s] refusing tenantless processing dead letter", channel)
+            return
         from common.streaming.dlq import dead_letter
-        dead_letter("threat", {
+        accepted = dead_letter("processing", {
+            "account_sub": account_sub,
             "content": _first(record, CHANNELS[channel]["text_keys"]),
             "threat_type": channel,
             "sender": _first(record, CHANNELS[channel]["sender_keys"]) or "unknown",
-            "metadata": {"label": 1, "channel": channel, "reason": "handler_error",
-                         "error": str(exc), "ts": datetime.utcnow().isoformat()},
+            "metadata": {"label_source": "processing_error",
+                         "training_eligible": False, "channel": channel,
+                         "reason": "handler_error",
+                         "error_code": type(exc).__name__[:64],
+                         "ts": datetime.utcnow().isoformat()},
         })
+        if not accepted:
+            logger.critical("[%s] processing dead letter was not accepted", channel)
 
     return RTIConsumer(handler, workers=workers, maxsize=maxsize,
                        on_verdict=sink, drop_policy=drop_policy,

@@ -1,13 +1,14 @@
 """
-Durable dead-letter queue (DLQ) — guarantees a confirmed threat is never lost
-when a downstream dependency (Postgres/PgBouncer) is momentarily down.
+Best-effort durable dead-letter queue (DLQ) for transient downstream failures.
 
 Layered durability (defence in depth):
   1. Redis list  ``dlq:{kind}``           — survives app restart, shared across replicas.
   2. Disk JSONL  ``data/dlq/{kind}.jsonl`` — survives even if Redis is ALSO down.
 
 A background drainer replays entries into the real sink once the dependency
-recovers, so the pipeline self-heals with **no data loss and no silent drops**.
+recovers. Enqueue success is observable; if both Redis and disk fail, callers
+receive ``False`` and must surface/metric that failure rather than claiming the
+item is durable.
 
 Why both layers: Redis gives fast, shared, replica-safe buffering; the disk
 fallback is the floor that holds when Redis itself is unreachable. The disk file
@@ -25,6 +26,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from common.tenant_rls import TenantContextError, require_account_sub
+
 logger = logging.getLogger(__name__)
 
 _DLQ_DIR = Path(os.getenv("DLQ_DIR", "data/dlq"))
@@ -37,25 +40,35 @@ def _disk_path(kind: str) -> Path:
 
 
 # ------------------------------------------------------------------ enqueue
-def dead_letter(kind: str, payload: dict) -> None:
-    """Append ``payload`` to the DLQ. NEVER raises — this is the last line of
-    defence, so a failure here only logs (we cannot afford to crash the worker)."""
+def dead_letter(kind: str, payload: dict) -> bool:
+    """Append ``payload`` to the DLQ and report whether it was accepted.
+
+    The function never raises because it is used on failure paths. It also never
+    logs the payload: message bodies may contain customer data.
+    """
+    if kind in {"threat", "processing"}:
+        try:
+            tenant = require_account_sub(payload.get("account_sub"))
+        except TenantContextError:
+            logger.error("refusing tenantless %s dead letter", kind)
+            return False
+        payload = {**payload, "account_sub": tenant}
     line = json.dumps(payload, default=str)
     try:
         from common.redis_client import get_redis
         r = get_redis()
         if r is not None:
             r.rpush(f"dlq:{kind}", line)
-            return
+            return True
     except Exception as e:  # redis flaky → fall through to disk
         logger.warning("DLQ redis push failed (%s); using disk fallback", e)
     try:
         with _disk_lock, _disk_path(kind).open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
+        return True
     except Exception as e:
-        # Truly nowhere to put it: log loudly with a truncated payload so it is
-        # at least recoverable from logs. Should be effectively impossible.
-        logger.error("DLQ disk write failed for %s: %s — payload=%s", kind, e, line[:200])
+        logger.critical("DLQ disk write failed for kind=%s: %s", kind, e)
+        return False
 
 
 def depth(kind: str) -> int:
@@ -149,38 +162,61 @@ def drain(kind: str, sink: Callable[[dict], bool], max_items: int = 500) -> dict
 
 
 # ------------------------------------------------------------------ threat helpers
-def persist_threat_durable(*, content: str, threat_type: str, sender: str,
+def persist_threat_durable(*, account_sub: str, content: str, threat_type: str, sender: str,
                            metadata: dict, retries: int = 2, backoff: float = 0.2) -> bool:
     """Store a confirmed threat with bounded retry; dead-letter on exhaustion.
 
     Returns True if persisted, False if dead-lettered (still durable, just deferred).
     Never raises — safe to call from a background task or stream worker.
     """
+    try:
+        tenant = require_account_sub(account_sub)
+    except TenantContextError:
+        # A tenantless item cannot be safely persisted or replayed. In
+        # particular, do not put it on the shared DLQ where a future worker
+        # might guess an owner.
+        logger.error("refusing tenantless threat persistence")
+        return False
+
     last = None
     for attempt in range(retries + 1):
         try:
             from Autobot.VectorDB.NullPoint_Vector import store_threat
             res = store_threat(content=content, threat_type=threat_type,
-                               sender=sender, metadata=metadata)
+                               sender=sender, metadata=metadata,
+                               account_sub=tenant)
             if isinstance(res, dict) and not res.get("error"):
                 return True
             last = res
         except Exception as e:
             last = {"error": str(e)}
         time.sleep(backoff * (attempt + 1))
-    dead_letter("threat", {"content": content, "threat_type": threat_type,
-                           "sender": sender, "metadata": metadata})
-    logger.warning("threat persist failed after %d tries (%s) → dead-lettered",
-                   retries + 1, last)
+    queued = dead_letter("threat", {"account_sub": tenant, "content": content,
+                                     "threat_type": threat_type,
+                                     "sender": sender, "metadata": metadata})
+    if queued:
+        logger.warning("threat persist failed after %d tries (%s) → deferred",
+                       retries + 1, last)
+    else:
+        logger.critical("threat persistence and DLQ enqueue both failed")
     return False
 
 
 def _threat_sink(payload: dict) -> bool:
+    try:
+        tenant = require_account_sub(payload.get("account_sub"))
+    except TenantContextError:
+        # Preserve legacy/unowned entries in the DLQ for explicit migration;
+        # never replay them into an arbitrary tenant.
+        logger.error("refusing tenantless threat DLQ replay")
+        return False
+
     from Autobot.VectorDB.NullPoint_Vector import store_threat
     res = store_threat(content=payload.get("content", ""),
                        threat_type=payload.get("threat_type", "phishing"),
                        sender=payload.get("sender", "unknown"),
-                       metadata=payload.get("metadata") or {})
+                       metadata=payload.get("metadata") or {},
+                       account_sub=tenant)
     return isinstance(res, dict) and not res.get("error")
 
 

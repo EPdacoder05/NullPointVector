@@ -59,6 +59,46 @@ def normalize_number(raw: str) -> str:
     return "+" + digits                      # already has country code
 
 
+def directory_action_for_message(metadata: object, human_label: object = None) -> tuple[str, str]:
+    """Return the safe Call Directory action for one tenant observation.
+
+    A model prediction is useful for a warning label, but is not destructive
+    evidence. Exact-number blocking requires an authenticated personal/human
+    decision or an analyst/vendor-verified source. Legacy rows with no
+    provenance therefore degrade to a label instead of silently blocking.
+    """
+    meta = metadata if isinstance(metadata, dict) else {}
+    source = str(meta.get("label_source") or "").strip().lower()
+    requested = str(meta.get("action") or "").strip().lower()
+    try:
+        risk = max(0.0, min(1.0, float(meta.get("risk_score") or 0.0)))
+    except (TypeError, ValueError):
+        risk = 0.0
+
+    human_confirmed = human_label == 1 and source in {
+        "human_grade", "analyst_verified",
+    }
+    personal_block = source == "personal_block" and requested == "block"
+    corroborated = source in {"analyst_verified", "vendor_verified"} and (
+        requested == "block" or risk >= 0.85
+    )
+    if human_confirmed or personal_block or corroborated:
+        return "block", ""
+
+    wants_warning = (
+        requested in {"block", "label", "silence"}
+        or risk >= 0.4
+        or meta.get("is_threat") in (True, 1, "1")
+        or human_label == 1
+    )
+    if not wants_warning:
+        return "none", ""
+    raw_label = meta.get("display_label") or meta.get("verdict") or "Suspicious caller"
+    if isinstance(raw_label, (int, float)):
+        raw_label = "Suspicious caller"
+    return "label", str(raw_label).replace("_", " ").title()
+
+
 @dataclass
 class ReputationScore:
     """Normalized reputation result from ONE provider (or the fused aggregate)."""

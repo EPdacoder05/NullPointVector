@@ -10,11 +10,13 @@ Token-bucket rate limiting.
 Adapted from System-Design-Engineering-Universal-Reference/api/rate_limiter.py.
 """
 import os
+import hashlib
 import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from collections import OrderedDict
+from typing import Optional, Tuple
 
 from fastapi import HTTPException, Request, status
 
@@ -39,11 +41,13 @@ class _Bucket:
 
 
 class TokenBucketRateLimiter(BaseRateLimiter):
-    def __init__(self, capacity: float = 120, refill_rate: float = 20, cost: float = 1.0):
+    def __init__(self, capacity: float = 120, refill_rate: float = 20,
+                 cost: float = 1.0, max_buckets: int = 100_000):
         self.capacity = float(capacity)
         self.refill_rate = float(refill_rate)
         self.cost = float(cost)
-        self._buckets: Dict[str, _Bucket] = {}
+        self.max_buckets = max(1, int(max_buckets))
+        self._buckets: "OrderedDict[str, _Bucket]" = OrderedDict()
         self._lock = threading.Lock()
 
     def check(self, key: str) -> Tuple[bool, RateLimitResult]:
@@ -51,8 +55,12 @@ class TokenBucketRateLimiter(BaseRateLimiter):
         with self._lock:
             b = self._buckets.get(key)
             if b is None:
+                if len(self._buckets) >= self.max_buckets:
+                    self._buckets.popitem(last=False)
                 b = _Bucket(tokens=self.capacity, last_refill=now)
                 self._buckets[key] = b
+            else:
+                self._buckets.move_to_end(key)
             # Refill proportional to elapsed time.
             b.tokens = min(self.capacity, b.tokens + (now - b.last_refill) * self.refill_rate)
             b.last_refill = now
@@ -67,16 +75,17 @@ class TokenBucketRateLimiter(BaseRateLimiter):
 def client_key(request: Request) -> str:
     """
     Identify the caller for rate-limiting: authenticated user > API key > IP.
-    (Behind a proxy, trust X-Forwarded-For only if your ingress sets it.)
+    Header values are hashed in full; prefixes are neither stored nor logged.
+    Proxy-supplied client-IP headers are intentionally ignored because this
+    layer cannot prove which hop authored them.
     """
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer "):
-        return f"tok:{auth[7:][:32]}"
+        return "tok:" + hashlib.sha256(auth[7:].encode("utf-8")).hexdigest()
     api_key = request.headers.get("x-api-key")
     if api_key:
-        return f"key:{api_key[:32]}"
-    fwd = request.headers.get("x-forwarded-for")
-    ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+        return "key:" + hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    ip = request.client.host if request.client else "unknown"
     return f"ip:{ip}"
 
 
@@ -84,8 +93,8 @@ class RedisTokenBucketRateLimiter(BaseRateLimiter):
     """
     Distributed token bucket — O(1) per key via one Lua script (atomic).
 
-    Shared across all API replicas; the tradeoff is one Redis RTT (~sub-ms on
-    LAN, ~1ms in-region cloud) vs perfect cross-pod consistency (CP on Redis).
+    Shared across API replicas; latency depends on the deployed Redis path and
+    must be measured rather than assumed.
     """
 
     _LUA = """
@@ -149,6 +158,7 @@ def _build_default_limiter() -> BaseRateLimiter:
     return TokenBucketRateLimiter(
         capacity=float(os.getenv("RATE_LIMIT_CAPACITY", "120")),
         refill_rate=float(os.getenv("RATE_LIMIT_REFILL", "20")),
+        max_buckets=int(os.getenv("RATE_LIMIT_MAX_BUCKETS", "100000")),
     )
 
 

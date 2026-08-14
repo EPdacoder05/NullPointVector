@@ -9,6 +9,8 @@ JWT authentication + RBAC for FastAPI.
 Adapted from System-Design-Engineering-Universal-Reference/security/auth_framework.py.
 Install: pip install "PyJWT[crypto]" passlib[bcrypt]
 """
+import hashlib
+import hmac
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -114,6 +116,23 @@ def refresh_access_token(refresh_token: str) -> Optional[str]:
     return create_access_token(data)
 
 
+def csrf_token_for_session(access_token: str) -> str:
+    """Return a CSRF token bound to one console access-token cookie.
+
+    The access token remains HttpOnly.  Templates expose only this derived
+    value, which lets mutating console requests prove they came from a page
+    that could read the same-origin response without adding server-side CSRF
+    session state.
+    """
+    if not access_token:
+        return ""
+    return hmac.new(
+        JWT_SECRET_KEY.encode("utf-8"),
+        f"nullpoint-console-csrf:{access_token}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 # ----------------------------------------------------------- FastAPI deps
 def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Dict:
     """Decode the bearer token; raise 401 if missing/invalid/expired."""
@@ -125,9 +144,14 @@ def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Dict:
     if not token:
         raise credentials_exc
     payload = verify_token(token, "access")
-    if not payload or "sub" not in payload:
+    subject = payload.get("sub") if payload else None
+    if not isinstance(subject, str) or not subject.strip():
         raise credentials_exc
-    return {"user_id": payload["sub"], "role": payload.get("role", "viewer")}
+    subject = subject.strip()
+    # `user_id` remains during the API-contract migration; `sub` is the
+    # canonical identity used by tenant-scoped persistence and new callers.
+    return {"sub": subject, "user_id": subject,
+            "role": payload.get("role", "viewer")}
 
 
 def require_role(min_role: str):
