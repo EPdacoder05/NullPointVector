@@ -18,10 +18,11 @@ FALLBACK_PLANS: list[dict[str, Any]] = [
         "slug": "essential",
         "name": "Essential",
         "tagline": "Individual users and early adopters",
-        "price_monthly": 4.99,
-        "price_annual": 50.00,
+        "price_monthly": 9.99,
+        "price_annual": 99.00,
         "trial_days": 0,
         "featured": False,
+        "sales_only": False,
         "cta": "Get Essential",
         "role_min": "customer",
         "features": [
@@ -53,10 +54,11 @@ FALLBACK_PLANS: list[dict[str, Any]] = [
         "slug": "pro",
         "name": "Pro",
         "tagline": "Power users, families, and serious personal protection",
-        "price_monthly": 14.99,
-        "price_annual": 149.99,
+        "price_monthly": 19.99,
+        "price_annual": 199.00,
         "trial_days": 7,
         "featured": True,
+        "sales_only": False,
         "cta": "Start 7-day Pro trial",
         "role_min": "customer",
         "features": [
@@ -89,10 +91,12 @@ FALLBACK_PLANS: list[dict[str, Any]] = [
         "slug": "enterprise",
         "name": "Enterprise",
         "tagline": "Developers, teams, and compliance-heavy organizations",
-        "price_monthly": 49.99,
-        "price_annual": 499.00,
+        # No public list price — sales-led only. Zeros stay in DB for NOT NULL cols.
+        "price_monthly": 0.0,
+        "price_annual": 0.0,
         "trial_days": 0,
         "featured": False,
+        "sales_only": True,
         "cta": "Contact sales",
         "role_min": "enterprise",
         "features": [
@@ -152,12 +156,19 @@ def ensure_plans_table(conn) -> None:
                 price_annual NUMERIC(10,2) NOT NULL,
                 trial_days INTEGER NOT NULL DEFAULT 0,
                 featured BOOLEAN NOT NULL DEFAULT FALSE,
+                sales_only BOOLEAN NOT NULL DEFAULT FALSE,
                 cta TEXT NOT NULL DEFAULT '',
                 role_min TEXT NOT NULL DEFAULT 'customer',
                 features JSONB NOT NULL DEFAULT '[]'::jsonb,
                 compare JSONB NOT NULL DEFAULT '{}'::jsonb,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE subscription_plans
+              ADD COLUMN IF NOT EXISTS sales_only BOOLEAN NOT NULL DEFAULT FALSE;
             """
         )
     conn.commit()
@@ -171,8 +182,8 @@ def seed_plans(conn) -> None:
                 """
                 INSERT INTO subscription_plans
                   (slug, name, tagline, price_monthly, price_annual, trial_days,
-                   featured, cta, role_min, features, compare)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
+                   featured, sales_only, cta, role_min, features, compare)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
                 ON CONFLICT (slug) DO UPDATE SET
                   name = EXCLUDED.name,
                   tagline = EXCLUDED.tagline,
@@ -180,6 +191,7 @@ def seed_plans(conn) -> None:
                   price_annual = EXCLUDED.price_annual,
                   trial_days = EXCLUDED.trial_days,
                   featured = EXCLUDED.featured,
+                  sales_only = EXCLUDED.sales_only,
                   cta = EXCLUDED.cta,
                   role_min = EXCLUDED.role_min,
                   features = EXCLUDED.features,
@@ -189,7 +201,7 @@ def seed_plans(conn) -> None:
                 (
                     p["slug"], p["name"], p["tagline"],
                     p["price_monthly"], p["price_annual"], p["trial_days"],
-                    p["featured"], p["cta"], p["role_min"],
+                    p["featured"], bool(p.get("sales_only")), p["cta"], p["role_min"],
                     json.dumps(p["features"]), json.dumps(p["compare"]),
                 ),
             )
@@ -209,9 +221,14 @@ def list_plans() -> list[dict[str, Any]]:
                 cur.execute(
                     """
                     SELECT slug, name, tagline, price_monthly, price_annual,
-                           trial_days, featured, cta, role_min, features, compare
+                           trial_days, featured, sales_only, cta, role_min,
+                           features, compare
                     FROM subscription_plans
-                    ORDER BY price_monthly ASC
+                    ORDER BY CASE slug
+                      WHEN 'essential' THEN 1
+                      WHEN 'pro' THEN 2
+                      WHEN 'enterprise' THEN 3
+                      ELSE 9 END
                     """
                 )
                 rows = cur.fetchall()
@@ -221,9 +238,10 @@ def list_plans() -> list[dict[str, Any]]:
                     "slug": r[0], "name": r[1], "tagline": r[2],
                     "price_monthly": float(r[3]), "price_annual": float(r[4]),
                     "trial_days": int(r[5]), "featured": bool(r[6]),
-                    "cta": r[7], "role_min": r[8],
-                    "features": r[9] if isinstance(r[9], list) else json.loads(r[9] or "[]"),
-                    "compare": r[10] if isinstance(r[10], dict) else json.loads(r[10] or "{}"),
+                    "sales_only": bool(r[7]),
+                    "cta": r[8], "role_min": r[9],
+                    "features": r[10] if isinstance(r[10], list) else json.loads(r[10] or "[]"),
+                    "compare": r[11] if isinstance(r[11], dict) else json.loads(r[11] or "{}"),
                 })
             return out or [dict(p) for p in FALLBACK_PLANS]
         finally:

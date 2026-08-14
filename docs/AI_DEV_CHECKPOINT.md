@@ -290,9 +290,9 @@ Ship thorough, but sequence so P0s unblock the pilot.
 | **Later** | Entity graph, FinOps, stego/qhish modules; DeepSeek/Kimi ensemble votes | Assist only |
 
 ### Pricing (locked 2026-08-06)
-- Essential **$4.99** / **$50** yr — **no trial**
-- Pro **$14.99** / **$149.99** yr — **7-day trial** (fingerprint + IP risk score)
-- Enterprise **$49.99** / **$499** yr + Contact sales
+- Essential **$9.99** / **$99** yr — **no trial**
+- Pro **$19.99** / **$199** yr — **7-day trial** (fingerprint + IP risk score)
+- Enterprise — **contact sales only** (no public list price, no self-serve checkout)
 
 ### Model / AI stance (locked)
 - Hot path stays **TF-IDF + calibrated SGD + structural features** — not DeepSeek.
@@ -318,8 +318,8 @@ Ship thorough, but sequence so P0s unblock the pilot.
 - Design system: **gold/brass + forest green** ("brass rail", corner brackets, forest ink)
   in `web/static/app.css`. **NEVER**: purple, emojis in UI, npm/Node/CDN dependencies.
   The web console is server-rendered Jinja + one hand-written CSS + one hand-written JS file.
-- Pricing tiers: Essential ($4.99 / $50 yr, no trial) / Pro ($14.99 / $149.99 yr, 7-day abuse-gated trial) /
-  Enterprise ($49.99 / $499 yr + Contact sales). Catalog: `common/plans.py`.
+- Pricing tiers: Essential ($9.99 / $99 yr, no trial) / Pro ($19.99 / $199 yr, 7-day abuse-gated trial) /
+  Enterprise (contact sales only — no list price). Catalog: `common/plans.py`.
 - JWT roles: viewer / customer / analyst / admin / enterprise (`common/auth.py`).
 - Credit/OSINT is **outsourced to vendors** (Plaid, Array/credit partner, IPQS/HIBP/SpyCloud).
   **NEVER** build DIY credit bureaus or dark-web scrapers.

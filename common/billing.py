@@ -6,11 +6,11 @@ Best practices ported (not a full NoW clone):
   * Payload shape / depth guards
   * Checkout velocity limit (Redis when available, else process-local)
   * Hash-chained payment audit events (tamper evidence)
-  * Degraded local_* mock sessions when STRIPE_SECRET_KEY is absent
+  * Explicitly gated local mock sessions for development only
   * Trial abuse risk score (fingerprint + IP + UA) for Pro 7-day trial
 
-REMOVE MOCK: when STRIPE_* keys land, set BILLING_MOCK=false (or omit);
-real Checkout Sessions replace local_redirects. Search TODO(BILLING_MOCK).
+Billing mutations remain disabled until BILLING_ENABLED=true. Production never
+accepts mock sessions, even if BILLING_MOCK is accidentally set.
 """
 from __future__ import annotations
 
@@ -28,6 +28,26 @@ logger = logging.getLogger("billing")
 _VELOCITY: dict[str, list[float]] = {}
 _VELOCITY_WINDOW = 10 * 60
 _VELOCITY_MAX = 8
+_PRODUCTION_BILLING_READY = False
+
+
+def billing_enabled() -> bool:
+    """Billing mutations are opt-in until the live merchant gate is verified."""
+    requested = os.getenv("BILLING_ENABLED", "false").strip().lower() in (
+        "1", "true", "yes",
+    )
+    if not requested:
+        return False
+    # Webhook replay/idempotency and subscription lifecycle reconciliation are
+    # not complete. An environment toggle must not accidentally charge users.
+    if _production() and not _PRODUCTION_BILLING_READY:
+        return False
+    return True
+
+
+def _production() -> bool:
+    from common.config import is_production_environment
+    return is_production_environment()
 
 
 def stripe_configured() -> bool:
@@ -35,7 +55,9 @@ def stripe_configured() -> bool:
 
 
 def use_mock() -> bool:
-    """True when we simulate checkout. Default ON until keys + BILLING_MOCK=false."""
+    """True only for an explicitly non-production development simulation."""
+    if _production():
+        return False
     flag = os.getenv("BILLING_MOCK", "true").strip().lower()
     if flag in ("1", "true", "yes"):
         return True
@@ -146,8 +168,8 @@ def validate_checkout_payload(body: dict) -> tuple[bool, str]:
     plan = str(body.get("plan") or "").strip().lower()
     interval = str(body.get("interval") or "monthly").strip().lower()
     email = str(body.get("email") or "").strip()
-    if plan not in ("essential", "pro", "enterprise"):
-        return False, "unknown plan"
+    if plan not in ("essential", "pro"):
+        return False, "unknown plan" if plan != "enterprise" else "contact_sales"
     if interval not in ("monthly", "annual"):
         return False, "bad interval"
     if email and ("@" not in email or len(email) > 254):
@@ -266,6 +288,15 @@ def start_checkout(*, plan_slug: str, interval: str, email: str,
     plan = plan_by_slug(plan_slug)
     if not plan:
         return {"ok": False, "error": "unknown_plan"}
+    if plan.get("sales_only") or plan_slug == "enterprise":
+        return {"ok": False, "error": "contact_sales"}
+    if not billing_enabled():
+        return {"ok": False, "error": "billing_disabled"}
+    if _production() and (
+        not stripe_configured()
+        or not os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+    ):
+        return {"ok": False, "error": "billing_not_configured"}
 
     if want_trial and plan_slug != "pro":
         return {"ok": False, "error": "trial_pro_only"}
@@ -344,7 +375,9 @@ def start_checkout(*, plan_slug: str, interval: str, email: str,
         line_items = [{
             "price_data": {
                 "currency": "usd",
-                "unit_amount": amount if not want_trial else 0,
+                # A Stripe trial delays collection; it must not turn the
+                # recurring subscription price into a permanent $0 price.
+                "unit_amount": amount,
                 "product_data": {
                     "name": f"NullPoint {plan['name']} ({interval})",
                     "metadata": {"plan": plan_slug, "interval": interval},
@@ -398,11 +431,15 @@ def start_checkout(*, plan_slug: str, interval: str, email: str,
                 conn.close()
             except Exception:
                 pass
-        return {"ok": False, "error": "stripe_unavailable", "detail": str(e)[:160]}
+        return {"ok": False, "error": "stripe_unavailable"}
 
 
 def verify_and_entitle(*, session_id: str, account_sub: str) -> dict:
-    """Verify session and write entitlement. Mock sessions are accepted as simulated."""
+    """Verify an account-bound session, then write its entitlement idempotently."""
+    if not billing_enabled():
+        return {"ok": False, "error": "billing_disabled"}
+    if not account_sub:
+        return {"ok": False, "error": "login_required"}
     if not session_id:
         return {"ok": False, "error": "missing_session"}
 
@@ -412,50 +449,64 @@ def verify_and_entitle(*, session_id: str, account_sub: str) -> dict:
     status = "active"
     source = "mock" if degraded else "stripe"
 
-    # Parse plan from mock session audit or defaults.
-    if degraded:
-        # Prefer last checkout_started for this account if present.
-        status = "trialing" if "trial" in session_id else "active"
-        # Default mock: essential/pro encoded isn't in id — entitlement set via query later.
-        plan_slug = "pro"
-        source = "mock"
-
     try:
         from Autobot.VectorDB.NullPoint_Vector import connect_db
         conn = connect_db()
         if not conn:
-            return {"ok": True, "degraded": degraded, "plan": plan_slug,
-                    "status": status, "persisted": False}
+            return {"ok": False, "error": "billing_store_unavailable"}
         try:
             ensure_billing_tables(conn)
             stream_id = f"checkout:{(account_sub or 'anon')[:64]}"
-            # Recover plan from latest audit for this stream.
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT event_payload FROM payment_audit_events
-                    WHERE stream_id = %s AND event_type = 'checkout_started'
-                    ORDER BY id DESC LIMIT 1
-                    """,
-                    (stream_id,),
-                )
-                row = cur.fetchone()
-                if row and row[0]:
-                    pl = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-                    plan_slug = pl.get("plan") or plan_slug
-                    interval = pl.get("interval") or interval
-                    if pl.get("trial"):
-                        status = "trialing"
-
-            if not degraded and stripe_configured():
+            if degraded:
+                # A caller-chosen local_* value must never grant access. Match
+                # the exact server-created session to this authenticated account.
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT event_payload FROM payment_audit_events
+                        WHERE stream_id = %s
+                          AND event_type = 'checkout_session_created'
+                          AND provider = 'mock'
+                          AND event_payload->>'session_id' = %s
+                        ORDER BY id DESC LIMIT 1
+                        """,
+                        (stream_id, session_id),
+                    )
+                    row = cur.fetchone()
+                if not row or not row[0]:
+                    return {"ok": False, "error": "invalid_session"}
+                payload = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                if payload.get("account_sub") != account_sub:
+                    return {"ok": False, "error": "session_owner_mismatch"}
+                plan_slug = str(payload.get("plan") or "")
+                interval = str(payload.get("interval") or "")
+                status = "trialing" if payload.get("trial") else "active"
+            elif stripe_configured():
                 import stripe
                 stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
-                sess = stripe.checkout.Session.retrieve(session_id)
+                sess = stripe.checkout.Session.retrieve(
+                    session_id, expand=["subscription"],
+                )
                 meta = sess.get("metadata") or {}
-                plan_slug = meta.get("plan") or plan_slug
-                interval = meta.get("interval") or interval
-                if meta.get("trial") == "true":
-                    status = "trialing"
+                if meta.get("account_sub") != account_sub:
+                    return {"ok": False, "error": "session_owner_mismatch"}
+                if sess.get("status") != "complete":
+                    return {"ok": False, "error": "checkout_incomplete"}
+                subscription = sess.get("subscription") or {}
+                sub_status = (
+                    subscription.get("status")
+                    if hasattr(subscription, "get") else None
+                )
+                if sub_status not in ("active", "trialing"):
+                    return {"ok": False, "error": "subscription_inactive"}
+                plan_slug = str(meta.get("plan") or "")
+                interval = str(meta.get("interval") or "")
+                status = str(sub_status)
+            else:
+                return {"ok": False, "error": "billing_not_configured"}
+
+            if not plan_by_slug(plan_slug) or interval not in ("monthly", "annual"):
+                return {"ok": False, "error": "invalid_entitlement_metadata"}
 
             with conn.cursor() as cur:
                 cur.execute(
@@ -487,8 +538,7 @@ def verify_and_entitle(*, session_id: str, account_sub: str) -> dict:
             conn.close()
     except Exception as e:
         logger.error("entitle failed: %s", e)
-        return {"ok": True, "degraded": degraded, "plan": plan_slug,
-                "status": status, "persisted": False, "error": str(e)[:120]}
+        return {"ok": False, "error": "entitlement_unavailable"}
 
 
 def verify_stripe_webhook(payload: bytes, sig_header: str) -> dict:
@@ -496,6 +546,8 @@ def verify_stripe_webhook(payload: bytes, sig_header: str) -> dict:
 
     Mock mode: accept only when BILLING_MOCK and header is `mock_ok`.
     """
+    if not billing_enabled():
+        return {"ok": False, "error": "billing_disabled"}
     if use_mock():
         if (sig_header or "").strip() == "mock_ok":
             try:
@@ -506,7 +558,7 @@ def verify_stripe_webhook(payload: bytes, sig_header: str) -> dict:
 
     secret = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
     if not secret:
-        return {"ok": False, "error": "STRIPE_WEBHOOK_SECRET missing"}
+        return {"ok": False, "error": "billing_not_configured"}
     if not sig_header:
         return {"ok": False, "error": "missing_stripe_signature"}
     try:

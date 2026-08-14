@@ -5,7 +5,7 @@
 <div class="topbar">
   <div>
     <h1>Pricing</h1>
-    <div class="desc">Three tiers. Annual billing saves two months. Essential keeps a 7-day history window.</div>
+    <div class="desc">Essential and Pro are self-serve. Enterprise is sales-led — no public list price. Annual billing saves two months on paid tiers.</div>
   </div>
   <div class="billing-toggle" id="billing-toggle">
     <button type="button" class="bill-opt" data-period="monthly">Monthly</button>
@@ -19,18 +19,22 @@
     {% if p.featured %}<div class="price-popular">Most popular</div>{% endif %}
     <h3>{{ p.name }}</h3>
     <p class="price-desc">{{ p.tagline }}</p>
+    {% if p.sales_only or p.slug == 'enterprise' %}
+    <div class="price-amt">
+      <span class="price-val price-sales-only">Contact sales</span>
+    </div>
+    {% else %}
     <div class="price-amt">
       <span class="price-val" data-monthly="{{ '%.2f'|format(p.price_monthly) }}" data-annual="{{ '%.2f'|format(p.price_annual) }}">{{ '%.2f'|format(p.price_annual) }}</span>
       <span class="price-per">/ <span class="price-period">year</span></span>
     </div>
+    {% endif %}
     <ul class="price-feats">
       {% for f in p.features %}<li>{{ f }}</li>{% endfor %}
     </ul>
-    {% if p.slug == 'enterprise' %}
+    {% if p.sales_only or p.slug == 'enterprise' %}
     <a class="btn {% if not p.featured %}secondary{% endif %} price-cta"
        href="mailto:sales@nullpoint.security?subject=NullPoint%20Enterprise">{{ p.cta }}</a>
-    <a class="btn secondary price-cta" style="margin-top:8px"
-       href="/app/checkout?plan=enterprise&amp;interval=annual">Self-serve annual</a>
     {% elif p.slug == 'pro' %}
     <a class="btn price-cta js-checkout-link" href="/app/checkout?plan=pro&amp;interval=annual&amp;trial=1"
        data-plan="pro" data-trial="1">{{ p.cta }}</a>

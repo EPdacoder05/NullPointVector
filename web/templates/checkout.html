@@ -20,6 +20,7 @@
     <div class="hd"><h2>Account</h2></div>
     <div class="bd">
       <form id="checkout-form" method="post" action="/app/checkout" class="checkout-form">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
         <input type="hidden" name="plan" value="{{ plan.slug }}" />
         <input type="hidden" name="interval" value="{{ interval }}" />
         <input type="hidden" name="trial" value="{{ '1' if want_trial else '0' }}" />
@@ -38,12 +39,13 @@
           <input type="email" name="email" required placeholder="you@example.com"
                  value="{{ user.sub if user and '@' in (user.sub or '') else '' }}" />
         </label>
-        {% if plan.slug == 'enterprise' %}
-        <p class="hint">Prefer a sales conversation?
+        {% if plan.sales_only or plan.slug == 'enterprise' %}
+        <p class="hint">Enterprise is sales-led — there is no self-serve checkout.
           <a href="mailto:sales@nullpoint.security?subject=NullPoint%20Enterprise">Contact sales</a>
-          — or continue for self-serve {{ interval }} at the listed rate.
+          or <a href="/app/pricing">return to pricing</a>.
         </p>
-        {% endif %}
+        <a class="btn" href="mailto:sales@nullpoint.security?subject=NullPoint%20Enterprise">Contact sales</a>
+        {% else %}
         {% if want_trial %}
         <p class="hint">Pro 7-day trial is abuse-gated (device fingerprint + IP velocity). Essential has no trial.</p>
         {% endif %}
@@ -55,6 +57,7 @@
         {% if billing_mock %}
         <p class="hint" style="margin-top:10px">Local simulation until Stripe keys are set (<code>BILLING_MOCK=false</code>).</p>
         {% endif %}
+        {% endif %}
       </form>
     </div>
   </section>
@@ -65,7 +68,11 @@
       <div class="order-line"><span>Tagline</span><span class="hint">{{ plan.tagline }}</span></div>
       <div class="order-total">
         <span>Total</span>
+        {% if plan.sales_only or plan.slug == 'enterprise' %}
+        <strong>Contact sales</strong>
+        {% else %}
         <strong>${{ '%.2f'|format(amount_cents / 100) }}{% if want_trial %} <span class="hint">(trial)</span>{% endif %}</strong>
+        {% endif %}
       </div>
       <p class="hint">Price is set on the server from the plan catalog. Client-supplied amounts are rejected.</p>
     </div>

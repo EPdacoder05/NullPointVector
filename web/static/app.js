@@ -102,6 +102,23 @@
     setTimeout(function () { el.remove(); }, 4200);
   }
 
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? (meta.getAttribute("content") || "") : "";
+  }
+
+  function appFetch(url, options) {
+    var opts = options ? Object.assign({}, options) : {};
+    var method = String(opts.method || "GET").toUpperCase();
+    if (["GET", "HEAD", "OPTIONS"].indexOf(method) === -1) {
+      var headers = new Headers(opts.headers || {});
+      var token = csrfToken();
+      if (token) headers.set("X-CSRF-Token", token);
+      opts.headers = headers;
+    }
+    return window.fetch(url, opts);
+  }
+
   function bindCmdEnter(form, handler) {
     if (!form) return;
     // Only Cmd/Ctrl+Enter submits. Never touch A/C/V/X (select-all / copy / paste).
@@ -123,7 +140,7 @@
     if (!String(data.get("content") || "").trim()) return;
     btn.disabled = true;
     result.innerHTML = '<div class="verdict empty"><span class="spin"></span>&nbsp; Analyzing…</div>';
-    fetch("/app/analyze", { method: "POST", body: data, headers: { Accept: "text/html" } })
+    appFetch("/app/analyze", { method: "POST", body: data, headers: { Accept: "text/html" } })
       .then(function (r) { return r.text(); })
       .then(function (html) {
         result.innerHTML = html;
@@ -146,7 +163,7 @@
     if (!String(data.get("caller_id") || "").trim()) return;
     btn.disabled = true;
     slot.innerHTML = '<div class="verdict empty"><span class="spin"></span>&nbsp; Screening…</div>';
-    fetch("/app/screen", { method: "POST", body: data, headers: { Accept: "text/html" } })
+    appFetch("/app/screen", { method: "POST", body: data, headers: { Accept: "text/html" } })
       .then(function (r) { return r.text(); })
       .then(function (html) {
         slot.innerHTML = html;
@@ -177,7 +194,7 @@
   function refreshFeed() {
     var feed = document.getElementById("feed");
     if (!feed) return;
-    fetch("/app/feed?channel=" + encodeURIComponent(channel), { headers: { Accept: "text/html" } })
+    appFetch("/app/feed?channel=" + encodeURIComponent(channel), { headers: { Accept: "text/html" } })
       .then(function (r) { return r.text(); })
       .then(function (html) { feed.innerHTML = html; applyFeedFilter(); })
       .catch(function () { /* keep last good feed */ });
@@ -209,7 +226,9 @@
         b.classList.toggle("active", b === btn);
       });
       document.querySelectorAll(".price-val").forEach(function (el) {
-        el.textContent = el.getAttribute(period === "annual" ? "data-annual" : "data-monthly");
+        if (el.classList.contains("price-sales-only")) return;
+        var next = el.getAttribute(period === "annual" ? "data-annual" : "data-monthly");
+        if (next != null) el.textContent = next;
       });
       document.querySelectorAll(".price-period").forEach(function (el) {
         el.textContent = period === "annual" ? "year" : "month";
@@ -309,7 +328,7 @@
         return;
       }
       slot.innerHTML = '<div class="verdict empty"><span class="spin"></span>&nbsp; Enriching…</div>';
-      fetch("/app/identity/enrich", {
+      appFetch("/app/identity/enrich", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ subject: subject.trim(), consented: true }),
@@ -393,7 +412,7 @@
     document.querySelectorAll(".conn-env").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var provider = btn.getAttribute("data-provider");
-        fetch("/app/connectors/env/" + encodeURIComponent(provider), { method: "POST" })
+        appFetch("/app/connectors/env/" + encodeURIComponent(provider), { method: "POST" })
           .then(function (r) { return r.json(); })
           .then(function (j) {
             if (j.ok) {
@@ -411,7 +430,7 @@
       apForm.addEventListener("submit", function (e) {
         e.preventDefault();
         var fd = new FormData(apForm);
-        fetch("/app/connectors/app-password", { method: "POST", body: fd, headers: { Accept: "application/json" } })
+        appFetch("/app/connectors/app-password", { method: "POST", body: fd, headers: { Accept: "application/json" } })
           .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
           .then(function (res) {
             if (res.ok && res.j.ok) {
@@ -429,7 +448,7 @@
       reqForm.addEventListener("submit", function (e) {
         e.preventDefault();
         var fd = new FormData(reqForm);
-        fetch("/app/connectors/request-provider", { method: "POST", body: fd, headers: { Accept: "application/json" } })
+        appFetch("/app/connectors/request-provider", { method: "POST", body: fd, headers: { Accept: "application/json" } })
           .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
           .then(function (res) {
             if (res.ok && res.j.ok) {
@@ -469,7 +488,7 @@
     row.querySelectorAll(".js-grade").forEach(function (b) { b.disabled = true; });
     var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 45000) : null;
-    return fetch(url, {
+    return appFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body: body.toString(),
@@ -543,7 +562,7 @@
       return postGrade(row, verdict, []);
     }
     var mid = row.getAttribute("data-mid");
-    fetch("/app/quarantine/siblings?mid=" + encodeURIComponent(mid), { headers: { Accept: "application/json" } })
+    appFetch("/app/quarantine/siblings?mid=" + encodeURIComponent(mid), { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var sibs = (j && j.siblings) || [];
@@ -724,7 +743,7 @@
       body.set("detail", ta ? ta.value.trim() : "");
       var next = document.getElementById("npr-next");
       if (next) next.disabled = true;
-      fetch("/app/report", {
+      appFetch("/app/report", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
         body: body.toString(),
@@ -825,7 +844,7 @@
           body.set("eid", row.getAttribute("data-eid") || "");
           body.set("verdict", verdict);
           row.querySelectorAll(".js-grade").forEach(function (b) { b.disabled = true; });
-          fetch("/app/calls/grade", {
+          appFetch("/app/calls/grade", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
             body: body.toString(),
