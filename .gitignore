@@ -192,6 +192,9 @@ data/reports/data/benchmark_snapshot.json
 .ios_pilot_auth
 .ios_pilot_token
 
+# iOS compiled pilot credentials (use PilotSecrets.example.swift)
+ios/Sources/NullPointGuard/PilotSecrets.swift
+
 # --- Trade secrets (keep local / private storage; never push) ---
 **/*.pkl
 **/models/registry/CHAMPION

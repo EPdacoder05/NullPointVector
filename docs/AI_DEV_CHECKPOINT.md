@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-12 (Login card has a Sign up button; SIGNUP_OPEN=true for friends-and-family pilot. X/IG are later OSINT connectors, not account login.)
+_Last updated: 2026-08-14 (P0 closed + verified live. Calls UI tenant-scoped (no bypass); Phish trainer uses passes_release_gate = point gate AND Wilson evidence (current n=40 → evidence insufficient — honest); account delete harvests anonymized verified labels into feedback.jsonl, keeps fleet_threat_keys, fixes pool-deadlock nested get_conn; live two-tenant cross-read + delete-retain PASS in Docker; Funnel+local pilot/admin login/dashboard/calls 200. SMS App Group filled; PilotSecrets untracked. NEXT: curated commits in slices — not one 90-file dump. Secret rotate deferred until hosted.)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |
