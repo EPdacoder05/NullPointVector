@@ -65,8 +65,9 @@ def test_unknown_number_allowed_no_keys(monkeypatch):
                         lambda n, use_cache=True: agg.score(n, use_cache=False))
 
     res = screen_call(CallEvent(caller_id="+18005559999"))
-    assert res.action == CallKitAction.ALLOW
+    assert res.action == CallKitAction.UNSCORED
     assert res.is_threat is False
+    assert res.verdict == "unscored"
     assert "reputation" not in res.paths  # no source reported
 
 
@@ -113,6 +114,33 @@ def test_known_contact_not_blocked(monkeypatch):
     res = screen_call(CallEvent(caller_id="+15551112222", contact_known=True))
     assert res.action != CallKitAction.BLOCK
     assert res.action != CallKitAction.SILENCE
+
+
+def test_tax_campaign_cid_blocks_without_transcript():
+    from common.vish.campaigns import reload_packs
+    reload_packs()
+    res = screen_call(CallEvent(caller_id="+15792483046"))
+    assert res.action == CallKitAction.BLOCK
+    assert res.is_threat is True
+    assert "campaign" in res.paths
+    assert "Tax resolution" in " ".join(res.reasons)
+
+
+def test_tax_script_blocks_new_origin_cid():
+    """Rotating DID + same voicemail script must not require a manual number add."""
+    from common.vish.campaigns import reload_packs
+    reload_packs()
+    res = screen_call(CallEvent(
+        caller_id="+12125550199",
+        transcript=(
+            "Hi, this is Natalia Chandler with the tax resolution department. "
+            "I'm following up regarding the information associated with your tax matter. "
+            "Call me at 877-961-0327. Press 2 or call me at 877-961-0327."
+        ),
+    ))
+    assert res.action == CallKitAction.BLOCK
+    assert res.is_threat is True
+    assert "campaign" in res.paths
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # NullPoint Signal Deck on Fly.io — app process only.
 # Provision managed Postgres/Redis endpoints with encrypted transport, then
 # `fly secrets set DATABASE_URL=... REDIS_URL=... JWT_SECRET_KEY=... ENCRYPTION_KEY=...`
-# Keep `SIGNUP_OPEN=false` until verified account-state support ships.
+# Manual customer signup is enabled; set `SIGNUP_OPEN=false` to pause it.
 #
 #   fly launch --no-deploy   # first time, accept this fly.toml
 #   fly deploy
@@ -36,7 +36,7 @@ primary_region = "iad"
   ENABLE_MESSAGE_EMBEDDINGS = "0"
   BILLING_ENABLED = "false"
   BILLING_MOCK = "false"
-  SIGNUP_OPEN = "false"
+  SIGNUP_OPEN = "true"
   FORCE_HSTS = "true"
 
 [http_service]

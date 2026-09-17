@@ -8,7 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		03AC7421352CD0C176DE05C0 /* MessageFilterExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFB8541005E04AB6F31773BC /* MessageFilterExtension.swift */; };
+		077AC596E10E1E70053D6B8D /* RootShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F880341170A752F483888CB /* RootShell.swift */; };
+		0D5D9792A6ABEE9725D91832 /* ChannelViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803E4DE0BECA2232DA56B1B9 /* ChannelViews.swift */; };
 		404820A3A4D50DE98A5DC945 /* PilotSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE24C42B43997836ED0247B /* PilotSecrets.swift */; };
+		4072E20D90B74A1FA91BCF70 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D735D9934BE1DD9FBCE6A7A2 /* ShareViewController.swift */; };
+		54D8AEAA55B417FE04FEFC5D /* NullPointShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8961AA6E3BC6F01383F84CA3 /* NullPointShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		69A108D8636902142E41CB39 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */; };
 		739BD6002E5582CC7602F699 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A99B2E988E45EAF235408A71 /* App.swift */; };
 		77F1AEEC2B9FFED25B8154A6 /* APIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D199DBC5088BFBA127A2EE4C /* APIService.swift */; };
@@ -19,10 +23,18 @@
 		8B29B20DDCB40CB9920DE426 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0091FA6F430394F2753CDF74 /* KeychainTokenStore.swift */; };
 		A51302D0A90D4C572E6EE1AF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F79ACA6EE2C983761EAC239E /* LaunchScreen.storyboard */; };
 		C1E1A4ACD9CDFD674B26AF00 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */; };
+		CF2B461B0BEA44212EFA1909 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */; };
 		CF566DBAE8501257D99D2A2C /* CallDirectoryHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A50BD389146306C37408055 /* CallDirectoryHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		82BBFF1F79B4A36C18BFDAB5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BDED16D1EDE96CEBC0EA8682 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EEEB23F36EF7062CACF49809;
+			remoteInfo = NullPointShare;
+		};
 		B7B6637BC13E51428638D819 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = BDED16D1EDE96CEBC0EA8682 /* Project object */;
@@ -48,6 +60,7 @@
 			files = (
 				7A58A96CE7FFDA293E7E2D31 /* NullPointDirectory.appex in Embed Foundation Extensions */,
 				87963FF25E85AC9FD4857E7B /* NullPointSMSFilter.appex in Embed Foundation Extensions */,
+				54D8AEAA55B417FE04FEFC5D /* NullPointShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -56,13 +69,17 @@
 
 /* Begin PBXFileReference section */
 		0091FA6F430394F2753CDF74 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		1F880341170A752F483888CB /* RootShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootShell.swift; sourceTree = "<group>"; };
 		329F9280F26F51CDCE196115 /* NullPointGuard.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NullPointGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FE24C42B43997836ED0247B /* PilotSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PilotSecrets.swift; sourceTree = "<group>"; };
 		6D6882E7EBF7746502E3A183 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7A50BD389146306C37408055 /* CallDirectoryHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallDirectoryHandler.swift; sourceTree = "<group>"; };
+		803E4DE0BECA2232DA56B1B9 /* ChannelViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelViews.swift; sourceTree = "<group>"; };
+		8961AA6E3BC6F01383F84CA3 /* NullPointShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NullPointShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A99B2E988E45EAF235408A71 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		BFB8541005E04AB6F31773BC /* MessageFilterExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFilterExtension.swift; sourceTree = "<group>"; };
 		D199DBC5088BFBA127A2EE4C /* APIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
+		D735D9934BE1DD9FBCE6A7A2 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		D9E96C3E27F3E00FEFDEF82B /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
 		DCFC0CEF8ACFFA19027DF1A3 /* NullPointSMSFilter.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NullPointSMSFilter.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E853ECCF21CF47726BDF134E /* NullPointDirectory.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NullPointDirectory.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -85,8 +102,10 @@
 			children = (
 				D199DBC5088BFBA127A2EE4C /* APIService.swift */,
 				A99B2E988E45EAF235408A71 /* App.swift */,
+				803E4DE0BECA2232DA56B1B9 /* ChannelViews.swift */,
 				0091FA6F430394F2753CDF74 /* KeychainTokenStore.swift */,
 				3FE24C42B43997836ED0247B /* PilotSecrets.swift */,
+				1F880341170A752F483888CB /* RootShell.swift */,
 			);
 			path = NullPointGuard;
 			sourceTree = "<group>";
@@ -96,6 +115,7 @@
 			children = (
 				E853ECCF21CF47726BDF134E /* NullPointDirectory.appex */,
 				329F9280F26F51CDCE196115 /* NullPointGuard.app */,
+				8961AA6E3BC6F01383F84CA3 /* NullPointShare.appex */,
 				DCFC0CEF8ACFFA19027DF1A3 /* NullPointSMSFilter.appex */,
 			);
 			name = Products;
@@ -106,6 +126,7 @@
 			children = (
 				873BDCCC0103505BB8720511 /* NullPointDirectory */,
 				68F261CFF7E52C09028FC648 /* NullPointGuard */,
+				D7FC62AF677579659E3FA0F1 /* NullPointShare */,
 				9A628E45D6B88DCA5A994D92 /* NullPointSMSFilter */,
 				FDF384082F4690538487849E /* Shared */,
 			);
@@ -126,6 +147,14 @@
 				BFB8541005E04AB6F31773BC /* MessageFilterExtension.swift */,
 			);
 			path = NullPointSMSFilter;
+			sourceTree = "<group>";
+		};
+		D7FC62AF677579659E3FA0F1 /* NullPointShare */ = {
+			isa = PBXGroup;
+			children = (
+				D735D9934BE1DD9FBCE6A7A2 /* ShareViewController.swift */,
+			);
+			path = NullPointShare;
 			sourceTree = "<group>";
 		};
 		FDF384082F4690538487849E /* Shared */ = {
@@ -186,6 +215,7 @@
 			dependencies = (
 				788F215493B2F5806BBC1739 /* PBXTargetDependency */,
 				373DC1DD546E1E8F34C007F3 /* PBXTargetDependency */,
+				99F24D9AE20FF01A0165774A /* PBXTargetDependency */,
 			);
 			name = NullPointGuard;
 			packageProductDependencies = (
@@ -193,6 +223,23 @@
 			productName = NullPointGuard;
 			productReference = 329F9280F26F51CDCE196115 /* NullPointGuard.app */;
 			productType = "com.apple.product-type.application";
+		};
+		EEEB23F36EF7062CACF49809 /* NullPointShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ED48D82513059D54C46141AE /* Build configuration list for PBXNativeTarget "NullPointShare" */;
+			buildPhases = (
+				6CB9980E4C6F94EF90B4B170 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NullPointShare;
+			packageProductDependencies = (
+			);
+			productName = NullPointShare;
+			productReference = 8961AA6E3BC6F01383F84CA3 /* NullPointShare.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -215,6 +262,10 @@
 						DevelopmentTeam = KX3P7M3B6L;
 						ProvisioningStyle = Automatic;
 					};
+					EEEB23F36EF7062CACF49809 = {
+						DevelopmentTeam = KX3P7M3B6L;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = AA80AA959627E9474EE9008E /* Build configuration list for PBXProject "NullPointGuard" */;
@@ -234,6 +285,7 @@
 				31EDD608A06FCAEE46C79B7A /* NullPointGuard */,
 				1897075856DEB14D0C320C36 /* NullPointDirectory */,
 				2FFF476DD9DB936D8E70BCFC /* NullPointSMSFilter */,
+				EEEB23F36EF7062CACF49809 /* NullPointShare */,
 			);
 		};
 /* End PBXProject section */
@@ -251,6 +303,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		6CB9980E4C6F94EF90B4B170 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CF2B461B0BEA44212EFA1909 /* AppGroup.swift in Sources */,
+				4072E20D90B74A1FA91BCF70 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		881CD6471F916F62E3981A80 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -258,8 +319,10 @@
 				77F1AEEC2B9FFED25B8154A6 /* APIService.swift in Sources */,
 				739BD6002E5582CC7602F699 /* App.swift in Sources */,
 				C1E1A4ACD9CDFD674B26AF00 /* AppGroup.swift in Sources */,
+				0D5D9792A6ABEE9725D91832 /* ChannelViews.swift in Sources */,
 				8B29B20DDCB40CB9920DE426 /* KeychainTokenStore.swift in Sources */,
 				404820A3A4D50DE98A5DC945 /* PilotSecrets.swift in Sources */,
+				077AC596E10E1E70053D6B8D /* RootShell.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,9 +357,31 @@
 			target = 1897075856DEB14D0C320C36 /* NullPointDirectory */;
 			targetProxy = DB18DF5B1AA11FB4F9754E70 /* PBXContainerItemProxy */;
 		};
+		99F24D9AE20FF01A0165774A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EEEB23F36EF7062CACF49809 /* NullPointShare */;
+			targetProxy = 82BBFF1F79B4A36C18BFDAB5 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		47B9ED263C169E40054CB91B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointShare.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/NullPointShare-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		4EFEB8F212B923850D57F4D5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -338,7 +423,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				API_BASE_URL = "";
+				API_BASE_URL = "https://nullpointvector.com";
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -393,6 +478,23 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		5F8DA9E4B1F7DF825E7BF2E1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/NullPointShare.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/NullPointShare-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nullpoint.guard.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -570,6 +672,15 @@
 			buildConfigurations = (
 				7E0FE18130C983916C6F534C /* Debug */,
 				F3910F9E017E39449A461CB8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		ED48D82513059D54C46141AE /* Build configuration list for PBXNativeTarget "NullPointShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				47B9ED263C169E40054CB91B /* Debug */,
+				5F8DA9E4B1F7DF825E7BF2E1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

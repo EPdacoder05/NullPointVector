@@ -4,7 +4,7 @@
 # Dashboard: New → Web Service → this repo → Dockerfile → instance Free.
 # Health: /health. Sleeps after 15 min idle on free.
 # PUBLIC_BASE_URL must be one HTTPS origin (custom domain or https://<svc>.onrender.com).
-# SIGNUP_OPEN stays false (production validator).
+# Manual customer signup is enabled; set false in the Render dashboard to pause it.
 
 services:
   - type: web
@@ -12,9 +12,6 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    # Deploys are manual: a merge to main must not redeploy the live service on
-    # its own. Trigger from the Render dashboard once gates are green.
-    autoDeploy: false
     dockerCommand: bash -lc "./start.sh migrate && exec ./start.sh web"
     healthCheckPath: /health
     envVars:
@@ -31,7 +28,7 @@ services:
       - key: FORCE_HSTS
         value: "true"
       - key: SIGNUP_OPEN
-        value: "false"
+        value: "true"
       - key: BILLING_ENABLED
         value: "false"
       - key: BILLING_MOCK

@@ -590,7 +590,7 @@ class TestIOSReleaseBoundary:
         ).read_text()
 
         assert re.search(
-            r"Release:\s*\n\s+API_BASE_URL:\s+\"\"\s*\n"
+            r"Release:\s*\n\s+API_BASE_URL:\s+\"https://nullpointvector\.com\"\s*\n"
             r"\s+EXCLUDED_SOURCE_FILE_NAMES:\s+PilotSecrets\.swift",
             project_config,
         )
@@ -600,7 +600,7 @@ class TestIOSReleaseBoundary:
             flags=re.DOTALL,
         )
         assert any(
-            'API_BASE_URL = "";' in block
+            'API_BASE_URL = "https://nullpointvector.com";' in block
             and "EXCLUDED_SOURCE_FILE_NAMES = PilotSecrets.swift;" in block
             for block in release_blocks
         )

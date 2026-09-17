@@ -167,7 +167,7 @@ def test_fly_release_is_fail_closed_and_billing_disabled():
     assert config["processes"] == {"web": "./start.sh web"}
     assert config["http_service"]["processes"] == ["web"]
     assert config["env"]["ENV"] == "production"
-    assert config["env"]["SIGNUP_OPEN"] == "false"
+    assert config["env"]["SIGNUP_OPEN"] == "true"
     assert config["env"]["BILLING_ENABLED"] == "false"
     assert config["env"]["BILLING_MOCK"] == "false"
 

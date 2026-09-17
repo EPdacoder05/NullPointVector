@@ -48,7 +48,12 @@ final class APIService {
     }
 #endif
 
-    func setAccessToken(_ token: String?) { accessToken = token }
+    func setAccessToken(_ token: String?) {
+        accessToken = token
+        if let token, !token.isEmpty, let url = baseURL?.absoluteString {
+            try? GuardSession.save(GuardSession(accessToken: token, baseURL: url))
+        }
+    }
     func setRefreshToken(_ token: String?) { refreshToken = token }
 
     @discardableResult
@@ -146,6 +151,11 @@ final class APIService {
                     return "The request failed (HTTP \(code))."
                 }
             case .message(let m):
+                if m.localizedCaseInsensitiveContains("SSL")
+                    || m.localizedCaseInsensitiveContains("TLS")
+                    || m.localizedCaseInsensitiveContains("secure connection") {
+                    return "TLS failed. On a physical iPhone use https:// (Tailscale Funnel), not http://127.0.0.1. Menu → Settings."
+                }
                 return m
             }
         }
@@ -235,6 +245,7 @@ final class APIService {
         accessToken = nil
         refreshToken = nil
         KeychainTokenStore.clearSession()
+        GuardSession.clear()
     }
 
     private func applySession(access: String, refresh: String?) {
@@ -243,6 +254,9 @@ final class APIService {
         if let refresh, !refresh.isEmpty {
             refreshToken = refresh
             _ = KeychainTokenStore.saveRefreshToken(refresh)
+        }
+        if let url = baseURL?.absoluteString {
+            try? GuardSession.save(GuardSession(accessToken: access, baseURL: url))
         }
     }
 
@@ -332,24 +346,36 @@ final class APIService {
         }
 
         var req = try makeRequest(token: accessToken)
-        var (data, resp) = try await URLSession.shared.data(for: req)
-        if let http = resp as? HTTPURLResponse, http.statusCode == 401 {
-            // Debug may reconnect the pilot; Release fails authentication closed.
-            if !(try await refreshAccessTokenIfNeeded()) {
+        do {
+            var (data, resp) = try await URLSession.shared.data(for: req)
+            if let http = resp as? HTTPURLResponse, http.statusCode == 401 {
+                if !(try await refreshAccessTokenIfNeeded()) {
 #if DEBUG
-                try await pilotConnect()
+                    try await pilotConnect()
 #else
-                signOut()
-                throw APIError.authenticationRequired
+                    signOut()
+                    throw APIError.authenticationRequired
 #endif
+                }
+                req = try makeRequest(token: accessToken)
+                (data, resp) = try await URLSession.shared.data(for: req)
             }
-            req = try makeRequest(token: accessToken)
-            (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                throw APIError.httpStatus(code)
+            }
+            return try JSONDecoder().decode(Out.self, from: data)
+        } catch let err as APIError {
+            throw err
+        } catch {
+            let ns = error as NSError
+            if ns.domain == NSURLErrorDomain,
+               [-1200, -1202, -1204, -1022].contains(ns.code) {
+                throw APIError.message(
+                    "TLS failed. Bake https:// Funnel host into API_BASE_URL (Menu → Settings). http://127.0.0.1 only works on Simulator."
+                )
+            }
+            throw APIError.message(error.localizedDescription)
         }
-        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            throw APIError.httpStatus(code)
-        }
-        return try JSONDecoder().decode(Out.self, from: data)
     }
 }

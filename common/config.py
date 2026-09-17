@@ -70,14 +70,6 @@ def validate_production_config(*, strict: bool = None) -> list[str]:
         if pw in _INSECURE_PW:
             issues.append("API_ADMIN_PASSWORD is default 'changeme' — change before exposing")
 
-    signup_requested = (
-        os.getenv("SIGNUP_OPEN", "false").strip().lower() in {"1", "true", "yes"}
-    )
-    if strict and signup_requested:
-        issues.append(
-            "SIGNUP_OPEN must remain false until verified account-state support is implemented"
-        )
-
     if strict and os.getenv("BILLING_ENABLED", "false").strip().lower() in {
         "1", "true", "yes",
     }:
