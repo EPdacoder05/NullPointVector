@@ -40,8 +40,24 @@ enum GuardDestination: String, CaseIterable, Identifiable, Hashable {
 struct RootShell: View {
     @State private var showMenu = false
     @State private var destination: GuardDestination = .guardHome
+    @State private var isAuthenticated = APIService.shared.accessToken?.isEmpty == false
 
     var body: some View {
+        Group {
+            if isAuthenticated {
+                authenticatedShell
+            } else {
+                LoginView {
+                    isAuthenticated = true
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .npSignedOut)) { _ in
+            isAuthenticated = false
+        }
+    }
+
+    private var authenticatedShell: some View {
         ZStack(alignment: .leading) {
             NavigationStack {
                 destinationView
@@ -183,8 +199,101 @@ private struct SideDrawer: View {
         .frame(maxWidth: 300)
         .frame(maxHeight: .infinity)
         .background(NP.ink.opacity(0.98))
+        .overlay(alignment: .leading) {
+            Rectangle().fill(NP.brassDim).frame(width: 2)
+        }
         .overlay(alignment: .trailing) {
             Rectangle().fill(NP.line).frame(width: 1)
         }
+    }
+}
+
+private extension Notification.Name {
+    static let npSignedOut = Notification.Name("NullPointGuard.signedOut")
+}
+
+private struct LoginView: View {
+    let onSignedIn: () -> Void
+    @State private var username = ""
+    @State private var password = ""
+    @State private var error: String?
+    @State private var busy = false
+
+    var body: some View {
+        ZStack {
+            NP.ink.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 18) {
+                Text("NULLPOINT")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .tracking(3)
+                    .foregroundStyle(NP.brass)
+                Text("Sign in")
+                    .font(.system(size: 32, weight: .bold, design: .serif))
+                    .foregroundStyle(NP.text)
+                Text("Sign in to protect your calls, texts, and messages.")
+                    .font(.subheadline)
+                    .foregroundStyle(NP.muted)
+
+                if let error {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(NP.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                TextField("Username or email", text: $username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.emailAddress)
+                    .textFieldStyle(.plain)
+                    .padding(13)
+                    .background(NP.panel)
+                    .overlay(Rectangle().stroke(NP.line, lineWidth: 1))
+
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.plain)
+                    .padding(13)
+                    .background(NP.panel)
+                    .overlay(Rectangle().stroke(NP.line, lineWidth: 1))
+
+                Button {
+                    Task { await signIn() }
+                } label: {
+                    HStack {
+                        Spacer()
+                        if busy { ProgressView().tint(NP.ink) }
+                        Text(busy ? "Signing in…" : "Continue")
+                            .font(.headline.weight(.semibold))
+                        Spacer()
+                    }
+                    .padding(.vertical, 14)
+                    .background(NP.signal)
+                    .foregroundStyle(NP.ink)
+                }
+                .disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+
+                Text("Create your account at nullpointvector.com/app/signup.")
+                    .font(.caption)
+                    .foregroundStyle(NP.muted)
+            }
+            .padding(24)
+            .frame(maxWidth: 460)
+            .background(NP.panel)
+            .overlay(Rectangle().stroke(NP.brassDim, lineWidth: 1))
+            .padding(20)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func signIn() async {
+        busy = true
+        error = nil
+        do {
+            try await APIService.shared.login(username: username, password: password)
+            onSignedIn()
+        } catch let signInError {
+            error = signInError.localizedDescription
+        }
+        busy = false
     }
 }

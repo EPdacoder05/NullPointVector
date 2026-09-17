@@ -30,10 +30,10 @@ struct NullPointGuardApp: App {
 #else
         _ = APIService.shared.loadFromInfoPlist()
 #endif
-#if DEBUG
-        if let token = KeychainTokenStore.loadToken(), !token.isEmpty {
-            APIService.shared.setAccessToken(token)
+        if let session = GuardSession.load(), !session.accessToken.isEmpty {
+            APIService.shared.setAccessToken(session.accessToken)
         }
+#if DEBUG
         if let refresh = KeychainTokenStore.loadRefreshToken(), !refresh.isEmpty {
             APIService.shared.setRefreshToken(refresh)
         }
