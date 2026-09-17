@@ -214,8 +214,11 @@ private extension Notification.Name {
 
 private struct LoginView: View {
     let onSignedIn: () -> Void
+    @State private var createAccount = false
     @State private var username = ""
     @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var acceptedTerms = false
     @State private var error: String?
     @State private var busy = false
 
@@ -227,10 +230,10 @@ private struct LoginView: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .tracking(3)
                     .foregroundStyle(NP.brass)
-                Text("Sign in")
+                Text(createAccount ? "Create account" : "Sign in")
                     .font(.system(size: 32, weight: .bold, design: .serif))
                     .foregroundStyle(NP.text)
-                Text("Sign in to protect your calls, texts, and messages.")
+                Text(createAccount ? "Create your Signal Deck account in the app." : "Sign in to protect your calls, texts, and messages.")
                     .font(.subheadline)
                     .foregroundStyle(NP.muted)
 
@@ -241,7 +244,7 @@ private struct LoginView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                TextField("Username or email", text: $username)
+                TextField(createAccount ? "Email" : "Username or email", text: $username)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.emailAddress)
@@ -256,13 +259,28 @@ private struct LoginView: View {
                     .background(NP.panel)
                     .overlay(Rectangle().stroke(NP.line, lineWidth: 1))
 
+                if createAccount {
+                    SecureField("Confirm password", text: $confirmPassword)
+                        .textFieldStyle(.plain)
+                        .padding(13)
+                        .background(NP.panel)
+                        .overlay(Rectangle().stroke(NP.line, lineWidth: 1))
+
+                    Toggle(isOn: $acceptedTerms) {
+                        Text("I agree to the Terms and Privacy Policy")
+                            .font(.caption)
+                            .foregroundStyle(NP.muted)
+                    }
+                    .tint(NP.signal)
+                }
+
                 Button {
-                    Task { await signIn() }
+                    Task { await submit() }
                 } label: {
                     HStack {
                         Spacer()
                         if busy { ProgressView().tint(NP.ink) }
-                        Text(busy ? "Signing in…" : "Continue")
+                        Text(busy ? (createAccount ? "Creating…" : "Signing in…") : (createAccount ? "Create account" : "Continue"))
                             .font(.headline.weight(.semibold))
                         Spacer()
                     }
@@ -270,11 +288,14 @@ private struct LoginView: View {
                     .background(NP.signal)
                     .foregroundStyle(NP.ink)
                 }
-                .disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                .disabled(!canSubmit)
 
-                Text("Create your account at nullpointvector.com/app/signup.")
-                    .font(.caption)
-                    .foregroundStyle(NP.muted)
+                Button(createAccount ? "Already have an account? Sign in" : "Create an account") {
+                    error = nil
+                    createAccount.toggle()
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NP.brass)
             }
             .padding(24)
             .frame(maxWidth: 460)
@@ -285,15 +306,29 @@ private struct LoginView: View {
         .preferredColorScheme(.dark)
     }
 
-    private func signIn() async {
+    private func submit() async {
+        if createAccount && password != confirmPassword {
+            error = "Passwords do not match."
+            return
+        }
         busy = true
         error = nil
         do {
-            try await APIService.shared.login(username: username, password: password)
+            if createAccount {
+                try await APIService.shared.signup(email: username, password: password)
+            } else {
+                try await APIService.shared.login(username: username, password: password)
+            }
             onSignedIn()
         } catch let signInError {
             error = signInError.localizedDescription
         }
         busy = false
+    }
+
+    private var canSubmit: Bool {
+        let hasCredentials = !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !password.isEmpty
+        return !busy && hasCredentials && (!createAccount || (acceptedTerms && !confirmPassword.isEmpty))
     }
 }

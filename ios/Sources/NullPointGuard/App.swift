@@ -435,6 +435,9 @@ struct GuardHomeView: View {
             lastDirectoryReloadSucceeded = false
             await refreshCallDirectoryStatus()
             lastError = error.localizedDescription
+            if let callKitError = error as? CXError {
+                lastError = callDirectoryErrorDescription(callKitError)
+            }
             scanSummary = "Scan failed"
         }
     }
@@ -481,6 +484,19 @@ struct GuardHomeView: View {
             ) { status, error in
                 continuation.resume(returning: error == nil ? status : .unknown)
             }
+        }
+    }
+
+    private func callDirectoryErrorDescription(_ error: CXError) -> String {
+        switch error.code {
+        case CXError.Code(rawValue: 2):
+            return "Call Directory reload was interrupted. Reinstall the current build, enable the extension, then scan again."
+        case CXError.Code(rawValue: 1):
+            return "Call Directory extension is missing from this build. Reinstall the current app pack."
+        case CXError.Code(rawValue: 6):
+            return "Call Directory is disabled. Enable NullPoint Directory in iPhone Settings."
+        default:
+            return "Call Directory failed (Apple error \(error.code.rawValue)). Reinstall the current build and enable the extension."
         }
     }
 }

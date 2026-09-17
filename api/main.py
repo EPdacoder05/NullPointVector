@@ -216,6 +216,11 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class SignupRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=10, max_length=256)
+
+
 # ============================================================ public routes
 @app.get("/health")
 async def health_check():
@@ -273,6 +278,32 @@ async def login(form: OAuth2PasswordRequestForm = Depends(),
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Incorrect username or password")
+    return TokenResponse(
+        access_token=create_access_token(user),
+        refresh_token=create_refresh_token(user),
+    )
+
+
+@app.post("/api/v1/accounts", response_model=TokenResponse, status_code=201)
+async def signup(req: SignupRequest, _rl: None = Depends(rate_limit())):
+    from common.accounts import register
+
+    result = register(req.email, req.password)
+    if not result.get("ok"):
+        messages = {
+            "signup_closed": "Signup is currently closed.",
+            "bad_email": "Use a valid email address.",
+            "disposable": "Temporary email addresses are not allowed.",
+            "short_password": "Password must be at least 10 characters.",
+            "email_taken": "That email already has an account.",
+            "reserved": "That email is reserved.",
+            "db_unavailable": "Account service is temporarily unavailable.",
+        }
+        raise HTTPException(
+            status_code=403 if result.get("error") == "signup_closed" else 400,
+            detail=messages.get(result.get("error"), "Could not create account."),
+        )
+    user = {"sub": result["sub"], "role": result["role"]}
     return TokenResponse(
         access_token=create_access_token(user),
         refresh_token=create_refresh_token(user),

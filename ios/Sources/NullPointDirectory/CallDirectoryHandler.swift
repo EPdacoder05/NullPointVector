@@ -10,17 +10,16 @@ final class CallDirectoryHandler: CXCallDirectoryProvider {
             return
         }
 
-        let sortedBlocks = file.block.compactMap { CXCallDirectoryPhoneNumber($0) }.sorted()
+        let sortedBlocks = Set(file.block.compactMap { CXCallDirectoryPhoneNumber($0) }).sorted()
         for num in sortedBlocks {
             context.addBlockingEntry(withNextSequentialPhoneNumber: num)
         }
 
-        let sortedLabels = file.label
-            .compactMap { entry -> (CXCallDirectoryPhoneNumber, String)? in
-                guard let n = CXCallDirectoryPhoneNumber(entry.number) else { return nil }
-                return (n, entry.label ?? "Spam")
-            }
-            .sorted { $0.0 < $1.0 }
+        let sortedLabels = Dictionary(file.label.compactMap { entry -> (CXCallDirectoryPhoneNumber, String)? in
+            guard let n = CXCallDirectoryPhoneNumber(entry.number) else { return nil }
+            return (n, entry.label ?? "Spam")
+        }, uniquingKeysWith: { first, _ in first })
+            .sorted { $0.key < $1.key }
 
         for (num, label) in sortedLabels {
             context.addIdentificationEntry(withNextSequentialPhoneNumber: num, label: label)
@@ -39,7 +38,7 @@ extension CallDirectoryHandler: CXCallDirectoryExtensionContextDelegate {
 
 private extension CXCallDirectoryPhoneNumber {
     init?(_ e164: String) {
-        let digits = e164.filter { $0.isNumber }
+        let digits = e164.filter { $0 >= "0" && $0 <= "9" }
         guard !digits.isEmpty, let value = Int64(digits) else { return nil }
         self = CXCallDirectoryPhoneNumber(value)
     }
