@@ -60,6 +60,24 @@ def test_register_closed(monkeypatch):
     assert out["error"] == "signup_closed"
 
 
+def test_native_signup_returns_session(monkeypatch):
+    monkeypatch.setenv("SIGNUP_OPEN", "true")
+    monkeypatch.setattr(
+        "common.accounts.register",
+        lambda email, password: {"ok": True, "sub": email, "role": "customer"},
+    )
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    response = TestClient(app).post(
+        "/api/v1/accounts",
+        json={"email": "native@example.com", "password": "longenoughpassword"},
+    )
+    assert response.status_code == 201
+    assert response.json()["access_token"]
+    assert response.json()["refresh_token"]
+
+
 def test_register_disposable(monkeypatch):
     monkeypatch.setenv("SIGNUP_OPEN", "true")
     from common.accounts import register

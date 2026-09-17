@@ -163,18 +163,38 @@ final class APIService {
 
     /// Exchanges explicit user-provided credentials for a token.
     func login(username: String, password: String) async throws {
-        var req = URLRequest(url: try endpoint("/api/v1/token"))
+        let body = "username=\(formValue(username))&password=\(formValue(password))"
+        try await authenticate(path: "/api/v1/token", body: body)
+    }
+
+    func signup(email: String, password: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+        var req = URLRequest(url: try endpoint("/api/v1/accounts"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try applyTokenResponse(data: data, response: resp)
+    }
+
+    private func authenticate(path: String, body: String) async throws {
+        var req = URLRequest(url: try endpoint(path))
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body.data(using: .utf8)
+        req.timeoutInterval = 30
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try applyTokenResponse(data: data, response: resp)
+    }
+
+    private func formValue(_ value: String) -> String {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&+=?")
-        let u = username.addingPercentEncoding(withAllowedCharacters: allowed) ?? username
-        let p = password.addingPercentEncoding(withAllowedCharacters: allowed) ?? password
-        req.httpBody = "username=\(u)&password=\(p)".data(using: .utf8)
-        req.timeoutInterval = 30
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
 
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else { throw APIError.message("No HTTP response") }
+    private func applyTokenResponse(data: Data, response: URLResponse) throws {
+        guard let http = response as? HTTPURLResponse else { throw APIError.message("No HTTP response") }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.httpStatus(http.statusCode)
         }
