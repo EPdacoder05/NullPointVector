@@ -486,6 +486,16 @@ textarea { min-height: 132px; resize: vertical; line-height: 1.55; }
 .price-amt { margin-bottom: 18px; }
 .price-val { font-size: 36px; font-weight: 800; letter-spacing: -.03em; font-family: var(--mono); }
 .price-val::before { content: "$"; font-size: 18px; vertical-align: super; margin-right: 2px; color: var(--brass); }
+.price-val.price-sales-only { font-size: 28px; letter-spacing: -.02em; }
+.price-val.price-sales-only::before { content: none; }
+.price-talk { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; white-space: nowrap; }
+.price-talk-arrow {
+  /* Inline to the right of "Let's Talk", tip points down. */
+  display: block; width: 0; height: 0; flex-shrink: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid var(--brass);
+}
 .price-per { font-size: 13px; color: var(--faint); }
 .price-feats {
   list-style: none; margin: 0 0 20px; padding: 0; flex: 1;
