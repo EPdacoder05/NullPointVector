@@ -5,6 +5,8 @@ This is what makes the resume's accuracy claim enforceable — if a change drops
 accuracy below 90%, pushes FPR above 10%, or lets a pump-fake through, CI fails.
 """
 import sys
+import json
+import pickle
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -22,6 +24,21 @@ def test_golden_gate_passes():
     assert m["fpr"] <= 0.10, f"fpr {m['fpr']:.3f} > 0.10"
     assert m["pump_fake_recall"] >= 1.0, "a pump-fake phish got through"
     assert passes_gate(m)
+
+
+def test_serialized_models_match_runtime_stack():
+    """All committed pickles must load under the pinned training stack."""
+    from common.ml.channel_detector import stack_versions
+
+    manifest = json.loads((_REPO / "models" / "REPRO_MANIFEST.json").read_text())
+    runtime = stack_versions()
+    assert manifest["stack"] == runtime
+
+    for channel in manifest["channels"].values():
+        artifact = _REPO / channel["artifact"]
+        with artifact.open("rb") as handle:
+            saved = pickle.load(handle)
+        assert saved.get("stack") == runtime, artifact
 
 
 def test_pumpfake_same_text_opposite_auth():
