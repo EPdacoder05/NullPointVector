@@ -573,6 +573,16 @@ textarea { min-height: 132px; resize: vertical; line-height: 1.55; }
   border: 1px solid rgba(232,93,93,.4); background: rgba(232,93,93,.08);
   color: var(--danger); padding: 10px 12px; font-size: 13px;
 }
+.auth-signup {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.auth-signup-label {
+  color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+}
+.auth-signup-btn {
+  flex: 1; max-width: 180px; display: inline-block; text-align: center;
+}
 .auth-back { font-size: 12px; color: var(--brass); }
 
 /* ----------------------------------------------------------------- dashboard */

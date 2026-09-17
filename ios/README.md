@@ -120,10 +120,12 @@ curl -s https://nullpoint-pilot.ngrok-free.app/health
 
 ### C. Bake URL into the iOS build (so users never paste a server URL)
 
+Use the live deployed host for TestFlight and customer sign-ins. The API is served at the root domain, while the web app sits at `/app`.
+
 Edit `ios/project.yml` → `settings.base.API_BASE_URL`:
 
 ```yaml
-API_BASE_URL: "https://nullpoint-pilot.ngrok-free.app"
+API_BASE_URL: "https://nullpointvector.com"
 ```
 
 Also set the same string in `ios/Info.plist` key `API_BASE_URL`, then:

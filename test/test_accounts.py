@@ -40,6 +40,7 @@ def test_signup_closed_by_default(monkeypatch):
     monkeypatch.delenv("SIGNUP_OPEN", raising=False)
     assert signup_open() is False
     monkeypatch.setenv("SIGNUP_OPEN", "true")
+    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "true")
     assert signup_open() is True
     monkeypatch.setenv("SIGNUP_OPEN", "false")
     assert signup_open() is False
@@ -204,6 +205,37 @@ def test_console_perimeter_is_deny_by_default(monkeypatch):
     assert denied_json.json() == {"ok": False, "error": "login_required"}
     assert client.get("/app/privacy").status_code == 200
     assert client.get("/health").status_code == 200
+
+
+def test_login_template_hides_operator_copy_when_signup_is_closed():
+    from web.ui import templates
+
+    html = templates.get_template("login.html").render(
+        error=None, username="", next="/app/dashboard", signup_open=False,
+    )
+
+    assert "JWT roles:" not in html
+    assert "SIGNUP_OPEN" not in html
+    assert "API_ADMIN" not in html
+    assert "API_PILOT" not in html
+    assert "Back to console" not in html
+    assert "Sign up" in html
+    assert "Create account" in html or "Need an account" in html
+    assert "Terms" not in html
+
+
+def test_signup_template_hides_operator_copy_when_signup_is_closed():
+    from web.ui import templates
+
+    html = templates.get_template("signup.html").render(
+        error=None, email="", next="/app/dashboard", signup_open=False,
+    )
+
+    assert "SIGNUP_OPEN" not in html
+    assert "API_ADMIN" not in html
+    assert ">Create account</button>" not in html
+    assert "ask the operator" not in html.lower()
+    assert "Sign-up is currently closed for this host" in html
 
 
 def test_cookie_mutation_requires_same_origin_and_csrf(monkeypatch):

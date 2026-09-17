@@ -16,7 +16,7 @@ settings:
     Debug:
       API_BASE_URL: "http://127.0.0.1:8088"
     Release:
-      API_BASE_URL: ""
+      API_BASE_URL: "https://nullpointvector.com"
       EXCLUDED_SOURCE_FILE_NAMES: PilotSecrets.swift
 
 targets:
