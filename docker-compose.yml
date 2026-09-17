@@ -176,6 +176,36 @@ services:
       timeout: 3s
       retries: 5
 
+  # Mailbox ingest is opt-in: env IMAP without a Connectors mailbox_id is
+  # discarded (tenant required). Start after a mailbox is connected in the UI:
+  #   docker compose --profile ingest up -d
+  monitor:
+    profiles: ["ingest"]
+    build: .
+    command: ["./start.sh", "monitor"]
+    volumes:
+      - .:/app
+      - app_logs:/app/logs
+      - app_ingestion:/app/data/ingestion
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=pgbouncer
+      - DB_PORT=5432
+      - PROCESS_ROLE=monitor
+      - REDIS_URL=redis://redis:6379/0
+      - ENABLE_MESSAGE_EMBEDDINGS=${ENABLE_MESSAGE_EMBEDDINGS:-0}
+      # Streamful: small batches every N seconds (min 15). Default 60.
+      - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-60}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   # Optional public tunnel for demos. Off by default; start with:
   #   NGROK_AUTHTOKEN=xxxx docker compose --profile tunnel up -d
   # It tunnels the PROXY (not the app directly), so the same single ingress is
@@ -185,7 +215,7 @@ services:
     profiles: ["tunnel"]
     command: ["http", "proxy:80", "--log=stdout"]
     environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
     ports:
       - "4040:4040"
     depends_on:

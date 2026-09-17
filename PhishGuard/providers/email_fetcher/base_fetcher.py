@@ -180,6 +180,7 @@ class EmailFetcher(ABC):
                 'account_sub': email_data.get('account_sub'),
                 'mailbox_id': email_data.get('mailbox_id'),
                 'folder': email_data.get('folder', 'INBOX'),
+                'ingest_lane': email_data.get('ingest_lane') or email_data.get('folder', 'INBOX'),
                 'from': email_data.get('from'),
                 'to': email_data.get('to'),
                 'subject': email_data.get('subject'),
@@ -191,6 +192,7 @@ class EmailFetcher(ABC):
                 'metadata': {
                     'provider': self.__class__.__name__,
                     'folder': email_data.get('folder', 'INBOX'),
+                    'ingest_lane': email_data.get('ingest_lane') or email_data.get('folder', 'INBOX'),
                     'flags': email_data.get('flags', []),
                     'size': email_data.get('size', 0)
                 }

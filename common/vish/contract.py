@@ -63,7 +63,8 @@ class CallPhase(str, Enum):
 
 class CallKitAction(str, Enum):
     """Channel-neutral policy recommendation, not proof of an iOS capability."""
-    ALLOW = "allow"        # ring normally
+    ALLOW = "allow"        # ring normally; vendor explicitly scored it low
+    UNSCORED = "unscored"  # no pack, no transcript, vendor unknown — not CLEARED
     LABEL = "label"        # ring, but show a caller-id warning label
     SILENCE = "silence"    # send to voicemail silently (suspicious, not certain)
     BLOCK = "block"        # block outright (high-confidence fraud)

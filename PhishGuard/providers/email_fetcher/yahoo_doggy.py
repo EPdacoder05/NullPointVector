@@ -26,11 +26,6 @@ class YahooDoggy(EmailFetcher):
     def _validate_credentials(self):
         self.username = os.getenv("YAHOO_USER")
         self.password = os.getenv("YAHOO_PASS")
-        if self.username and self.password and self._requested_mailbox_id is None:
-            self._accounts.append({
-                "email": self.username, "password": self.password,
-                "account_sub": None, "mailbox_id": None,
-            })
         try:
             from common.mailbox_store import get_mailbox, get_secret, list_all
             if self._requested_mailbox_id is not None:
@@ -120,39 +115,39 @@ class YahooDoggy(EmailFetcher):
     def fetch_emails(self, folder: str = "INBOX", limit: int = 100) -> List[Dict[str, Any]]:
         emails: list[dict[str, Any]] = []
         remaining = limit or 100
+        poll_inbox = not folder or folder.upper() == "INBOX"
         for account in self._accounts:
             if remaining <= 0:
                 break
+            if not account.get("account_sub") or not account.get("mailbox_id"):
+                continue
             conn = None
             try:
                 conn = self._login_imap(account)
-                status, _ = conn.select(folder, readonly=True)
-                if status != "OK":
-                    continue
-                uidvalidity = self._uidvalidity(conn)
-                status, messages = conn.uid("search", None, "ALL")
-                if status != "OK" or not messages:
-                    continue
-                email_ids = messages[0].split()[-remaining:]
-                for email_id in email_ids:
-                    status, msg_data = conn.uid("fetch", email_id, "(RFC822)")
-                    if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
-                        continue
-                    email_message = email.message_from_bytes(msg_data[0][1])
-                    provider_uid = email_id.decode() if isinstance(email_id, bytes) else str(email_id)
-                    emails.append(self.process_email({
-                        "id": provider_uid, "provider_uid": provider_uid,
-                        "uidvalidity": uidvalidity,
-                        "account_sub": account.get("account_sub"),
-                        "mailbox_id": account.get("mailbox_id"),
-                        "from": self._decode_header(email_message["From"]),
-                        "to": self._decode_header(email_message["To"]),
-                        "subject": self._decode_header(email_message["Subject"]),
-                        "body": self.extract_body_text(email_message),
-                        "date": email_message["Date"], "folder": folder,
-                        "headers": self.extract_auth_headers(email_message),
-                    }))
-                remaining = (limit or 100) - len(emails)
+                from common.imap_folders import (
+                    YAHOO_JUNK, ensure_sandbox_folder, first_existing, ingest_lane_for,
+                )
+                ensure_sandbox_folder(conn)
+                folders: list[tuple[str, str, int]] = []
+                if poll_inbox:
+                    inbox_n = max(1, int(remaining * 0.7))
+                    junk_n = max(1, int(remaining * 0.2))
+                    sand_n = max(1, remaining - inbox_n - junk_n)
+                    folders.append(("INBOX", "inbox", inbox_n))
+                    junk = first_existing(conn, YAHOO_JUNK)
+                    if junk:
+                        folders.append((junk, "junk", junk_n))
+                    sand = first_existing(conn, ("Phishy_Bizz", "Phishy bizz", "Phishy Bizz"))
+                    if sand:
+                        folders.append((sand, "sandbox", sand_n))
+                else:
+                    folders.append((folder, ingest_lane_for(folder), remaining))
+                for name, lane, cap in folders:
+                    if remaining <= 0:
+                        break
+                    batch = self._fetch_folder(conn, account, name, lane, min(cap, remaining))
+                    emails.extend(batch)
+                    remaining = (limit or 100) - len(emails)
             except Exception as e:
                 logger.error("Error fetching emails from Yahoo (%s): %s", account.get("email"), e)
             finally:
@@ -161,6 +156,41 @@ class YahooDoggy(EmailFetcher):
                         conn.logout()
                     except Exception:
                         pass
+        return emails
+
+    def _fetch_folder(self, conn, account: dict, folder: str, lane: str,
+                      limit: int) -> List[Dict[str, Any]]:
+        emails: list[dict[str, Any]] = []
+        quoted = f'"{folder}"' if " " in folder else folder
+        status, _ = conn.select(quoted, readonly=True)
+        if status != "OK":
+            status, _ = conn.select(folder, readonly=True)
+        if status != "OK":
+            return emails
+        uidvalidity = self._uidvalidity(conn)
+        status, messages = conn.uid("search", None, "ALL")
+        if status != "OK" or not messages:
+            return emails
+        email_ids = messages[0].split()[-limit:]
+        for email_id in email_ids:
+            status, msg_data = conn.uid("fetch", email_id, "(RFC822)")
+            if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
+                continue
+            email_message = email.message_from_bytes(msg_data[0][1])
+            provider_uid = email_id.decode() if isinstance(email_id, bytes) else str(email_id)
+            emails.append(self.process_email({
+                "id": provider_uid, "provider_uid": provider_uid,
+                "uidvalidity": uidvalidity,
+                "account_sub": account.get("account_sub"),
+                "mailbox_id": account.get("mailbox_id"),
+                "from": self._decode_header(email_message["From"]),
+                "to": self._decode_header(email_message["To"]),
+                "subject": self._decode_header(email_message["Subject"]),
+                "body": self.extract_body_text(email_message),
+                "date": email_message["Date"], "folder": folder,
+                "ingest_lane": lane,
+                "headers": self.extract_auth_headers(email_message),
+            }))
         return emails
 
     def _decode_header(self, header: str) -> str:

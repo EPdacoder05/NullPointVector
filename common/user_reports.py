@@ -275,3 +275,56 @@ def is_fleet_blocked_sender(sender: str) -> tuple[bool, float]:
             release_conn(conn)
     except Exception:
         return False, 0.0
+
+
+def list_ops_reports(*, limit: int = 50) -> list[dict[str, Any]]:
+    """Analyst/admin queue: recent granny reports across tenants (bypass RLS).
+
+    Bodies are never returned — sender_key + reasons only. Operator decides
+    from Quarantine / Report flags without reading every mailbox.
+    """
+    from Autobot.VectorDB.NullPoint_Vector import get_conn, release_conn
+    from common.tenant_rls import set_tenant
+
+    lim = max(1, min(int(limit), 200))
+    conn = get_conn()
+    if not conn:
+        return []
+    try:
+        ensure_user_reports_table(conn)
+        set_tenant(conn, bypass=True)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, account_sub, channel, sender, sender_key, expected,
+                       reasons, detail, promoted_to_fleet, created_at
+                FROM user_reports
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (lim,),
+            )
+            out = []
+            for row in cur.fetchall() or []:
+                (
+                    rid, sub, channel, sender, skey, expected,
+                    reasons, detail, promoted, created,
+                ) = row
+                out.append({
+                    "id": int(rid),
+                    "account_sub": sub,
+                    "channel": channel or "email",
+                    "sender": (sender or "")[:120],
+                    "sender_key": skey or "",
+                    "expected": expected,
+                    "reasons": reasons if isinstance(reasons, list) else [],
+                    "detail": (detail or "")[:280],
+                    "promoted_to_fleet": bool(promoted),
+                    "created_at": created.isoformat() if created else None,
+                })
+            return out
+    except Exception as e:
+        logger.warning("list_ops_reports: %s", e)
+        return []
+    finally:
+        release_conn(conn)

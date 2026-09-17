@@ -11,24 +11,45 @@ extension MessageFilterExtension: ILMessageFilterQueryHandling {
         completion: @escaping (ILMessageFilterQueryResponse) -> Void
     ) {
         let response = ILMessageFilterQueryResponse()
-        // Default: defer to system (do not over-filter).
         response.action = .none
 
         let body = (queryRequest.messageBody ?? "").lowercased()
-        // Pilot heuristic only — production posts to backend with JWT.
+        let sender = digits(queryRequest.sender ?? "")
+        let file = BlocklistFile.load()
+        let blocked = Set((file?.block ?? []).map(digits).filter { $0.count >= 10 })
+        let phrases = (file?.phrases ?? []) + loadPhrases()
+
+        if sender.count >= 10, blocked.contains(where: { sender.hasSuffix($0.suffix(10)) }) {
+            response.action = .junk
+            completion(response)
+            return
+        }
+
+        let phraseHits = phrases.filter { !$0.isEmpty && body.contains($0.lowercased()) }.count
         let lure =
-            body.contains("irs")
+            phraseHits >= 2
+            || body.contains("irs")
             || body.contains("verify now")
             || body.contains("gift card")
             || body.contains("http://")
             || body.contains("https://")
 
         if lure {
-            // ILMessageFilterAction cases: .none, .allow, .junk, .filter,
-            // .promotion, .transactional (iOS 16+). NOT "IMessageFilterAction".
             response.action = .junk
         }
-
         completion(response)
+    }
+
+    private func digits(_ raw: String) -> String {
+        raw.filter(\.isNumber)
+    }
+
+    private func loadPhrases() -> [String] {
+        guard let url = AppGroup.campaignPhrasesURL,
+              let data = try? Data(contentsOf: url),
+              let list = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+        return list
     }
 }

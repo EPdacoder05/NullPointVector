@@ -19,5 +19,7 @@
     Continue with Microsoft
   </a>
 </div>
+{% if show_oauth_terms|default(true) %}
 <p class="hint" style="margin-top:8px">By continuing you agree to our <a href="/app/terms">Terms</a> and <a href="/app/privacy">Privacy</a> policy.</p>
+{% endif %}
 <div class="oauth-or">or</div>

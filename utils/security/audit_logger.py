@@ -32,13 +32,15 @@ class AuditLogger:
         # Create logs directory if it doesn't exist
         log_dir = os.path.dirname(self.config.get('log_file', 'logs/security.log'))
         os.makedirs(log_dir, exist_ok=True)
-        
-        # Set up rotating file handler
-        handler = RotatingFileHandler(
-            self.config.get('log_file', 'logs/security.log'),
-            maxBytes=self.config.get('max_log_size_mb', 100) * 1024 * 1024,
-            backupCount=self.config.get('backup_count', 5)
-        )
+
+        try:
+            handler = RotatingFileHandler(
+                self.config.get('log_file', 'logs/security.log'),
+                maxBytes=self.config.get('max_log_size_mb', 100) * 1024 * 1024,
+                backupCount=self.config.get('backup_count', 5)
+            )
+        except OSError:
+            handler = logging.StreamHandler()
         
         # Set up formatter
         formatter = logging.Formatter(

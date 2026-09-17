@@ -20,8 +20,9 @@
     <h3>{{ p.name }}</h3>
     <p class="price-desc">{{ p.tagline }}</p>
     {% if p.sales_only or p.slug == 'enterprise' %}
-    <div class="price-amt">
-      <span class="price-val price-sales-only">Contact sales</span>
+    <div class="price-amt price-talk">
+      <span class="price-val price-sales-only">Let's Talk</span>
+      <span class="price-talk-arrow" aria-hidden="true"></span>
     </div>
     {% else %}
     <div class="price-amt">

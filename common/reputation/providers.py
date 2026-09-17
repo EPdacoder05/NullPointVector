@@ -296,11 +296,15 @@ class IPQSPhoneProvider(ReputationProvider):
                 categories=["provider_error"], sources=[self.name],
                 raw={"provider_error": data.get("message"), "provider": "ipqs", "strict": True},
             )
+        if data.get("valid") is False and data.get("fraud_score") in (None, 0, 0.0):
+            return None
         return self._parse(number, data)
 
     def _parse(self, number: str, data: dict) -> Optional[ReputationScore]:
         fraud = data.get("fraud_score")
-        risk = float(fraud) / 100.0 if fraud is not None else 0.0
+        if fraud is None:
+            return None
+        risk = float(fraud) / 100.0
         if data.get("spammer"):
             risk = max(risk, 0.75)
         if data.get("risky"):

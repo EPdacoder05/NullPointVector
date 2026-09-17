@@ -499,6 +499,18 @@ class EmailIngestionEngine:
                         'url_analysis': url_analysis,
                         'headers': email.get('headers') or {},
                     }
+                    from common.imap_folders import ingest_lane_for
+                    lane = ingest_lane_for(
+                        str(email.get("ingest_lane") or folder or "")
+                    )
+                    full_metadata["ingest_lane"] = lane
+                    if lane in ("junk", "sandbox"):
+                        # Provider junk / our Phishy_Bizz folder: isolate as
+                        # threats in Quarantine. Do not write human `label`.
+                        is_threat = 1
+                        confidence = max(float(confidence or 0), 0.85)
+                        full_metadata["sandbox"] = True
+                        threats += 1
                     
                     # SECURITY: Boost threat score if high-risk URLs detected
                     if url_analysis:

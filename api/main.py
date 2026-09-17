@@ -408,10 +408,12 @@ async def screen_call_endpoint(
             "verdict": result.verdict,
             "paths": result.paths,
             "via": "callkit",
-            "label_source": "model_prediction",
+            "label_source": "campaign_pack" if "campaign" in (result.paths or []) else "model_prediction",
             "training_eligible": False,
-            "destructive_action_eligible": False,
+            "destructive_action_eligible": "campaign" in (result.paths or []),
         }
+        if "campaign" in (result.paths or []):
+            meta["action"] = "block"
         background_tasks.add_task(
             persist_threat_durable,
             account_sub=account_sub,
@@ -422,6 +424,7 @@ async def screen_call_endpoint(
         # Fan-out: callback TFNs / spoken numbers in the transcript join the directory.
         try:
             from common.vish.phones import extract_e164_numbers
+            campaign = "campaign" in (result.paths or [])
             for cb in extract_e164_numbers(
                 request.transcript, exclude=[request.caller_id]
             ):
@@ -435,10 +438,9 @@ async def screen_call_endpoint(
                         **meta,
                         "via": "transcript-callback",
                         "parent_caller_id": request.caller_id,
-                        # A callback extracted from an unverified transcript is
-                        # campaign evidence, not sufficient for auto-blocking.
-                        "action": "label",
-                        "destructive_action_eligible": False,
+                        "label_source": "campaign_pack" if campaign else "model_prediction",
+                        "action": "block" if campaign else "label",
+                        "destructive_action_eligible": campaign,
                     },
                 )
         except Exception:
@@ -454,7 +456,12 @@ async def vish_directory_endpoint(
     """Call Directory block/label sync payload for iOS CallKit extension."""
     account_sub = require_account_sub(user.get("sub"))
     updated_at, block, label = get_vish_directory(account_sub=account_sub)
-    return {"updatedAt": updated_at, "block": block, "label": label}
+    try:
+        from common.vish.campaigns import all_campaign_phrases
+        phrases = all_campaign_phrases()
+    except Exception:
+        phrases = []
+    return {"updatedAt": updated_at, "block": block, "label": label, "phrases": phrases}
 
 
 @app.get("/api/v1/vish/screens")

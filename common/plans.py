@@ -103,8 +103,8 @@ FALLBACK_PLANS: list[dict[str, Any]] = [
             "Team seats and admin controls",
             "SSO and role-based access",
             "Audit logs and compliance packs",
-            "Private API and webhook hooks",
-            "Custom rules and policy packs",
+            "Private REST + webhooks",
+            "Customized solutions — tailored for your org",
             "Expedited support queue",
         ],
         "compare": {

@@ -79,10 +79,11 @@ def directory_action_for_message(metadata: object, human_label: object = None) -
         "human_grade", "analyst_verified",
     }
     personal_block = source == "personal_block" and requested == "block"
+    campaign_block = source == "campaign_pack" and requested == "block"
     corroborated = source in {"analyst_verified", "vendor_verified"} and (
         requested == "block" or risk >= 0.85
     )
-    if human_confirmed or personal_block or corroborated:
+    if human_confirmed or personal_block or campaign_block or corroborated:
         return "block", ""
 
     wants_warning = (

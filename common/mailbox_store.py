@@ -156,6 +156,137 @@ def list_for_user(account_sub: str) -> list[dict[str, Any]]:
         release_conn(conn)
 
 
+def operator_account_sub() -> str:
+    """Tenant that owns the single-operator Yahoo mailbox on this box.
+
+    Prefer OPERATOR_ACCOUNT_SUB. If exactly one Signal Deck account exists,
+    use that email. Otherwise fall back to API_PILOT_USER / API_ADMIN_USER.
+    """
+    import os
+    from common.tenant_rls import TenantContextError, require_account_sub
+
+    explicit = (os.getenv("OPERATOR_ACCOUNT_SUB") or "").strip()
+    if explicit:
+        return require_account_sub(explicit)
+
+    ensure_table()
+    conn = _conn()
+    emails: list[str] = []
+    if conn:
+        try:
+            from common.tenant_rls import set_tenant
+            set_tenant(conn, bypass=True)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'deck_accounts'
+                    """
+                )
+                if cur.fetchone():
+                    cur.execute(
+                        """
+                        SELECT email FROM deck_accounts
+                        WHERE email IS NOT NULL AND email <> ''
+                        ORDER BY created_at ASC NULLS LAST
+                        LIMIT 2
+                        """
+                    )
+                    emails = [str(r[0]).strip() for r in (cur.fetchall() or []) if r and r[0]]
+        except Exception as e:
+            logger.warning("operator_account_sub deck_accounts: %s", e)
+        finally:
+            from Autobot.VectorDB.NullPoint_Vector import release_conn
+            release_conn(conn)
+    if len(emails) == 1:
+        return require_account_sub(emails[0])
+    for key in ("API_PILOT_USER", "API_ADMIN_USER"):
+        value = (os.getenv(key) or "").strip()
+        if value:
+            return require_account_sub(value)
+    raise TenantContextError("operator tenant is not configured")
+
+
+def reclaim_null_tenant_rows(account_sub: str) -> int:
+    """Map legacy NULL-tenant message rows to the operator so FORCE RLS can see them."""
+    from common.tenant_rls import require_account_sub, set_tenant
+    sub = require_account_sub(account_sub)
+    ensure_table()
+    conn = _conn()
+    if not conn:
+        return 0
+    updated = 0
+    try:
+        set_tenant(conn, bypass=True)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'messages'
+                  AND column_name = 'account_sub'
+                """
+            )
+            if cur.fetchone():
+                cur.execute(
+                    "UPDATE messages SET account_sub = %s WHERE account_sub IS NULL",
+                    (sub,),
+                )
+                updated = cur.rowcount or 0
+        conn.commit()
+        if updated:
+            logger.info("reclaimed %s NULL-tenant message rows for operator", updated)
+        return updated
+    except Exception as e:
+        logger.error("reclaim_null_tenant_rows: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return 0
+    finally:
+        from Autobot.VectorDB.NullPoint_Vector import release_conn
+        release_conn(conn)
+
+
+def bootstrap_operator_env_mailboxes() -> dict[str, Any]:
+    """Bind YAHOO_USER/GMAIL_USER from env onto the operator tenant mailbox row.
+
+    Raw .env credentials without mailbox_id are discarded at ingest. This writes
+    the same secrets into user_mailboxes so the monitor can persist mail.
+    """
+    import os
+    from common.tenant_rls import TenantContextError
+
+    try:
+        sub = operator_account_sub()
+    except TenantContextError as e:
+        return {"ok": False, "error": str(e)}
+
+    created: list[dict[str, Any]] = []
+    yahoo_user = (os.getenv("YAHOO_USER") or "").strip()
+    yahoo_pass = (os.getenv("YAHOO_PASS") or "").strip()
+    if yahoo_user and yahoo_pass:
+        created.append(upsert_app_password(
+            account_sub=sub, provider="yahoo",
+            account_email=yahoo_user, app_password=yahoo_pass,
+        ))
+    gmail_user = (os.getenv("GMAIL_USER") or "").strip()
+    gmail_pass = (os.getenv("GMAIL_PASS") or "").strip()
+    if gmail_user and gmail_pass:
+        created.append(upsert_app_password(
+            account_sub=sub, provider="gmail",
+            account_email=gmail_user, app_password=gmail_pass,
+        ))
+    reclaimed = reclaim_null_tenant_rows(sub)
+    ok = any(row.get("ok") for row in created) or reclaimed > 0 or bool(list_all())
+    return {
+        "ok": ok,
+        "account_sub": sub,
+        "mailboxes": created,
+        "reclaimed": reclaimed,
+    }
+
+
 def list_all() -> list[dict[str, Any]]:
     """All saved mailboxes (ingest polls every friend, not just .env).
 

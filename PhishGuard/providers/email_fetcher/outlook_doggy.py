@@ -27,11 +27,6 @@ class OutlookDoggy(EmailFetcher):
         self.imap_port = 993
         self._accounts: list[dict[str, Any]] = []
         self._selected_account: dict[str, Any] | None = None
-        if self.email and self.password and self._requested_mailbox_id is None:
-            self._accounts.append({
-                "email": self.email, "password": self.password, "mode": "app_password",
-                "account_sub": None, "mailbox_id": None,
-            })
         try:
             from common.mailbox_store import get_mailbox, get_oauth, get_secret, list_all
             if self._requested_mailbox_id is not None:
@@ -119,6 +114,8 @@ class OutlookDoggy(EmailFetcher):
         for account in self._accounts:
             if remaining <= 0:
                 break
+            if not account.get("account_sub") or not account.get("mailbox_id"):
+                continue
             conn = None
             try:
                 conn = self._login_imap(account)

@@ -4,14 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sign in — NullPoint</title>
-  <link rel="stylesheet" href="/static/app.css?v=20260812-auth1" />
+  <link rel="stylesheet" href="/static/app.css?v=20260820-arrow" />
 </head>
 <body class="auth-body" data-theme="deck">
   <div class="auth-shell">
     <div class="auth-brand">
       <div class="mark">N</div>
       <h1>NullPoint</h1>
-      <p>Signal Deck access. JWT roles: viewer, customer, analyst, admin, enterprise.</p>
     </div>
     <div class="card auth-card">
       <div class="hd"><h2>Sign in</h2></div>
@@ -19,27 +18,26 @@
         {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
         {% set next_path = next or '/app/dashboard' %}
         {% set loop_id = 'login' %}
+        {% set show_oauth_terms = false %}
         {% include "_oauth_buttons.html" %}
-        <form id="login-form" method="post" action="/app/login">
+        <form id="login-form" method="post" action="/app/login" autocomplete="on">
           <input type="hidden" name="next" value="{{ next_path }}">
           <div class="fld">
             <label for="username">Username or email</label>
-            <input id="username" name="username" class="input" required autocomplete="username" value="{{ username or '' }}">
+            <input id="username" name="username" class="input" required
+                   autocomplete="username" inputmode="email"
+                   value="{{ username or '' }}">
           </div>
           <div class="fld">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" class="input" required autocomplete="current-password">
+            <input id="password" name="password" type="password" class="input" required
+                   autocomplete="current-password">
           </div>
           <button type="submit" class="btn">Continue</button>
         </form>
-        <a class="btn secondary" href="/app/signup?next={{ next_path|urlencode }}">Sign up</a>
         {% if signup_open %}
-        <div class="hint">New here? Create an account, then connect Gmail or Microsoft on Connectors.</div>
-        {% else %}
-        <div class="hint">Signup is closed on this host until <code>SIGNUP_OPEN=true</code>.</div>
+        <a class="btn secondary" href="/app/signup?next={{ next_path|urlencode }}">Create account</a>
         {% endif %}
-        <div class="hint">Operator accounts still use <code>API_ADMIN_*</code> / <code>API_PILOT_*</code> in <code>.env</code>.</div>
-        <a class="auth-back" href="/app">Back to console</a>
       </div>
     </div>
   </div>

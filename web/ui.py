@@ -485,7 +485,10 @@ def _screen_view(caller_id: str, transcript: str, contact_known: bool) -> dict:
             contact_known=contact_known,
         ))
         action = r.action.value
-        tone = {"allow": "safe", "label": "warn", "silence": "warn", "block": "danger"}.get(action, "warn")
+        tone = {
+            "allow": "safe", "unscored": "warn", "label": "warn",
+            "silence": "warn", "block": "danger",
+        }.get(action, "warn")
         return {
             "ok": True,
             "action": action,
@@ -910,10 +913,12 @@ def _dashboard_context(account_sub: str, tz: str = "UTC", hour12: bool = False) 
     live, geo, active_threats = [], [], []
     stats = {"total": 0, "threats": 0, "quarantined": 0, "rate": "—"}
     try:
-        from Autobot.VectorDB.NullPoint_Vector import get_threats_page, get_review_queue
+        from Autobot.VectorDB.NullPoint_Vector import get_threats_page, count_ungraded
         try:
-            _, review_counts = get_review_queue(limit=50, account_sub=account_sub)
-            stats["quarantined"] = review_counts.get("total", 0)
+            # Capped COUNT via partial index — never decrypt/review-queue for a KPI.
+            stats["quarantined"] = count_ungraded(
+                account_sub=account_sub, min_confidence=0.85, cap=1000,
+            )
         except Exception:
             pass
         rows, _ = get_threats_page(
@@ -988,7 +993,9 @@ async def ui_quarantine(request: Request):
         from common.explain import plain_english_math
         from common.timefmt import format_local
         from common.pills import build_pills
-        rows, counts = get_review_queue(limit=100, account_sub=account_sub)
+        rows, counts = get_review_queue(
+            limit=100, account_sub=account_sub, include_body=True,
+        )
         for r in rows:
             text = " ".join([
                 r.get("subject") or "",
@@ -1052,6 +1059,22 @@ async def ui_quarantine_siblings(request: Request, mid: int = 0):
     return JSONResponse({
         "ok": True, "sender": data.get("sender") or "", "siblings": sibs,
     })
+
+
+@router.get("/app/ops/reports", response_class=HTMLResponse)
+async def ui_ops_reports(request: Request):
+    """Analyst queue of granny Report-this flags (no mailbox bodies)."""
+    from fastapi.responses import RedirectResponse
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/app/login?next=/app/ops/reports", status_code=303)
+    if _ROLE_RANK.get(str(user.get("role") or "viewer"), 0) < _ROLE_RANK["analyst"]:
+        return RedirectResponse("/app/dashboard", status_code=303)
+    from common.user_reports import list_ops_reports
+    rows = list_ops_reports(limit=80)
+    ctx = _ctx(request, active="ops_reports")
+    ctx["rows"] = rows
+    return templates.TemplateResponse(request, "ops_reports.html", ctx)
 
 
 @router.post("/app/report")

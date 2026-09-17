@@ -37,7 +37,7 @@ def _run_channel(channel: str) -> dict:
                 "version": getattr(r, "version", None),
             }
         except Exception as e:
-            log.exception("phishing retrain failed")
+            log.exception("phishing retrain failed") 
             return {"channel": channel, "ok": False, "error": str(e)[:240]}
     try:
         from common.ml.training import ChannelTrainer

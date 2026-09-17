@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Ops reports — NullPoint{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>Ops reports</h1>
+    <div class="desc">Granny Report this queue — sender keys only, not full mailbox bodies. Grade Quarantine separately.</div>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn secondary" href="/app/quarantine">Quarantine</a>
+    <a class="btn secondary" href="/app/dashboard">Dashboard</a>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-hd">
+    <span class="panel-title">Recent flags</span>
+    <span class="hint">{{ rows|length }} shown</span>
+  </div>
+  {% if not rows %}
+  <div class="empty">No user reports yet. When a customer taps Report this, they land here for you.</div>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Tenant</th>
+          <th>Channel</th>
+          <th>Sender / key</th>
+          <th>Expected?</th>
+          <th>Fleet</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="mono">{{ r.created_at or '—' }}</td>
+          <td class="mono">{{ r.account_sub }}</td>
+          <td>{{ r.channel }}</td>
+          <td>
+            <div>{{ r.sender or '—' }}</div>
+            <div class="hint mono">{{ r.sender_key }}</div>
+          </td>
+          <td>{% if r.expected is none %}—{% elif r.expected %}yes{% else %}no{% endif %}</td>
+          <td>{% if r.promoted_to_fleet %}promoted{% else %}—{% endif %}</td>
+          <td class="hint">{{ r.detail or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

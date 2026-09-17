@@ -176,6 +176,11 @@ def test_model_prediction_can_label_but_cannot_block_directory():
         "risk_score": 0.9,
         "label_source": "vendor_verified",
     })[0] == "block"
+    assert directory_action_for_message({
+        "action": "block",
+        "label_source": "campaign_pack",
+        "risk_score": 0.92,
+    })[0] == "block"
     assert directory_action_for_message({"risk_score": 0.1})[0] == "none"
 
 

@@ -27,12 +27,6 @@ class GmailDoggy(EmailFetcher):
         self.password = os.getenv("GMAIL_PASS")
         self._oauth_access = ""
         self._accounts = []
-        if self.username and self.password and self._requested_mailbox_id is None:
-            # Legacy operator credential has no tenant/mailbox identity. The
-            # ingest layer will reject its messages until it is connected in UI.
-            self._accounts.append({"email": self.username, "password": self.password,
-                                   "mode": "app_password", "account_sub": None,
-                                   "mailbox_id": None})
         try:
             from common.mailbox_store import get_mailbox, get_oauth, get_secret, list_all
             if self._requested_mailbox_id is not None:
@@ -122,48 +116,36 @@ class GmailDoggy(EmailFetcher):
                 logger.error("Error disconnecting from Gmail: %s", e)
 
     def fetch_emails(self, folder: str = "INBOX", limit: int = 100) -> List[Dict[str, Any]]:
-        accounts = self._accounts or [{
-            "email": self.username, "password": self.password, "mode": "app_password",
-        }]
         emails: List[Dict[str, Any]] = []
         remaining = limit or 100
-        for account in accounts:
+        poll_inbox = not folder or folder.upper() == "INBOX"
+        for account in self._accounts:
             if remaining <= 0:
                 break
+            if not account.get("account_sub") or not account.get("mailbox_id"):
+                continue
             conn = None
             try:
                 conn = self._login_imap(account)
                 if not conn:
                     continue
-                status, _ = conn.select(folder, readonly=True)
-                if status != "OK":
-                    continue
-                uidvalidity = self._uidvalidity(conn)
-                status, messages = conn.uid("search", None, "ALL")
-                if status != "OK" or not messages:
-                    continue
-                email_ids = messages[0].split()
-                email_ids = email_ids[-remaining:] if remaining else email_ids
-                for email_id in email_ids:
-                    status, msg_data = conn.uid("fetch", email_id, "(RFC822)")
-                    if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
-                        continue
-                    email_message = email.message_from_bytes(msg_data[0][1])
-                    emails.append(self.process_email({
-                        "id": email_id.decode(),
-                        "provider_uid": email_id.decode(),
-                        "uidvalidity": uidvalidity,
-                        "account_sub": account.get("account_sub"),
-                        "mailbox_id": account.get("mailbox_id"),
-                        "from": self._decode_header(email_message["From"]),
-                        "to": self._decode_header(email_message["To"]),
-                        "subject": self._decode_header(email_message["Subject"]),
-                        "body": self.extract_body_text(email_message),
-                        "date": email_message["Date"],
-                        "folder": folder,
-                        "headers": self.extract_auth_headers(email_message),
-                    }))
-                remaining = (limit or 100) - len(emails)
+                from common.imap_folders import GMAIL_JUNK, first_existing, ingest_lane_for
+                names: list[tuple[str, str, int]] = []
+                if poll_inbox:
+                    inbox_n = max(1, int(remaining * 0.8))
+                    junk_n = max(1, remaining - inbox_n)
+                    names.append(("INBOX", "inbox", inbox_n))
+                    junk = first_existing(conn, GMAIL_JUNK)
+                    if junk:
+                        names.append((junk, "junk", junk_n))
+                else:
+                    names.append((folder, ingest_lane_for(folder), remaining))
+                for name, lane, cap in names:
+                    if remaining <= 0:
+                        break
+                    batch = self._fetch_folder(conn, account, name, lane, min(cap, remaining))
+                    emails.extend(batch)
+                    remaining = (limit or 100) - len(emails)
             except Exception as e:
                 logger.error("Error fetching emails from Gmail (%s): %s", account.get("email"), e)
             finally:
@@ -172,6 +154,39 @@ class GmailDoggy(EmailFetcher):
                         conn.logout()
                     except Exception as e:
                         logger.warning("Failed to logout IMAP connection for %s: %s", account.get("email"), e)
+        return emails
+
+    def _fetch_folder(self, conn, account: dict, folder: str, lane: str,
+                      limit: int) -> List[Dict[str, Any]]:
+        emails: List[Dict[str, Any]] = []
+        quoted = f'"{folder}"' if " " in folder or "/" in folder else folder
+        status, _ = conn.select(quoted, readonly=True)
+        if status != "OK":
+            status, _ = conn.select(folder, readonly=True)
+        if status != "OK":
+            return emails
+        uidvalidity = self._uidvalidity(conn)
+        status, messages = conn.uid("search", None, "ALL")
+        if status != "OK" or not messages:
+            return emails
+        for email_id in messages[0].split()[-limit:]:
+            status, msg_data = conn.uid("fetch", email_id, "(RFC822)")
+            if status != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
+                continue
+            email_message = email.message_from_bytes(msg_data[0][1])
+            uid = email_id.decode() if isinstance(email_id, bytes) else str(email_id)
+            emails.append(self.process_email({
+                "id": uid, "provider_uid": uid, "uidvalidity": uidvalidity,
+                "account_sub": account.get("account_sub"),
+                "mailbox_id": account.get("mailbox_id"),
+                "from": self._decode_header(email_message["From"]),
+                "to": self._decode_header(email_message["To"]),
+                "subject": self._decode_header(email_message["Subject"]),
+                "body": self.extract_body_text(email_message),
+                "date": email_message["Date"], "folder": folder,
+                "ingest_lane": lane,
+                "headers": self.extract_auth_headers(email_message),
+            }))
         return emails
 
     def move_to_junk(self, email_id: str, *, folder: str = "INBOX",

@@ -77,6 +77,8 @@ targets:
         embed: true
       - target: NullPointSMSFilter
         embed: true
+      - target: NullPointShare
+        embed: true
 
   NullPointDirectory:
     type: app-extension
@@ -124,6 +126,34 @@ targets:
         com.apple.security.application-groups:
           - group.com.nullpoint.guard
 
+  NullPointShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Sources/NullPointShare
+      - path: Sources/Shared
+    info:
+      path: Config/NullPointShare-Info.plist
+      properties:
+        CFBundleDisplayName: NullPoint Guard
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsFileWithMaxCount: 3
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.nullpoint.guard.share
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_FILE: Config/NullPointShare-Info.plist
+    entitlements:
+      path: Config/NullPointShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.nullpoint.guard
+
 schemes:
   NullPointGuard:
     build:
@@ -131,6 +161,7 @@ schemes:
         NullPointGuard: all
         NullPointDirectory: all
         NullPointSMSFilter: all
+        NullPointShare: all
     run:
       config: Debug
     archive:

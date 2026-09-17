@@ -6,7 +6,7 @@
   <meta name="description" content="NullPoint IDPS — phishing, smishing, and vishing protection" />
   <meta name="csrf-token" content="{{ csrf_token or '' }}" />
   <title>{% block title %}NullPoint{% endblock %}</title>
-  <link rel="stylesheet" href="/static/app.css?v=20260812-auth1" />
+  <link rel="stylesheet" href="/static/app.css?v=20260820-arrow" />
   <link rel="stylesheet" href="/static/npr-report.css?v=20260811-ship5" />
 </head>
 <body data-channel="{{ active }}">
@@ -29,6 +29,9 @@
       </a>
       <a class="nav-item {{ 'active' if active == 'quarantine' else '' }}" href="/app/quarantine">
         <span class="dot"></span><span>Quarantine</span>
+      </a>
+      <a class="nav-item {{ 'active' if active == 'ops_reports' else '' }}" href="/app/ops/reports">
+        <span class="dot"></span><span>Ops reports</span>
       </a>
 
       <div class="nav-label">Protection</div>

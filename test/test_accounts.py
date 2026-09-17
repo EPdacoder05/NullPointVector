@@ -206,6 +206,22 @@ def test_console_perimeter_is_deny_by_default(monkeypatch):
     assert client.get("/health").status_code == 200
 
 
+def test_login_template_hides_operator_copy_when_signup_is_closed():
+    from web.ui import templates
+
+    html = templates.get_template("login.html").render(
+        error=None, username="", next="/app/dashboard", signup_open=False,
+    )
+
+    assert "JWT roles:" not in html
+    assert "SIGNUP_OPEN" not in html
+    assert "API_ADMIN" not in html
+    assert "API_PILOT" not in html
+    assert "Back to console" not in html
+    assert "Create account" not in html
+    assert "Terms" not in html
+
+
 def test_cookie_mutation_requires_same_origin_and_csrf(monkeypatch):
     from common.auth import csrf_token_for_session
 

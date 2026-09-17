@@ -27,18 +27,21 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from Autobot.email_ingestion import EmailIngestionEngine, IngestionConfig
 from PhishGuard.phish_mlm.phishing_detector import PhishingDetector
-from Autobot.VectorDB.NullPoint_Vector import get_all_threats, connect_db
+from Autobot.VectorDB.NullPoint_Vector import connect_db
 from utils.threat_actions import threat_actions
 from utils.geo_location import geo_service
 
 # Configure logging
+log_handlers: list[logging.Handler] = [logging.StreamHandler()]
+try:
+    Path("logs").mkdir(exist_ok=True)
+    log_handlers.append(logging.FileHandler("logs/yahoo_stream_monitor.log"))
+except OSError:
+    pass
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('logs/yahoo_stream_monitor.log'),
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
 
@@ -46,27 +49,43 @@ class YahooStreamMonitor:
     """Continuous ingestion, analysis, and auto-triage loop."""
     
     def __init__(self, 
-                 interval_minutes: int = 5, 
+                 interval_minutes: float = 1.0, 
                  retrain_threshold: int = 50,
                  enable_auto_triage: bool = True,
                  auto_triage_threshold: float = 0.85):
         """
         Args:
-            interval_minutes: How often to fetch emails (default: 5 min)
+            interval_minutes: Poll cadence (default 1 min — streamful with small batches)
             retrain_threshold: Auto-retrain after N new threats (default: 50)
             enable_auto_triage: Auto-block high-risk threats (default: True)
             auto_triage_threshold: Block threats above this score (default: 0.85)
         """
-        self.interval = interval_minutes * 60  # Convert to seconds
+        # Prefer MONITOR_INTERVAL_SECONDS for sub-minute streamful polls.
+        env_secs = os.getenv("MONITOR_INTERVAL_SECONDS", "").strip()
+        if env_secs:
+            try:
+                self.interval = max(15, int(float(env_secs)))
+            except ValueError:
+                self.interval = max(15, int(float(interval_minutes) * 60))
+        else:
+            self.interval = max(15, int(float(interval_minutes) * 60))
         self.retrain_threshold = retrain_threshold
         self.enable_auto_triage = enable_auto_triage
         self.auto_triage_threshold = auto_triage_threshold
         self.last_threat_count = 0
+
+        try:
+            from common.mailbox_store import bootstrap_operator_env_mailboxes
+            boot = bootstrap_operator_env_mailboxes()
+            logger.info("operator mailbox bootstrap: ok=%s reclaimed=%s",
+                        boot.get("ok"), boot.get("reclaimed"))
+        except Exception as e:
+            logger.warning("operator mailbox bootstrap skipped: %s", e)
         
         # Initialize components
         config = IngestionConfig(
-            batch_size=50,
-            max_emails_per_provider=200,
+            batch_size=25,
+            max_emails_per_provider=50,
             parallel_providers=True,  # Yahoo + Gmail simultaneously
             enable_intelligence=True,
             enable_ml_analysis=True
@@ -152,7 +171,7 @@ class YahooStreamMonitor:
     async def run_forever(self):
         """Main loop - runs indefinitely."""
         logger.info("🚀 Yahoo Stream Monitor started")
-        logger.info(f"📧 Fetching emails every {self.interval // 60} minutes")
+        logger.info(f"📧 Fetching emails every {self.interval}s (batch≤50)")
         logger.info(f"🔁 Auto-retrain after {self.retrain_threshold} new threats")
         logger.info(f"🌍 Providers: Yahoo (primary) + Gmail (secondary, parallel)")
         
@@ -175,22 +194,40 @@ class YahooStreamMonitor:
                     logger.info("🛡️  Running auto-triage...")
                     await self._auto_triage_threats()
                 
-                # 3. Check if retrain needed
-                # Operator-only aggregate retrain counter. Customer request
-                # handlers never receive the RLS bypass capability.
-                current_threat_count = len(get_all_threats(limit=10_000, bypass=True))
+                # 3. Retrain check — COUNT(*) only (O(1) with index / estimate).
+                # Never load/decrypt get_all_threats(10_000); that was O(n) I/O
+                # every cycle and starved login/UI after the 256k reclaim.
+                conn = None
+                try:
+                    conn = connect_db()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT COUNT(*) FROM messages WHERE is_threat = 1"
+                        )
+                        current_threat_count = int((cur.fetchone() or [0])[0] or 0)
+                except Exception as e:
+                    logger.warning("threat count skipped: %s", e)
+                    current_threat_count = self.last_threat_count
+                finally:
+                    if conn is not None:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
                 new_threats = current_threat_count - self.last_threat_count
-                
+
                 if new_threats >= self.retrain_threshold:
                     logger.info(f"🔁 Retraining model ({new_threats} new threats)")
                     self.detector.detect_threats()
                     self.last_threat_count = current_threat_count
                     logger.info("✅ Model retrained successfully")
                 else:
-                    logger.info(f"⏳ No retrain needed ({new_threats}/{self.retrain_threshold} new threats)")
-                
-                # 4. Wait for next cycle
-                logger.info(f"💤 Sleeping for {self.interval // 60} minutes...")
+                    logger.info(
+                        f"⏳ No retrain needed ({new_threats}/{self.retrain_threshold} new threats)"
+                    )
+
+                # 4. Wait for next cycle (small batch + short sleep = streamful)
+                logger.info(f"💤 Sleeping for {self.interval}s...")
                 await asyncio.sleep(self.interval)
                 
             except KeyboardInterrupt:
@@ -208,7 +245,8 @@ async def main():
     # Parse command-line arguments
     import argparse
     parser = argparse.ArgumentParser(description='Yahoo Stream Monitor - Continuous Email Ingestion + Auto-Triage')
-    parser.add_argument('--interval', type=int, default=5, help='Fetch interval in minutes (default: 5)')
+    parser.add_argument('--interval', type=float, default=1.0,
+                        help='Fetch interval in minutes (default: 1). Or set MONITOR_INTERVAL_SECONDS.')
     parser.add_argument('--retrain-threshold', type=int, default=50, help='Retrain after N new threats (default: 50)')
     parser.add_argument('--disable-auto-triage', action='store_true', help='Disable automatic threat blocking')
     parser.add_argument('--triage-threshold', type=float, default=0.85, help='Auto-block threshold (default: 0.85)')

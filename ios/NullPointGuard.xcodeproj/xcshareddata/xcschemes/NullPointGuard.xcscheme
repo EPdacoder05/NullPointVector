@@ -50,6 +50,20 @@
                ReferencedContainer = "container:NullPointGuard.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "EEEB23F36EF7062CACF49809"
+               BuildableName = "NullPointShare.appex"
+               BlueprintName = "NullPointShare"
+               ReferencedContainer = "container:NullPointGuard.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

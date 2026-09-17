@@ -3,60 +3,647 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NullPoint</title>
-  <meta name="description" content="NullPoint protects against phishing, smishing, and vishing in one protected workspace.">
+  <title>NullPoint — identity-risk defense across every message</title>
+  <meta name="description" content="NullPoint helps you spot phishing, smishing, and vishing before they become account loss. Inspect a suspicious message in your browser, then sign in to Signal Deck.">
+  <meta name="theme-color" content="#0b100e">
+  <link rel="canonical" href="https://nullpointvector.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="NullPoint — identity-risk defense across every message">
+  <meta property="og:description" content="Spot phishing, smishing, and vishing before they become account loss.">
+  <meta property="og:url" content="https://nullpointvector.com/">
   <style>
     :root {
       --ink: #0b100e;
+      --field: #101612;
+      --panel: #141c17;
+      --rail: #24302a;
+      --line: #2a3a32;
+      --line-strong: #3d5246;
       --text: #e8f0ea;
       --muted: #8fa398;
+      --faint: #5e7368;
       --brass: #c4a574;
+      --brass-dim: #9a7d52;
       --signal: #2ec27e;
-      --line: #2a3a32;
+      --danger: #e85d5d;
+      --warn: #e0a84a;
+      --radius: 3px;
       --font: "Avenir Next", "Futura", "Trebuchet MS", "Segoe UI", sans-serif;
+      --mono: "SF Mono", "Menlo", "Consolas", "Cascadia Mono", monospace;
+      --line-frame: 1px solid var(--line);
+      --shell: 68rem;
     }
+
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; }
+    html { scroll-behavior: smooth; }
     body {
+      margin: 0;
       background: var(--ink);
       color: var(--text);
       font-family: var(--font);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
     }
-    main { max-width: 36rem; }
-    .mark {
-      letter-spacing: 0.28em;
-      text-transform: uppercase;
-      color: var(--brass);
-      font-size: 0.75rem;
+    .shell { width: 100%; max-width: var(--shell); margin: 0 auto; padding: 0 1.5rem; }
+
+    a { color: var(--brass); }
+    :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+    .skip {
+      position: absolute; left: -9999px; top: 0; z-index: 100;
+      background: var(--brass); color: var(--ink); padding: .6rem 1rem;
     }
-    h1 {
-      font-weight: 500;
-      font-size: 2rem;
-      margin: 0.75rem 0 1rem;
+    .skip:focus { left: .5rem; top: .5rem; }
+
+    /* ---------- nav ---------- */
+    header.nav {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(11, 16, 14, .82);
+      backdrop-filter: blur(10px);
+      border-bottom: var(--line-frame);
     }
-    p { color: var(--muted); line-height: 1.5; }
-    a.cta {
-      display: inline-block;
-      margin-top: 1.25rem;
-      padding: 0.7rem 1.2rem;
-      color: var(--ink);
-      background: var(--brass);
-      text-decoration: none;
+    .nav-in { display: flex; align-items: center; gap: 1.5rem; height: 3.75rem; }
+    .brand { display: flex; align-items: center; gap: .6rem; margin-right: auto; text-decoration: none; color: var(--text); }
+    .brand .mark {
+      width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
+      border: 1px solid var(--brass-dim); color: var(--brass);
+      font-size: .8rem; font-weight: 600;
+    }
+    .brand b { font-weight: 600; letter-spacing: .02em; }
+    .nav-links { display: flex; gap: 1.4rem; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; }
+    .nav-links a:hover { color: var(--text); }
+
+    .btn {
+      display: inline-block; padding: .62rem 1.15rem; border-radius: var(--radius);
+      font: inherit; font-size: .92rem; text-decoration: none; cursor: pointer;
+      border: 1px solid var(--brass-dim); background: var(--brass); color: var(--ink);
+      transition: background .15s ease, border-color .15s ease;
+    }
+    .btn:hover { background: var(--signal); border-color: var(--signal); }
+    .btn.ghost { background: transparent; color: var(--text); border-color: var(--line-strong); }
+    .btn.ghost:hover { background: var(--panel); border-color: var(--brass-dim); color: var(--brass); }
+
+    /* ---------- hero ---------- */
+    .hero { padding: 5rem 0 3.5rem; border-bottom: var(--line-frame); }
+    .eyebrow {
+      font-size: .72rem; letter-spacing: .28em; text-transform: uppercase;
+      color: var(--brass); margin-bottom: 1rem;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 500;
+      line-height: 1.12; margin: 0 0 1.1rem; max-width: 20ch;
+    }
+    .hero p.lede { color: var(--muted); font-size: 1.08rem; max-width: 56ch; margin: 0 0 1.9rem; }
+    .hero-cta { display: flex; flex-wrap: wrap; gap: .75rem; }
+
+    .channel-strip { display: flex; flex-wrap: wrap; gap: 1.75rem; margin-top: 2.75rem; }
+    .channel-strip div { font-size: .85rem; color: var(--faint); }
+    .channel-strip b { display: block; color: var(--text); font-weight: 500; font-size: .95rem; }
+
+    /* ---------- section frame ---------- */
+    section { padding: 4.25rem 0; border-bottom: var(--line-frame); }
+    .sec-head { margin-bottom: 2.25rem; }
+    .sec-head h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); font-weight: 500; margin: .4rem 0 .6rem; }
+    .sec-head p { color: var(--muted); max-width: 60ch; margin: 0; }
+
+    /* ---------- inspector ---------- */
+    .inspector { display: grid; grid-template-columns: 1.15fr .85fr; gap: 1.25rem; align-items: start; }
+    @media (max-width: 820px) { .inspector { grid-template-columns: 1fr; } }
+
+    .panel { background: var(--panel); border: var(--line-frame); border-radius: var(--radius); }
+    .panel-hd {
+      display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+      padding: .8rem 1rem; border-bottom: var(--line-frame);
+    }
+    .panel-hd h3 { margin: 0; font-size: .82rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+    .panel-bd { padding: 1rem; }
+
+    .tabs { display: flex; gap: .4rem; margin-left: auto; flex-wrap: wrap; }
+    .tab {
+      font: inherit; font-size: .78rem; cursor: pointer;
+      padding: .3rem .7rem; border-radius: var(--radius);
+      background: transparent; color: var(--muted);
       border: 1px solid var(--line);
     }
-    a.cta:hover { background: var(--signal); }
+    .tab:hover { color: var(--text); border-color: var(--line-strong); }
+    .tab[aria-selected="true"] { background: var(--rail); color: var(--brass); border-color: var(--brass-dim); }
+
+    textarea#msg {
+      width: 100%; min-height: 15rem; resize: vertical;
+      background: var(--field); color: var(--text);
+      border: 1px solid var(--line); border-radius: var(--radius);
+      padding: .85rem; font-family: var(--mono); font-size: .84rem; line-height: 1.6;
+    }
+    textarea#msg:focus { border-color: var(--brass-dim); outline: none; }
+
+    .actions { display: flex; align-items: center; gap: .7rem; margin-top: .85rem; flex-wrap: wrap; }
+    .actions .note { font-size: .76rem; color: var(--faint); margin-left: auto; }
+
+    /* ---------- verdict ---------- */
+    .verdict-band {
+      display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+      padding: .9rem 1rem; border-bottom: var(--line-frame);
+    }
+    .verdict-band .label { font-size: 1.25rem; font-weight: 500; }
+    .verdict-band .count { font-size: .82rem; color: var(--muted); margin-left: auto; }
+    .meter { height: 4px; background: var(--rail); overflow: hidden; }
+    .meter span { display: block; height: 100%; width: 0; transition: width .5s ease, background .3s ease; }
+
+    .risk-high  { color: var(--danger); }
+    .risk-elev  { color: var(--warn); }
+    .risk-low   { color: var(--signal); }
+    .fill-high  { background: var(--danger); }
+    .fill-elev  { background: var(--warn); }
+    .fill-low   { background: var(--signal); }
+
+    ul.signals { list-style: none; margin: 0; padding: 0; }
+    ul.signals li { padding: .7rem 1rem; border-bottom: 1px solid var(--rail); }
+    ul.signals li:last-child { border-bottom: 0; }
+    ul.signals .sig-top { display: flex; align-items: baseline; gap: .5rem; }
+    ul.signals .dot { width: .45rem; height: .45rem; border-radius: 50%; flex: none; transform: translateY(-1px); }
+    ul.signals .name { font-size: .88rem; }
+    ul.signals .hitct { margin-left: auto; font-family: var(--mono); font-size: .72rem; color: var(--faint); }
+    ul.signals .why { margin: .2rem 0 0 .95rem; font-size: .8rem; color: var(--muted); }
+    .empty { padding: 1.4rem 1rem; color: var(--muted); font-size: .88rem; }
+
+    .readout {
+      margin: 0; padding: .85rem 1rem; max-height: 13rem; overflow: auto;
+      background: var(--field); border-top: var(--line-frame);
+      font-family: var(--mono); font-size: .78rem; line-height: 1.65;
+      white-space: pre-wrap; word-break: break-word; color: var(--muted);
+    }
+    .readout mark {
+      background: rgba(232, 93, 93, .16); color: var(--text);
+      border-bottom: 1px solid var(--danger); padding: 0 .1em; border-radius: 2px;
+    }
+
+    .disclosure {
+      margin-top: 1rem; padding: .8rem 1rem;
+      border: 1px dashed var(--line-strong); border-radius: var(--radius);
+      font-size: .8rem; color: var(--muted);
+    }
+    .disclosure b { color: var(--text); font-weight: 500; }
+
+    /* ---------- channel cards ---------- */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--panel); border: var(--line-frame); border-radius: var(--radius);
+      padding: 1.35rem; transition: border-color .18s ease, transform .18s ease;
+    }
+    .card:hover { border-color: var(--brass-dim); transform: translateY(-2px); }
+    .card .tag {
+      font-family: var(--mono); font-size: .68rem; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--brass);
+    }
+    .card h3 { margin: .6rem 0 .5rem; font-size: 1.05rem; font-weight: 500; }
+    .card p { margin: 0; color: var(--muted); font-size: .89rem; }
+
+    /* ---------- steps ---------- */
+    ol.steps { counter-reset: s; list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+    ol.steps li { counter-increment: s; display: flex; gap: 1rem; align-items: flex-start; }
+    ol.steps li::before {
+      content: counter(s, decimal-leading-zero);
+      font-family: var(--mono); font-size: .78rem; color: var(--brass);
+      border: 1px solid var(--line-strong); border-radius: var(--radius);
+      padding: .25rem .5rem; flex: none;
+    }
+    ol.steps b { display: block; font-weight: 500; margin-bottom: .15rem; }
+    ol.steps p { margin: 0; color: var(--muted); font-size: .89rem; max-width: 62ch; }
+
+    /* ---------- closing + footer ---------- */
+    .closing { text-align: center; }
+    .closing h2 { font-size: clamp(1.5rem, 3.4vw, 2.1rem); font-weight: 500; margin: 0 0 .8rem; }
+    .closing p { color: var(--muted); max-width: 48ch; margin: 0 auto 1.6rem; }
+
+    footer { padding: 2.25rem 0 3rem; }
+    .foot-in { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+    .foot-in .links { display: flex; gap: 1.25rem; margin-left: auto; }
+    .foot-in a { color: var(--muted); text-decoration: none; font-size: .85rem; }
+    .foot-in a:hover { color: var(--brass); }
+    .foot-in small { color: var(--faint); font-size: .8rem; }
+
+    /* ---------- reveal ---------- */
+    .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .reveal { opacity: 1; transform: none; transition: none; }
+      .card:hover { transform: none; }
+      .meter span { transition: none; }
+    }
   </style>
+  <noscript>
+    <style>
+      /* Without JS the observer never runs — content must not stay invisible. */
+      .reveal { opacity: 1; transform: none; }
+      #inspect .inspector, #inspect .actions { display: none; }
+      #inspect .sec-head p::after {
+        content: " The interactive inspector needs JavaScript; sign in to Signal Deck to analyze messages.";
+        color: var(--brass);
+      }
+    </style>
+  </noscript>
 </head>
 <body>
-  <main>
-    <div class="mark">NullPoint</div>
-    <h1>Identity-risk defense across every message.</h1>
-    <p>NullPoint helps you spot phishing, smishing, and vishing before they become account loss. Signal Deck is a protected workspace for signed-in customers and operators.</p>
-    <a class="cta" href="/app">Sign in to Signal Deck</a>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="shell nav-in">
+      <a class="brand" href="/">
+        <span class="mark" aria-hidden="true">N</span>
+        <b>NullPoint</b>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#inspect">Inspector</a>
+        <a href="#channels">Channels</a>
+        <a href="#how">How it works</a>
+      </nav>
+      <a class="btn" href="/app">Sign in</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="hero">
+      <div class="shell">
+        <p class="eyebrow">Phishing · Smishing · Vishing</p>
+        <h1>Identity-risk defense across every message.</h1>
+        <p class="lede">
+          Attacks don't arrive in one inbox anymore. They arrive as an email, a text, and a
+          phone call that all reference the same fake invoice. NullPoint reads all three as one
+          campaign — so you catch the pattern, not just the message in front of you.
+        </p>
+        <div class="hero-cta">
+          <a class="btn" href="/app">Sign in to Signal Deck</a>
+          <a class="btn ghost" href="#inspect">Inspect a message</a>
+        </div>
+        <div class="channel-strip">
+          <div><b>PhishGuard</b> Email and attachment lures</div>
+          <div><b>SmishGuard</b> SMS, RCS, and short links</div>
+          <div><b>VishGuard</b> Voice and callback pressure</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ inspector ============ -->
+    <section id="inspect">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <p class="eyebrow">Try it now</p>
+          <h2>Paste a suspicious message.</h2>
+          <p>
+            Load one of the samples or paste your own. Nothing leaves your browser — this runs
+            offline, on this page, and highlights the language and link patterns that social
+            engineering relies on.
+          </p>
+        </div>
+
+        <div class="inspector">
+          <div class="panel reveal">
+            <div class="panel-hd">
+              <h3>Message</h3>
+              <div class="tabs" role="tablist" aria-label="Sample messages">
+                <button class="tab" role="tab" id="tab-email"  aria-controls="msg" aria-selected="true"  data-sample="email">Email</button>
+                <button class="tab" role="tab" id="tab-sms"    aria-controls="msg" aria-selected="false" data-sample="sms">SMS</button>
+                <button class="tab" role="tab" id="tab-voice"  aria-controls="msg" aria-selected="false" data-sample="voice">Voicemail</button>
+                <button class="tab" role="tab" id="tab-benign" aria-controls="msg" aria-selected="false" data-sample="benign">Legitimate</button>
+              </div>
+            </div>
+            <div class="panel-bd">
+              <label class="skip" for="msg">Message text to inspect</label>
+              <textarea id="msg" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+              <div class="actions">
+                <button class="btn" id="run" type="button">Inspect message</button>
+                <button class="btn ghost" id="clear" type="button">Clear</button>
+                <span class="note">Runs locally · nothing uploaded</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel reveal" aria-live="polite">
+            <div class="verdict-band">
+              <span class="label risk-low" id="verdict">Awaiting input</span>
+              <span class="count" id="tally">no signals yet</span>
+            </div>
+            <div class="meter"><span id="fill" class="fill-low"></span></div>
+            <ul class="signals" id="signals"></ul>
+            <div class="empty" id="empty">Load a sample or paste a message, then choose <b>Inspect message</b>.</div>
+            <pre class="readout" id="readout" hidden></pre>
+          </div>
+        </div>
+
+        <p class="disclosure">
+          <b>What this is.</b> A transparent heuristic preview — pattern rules you can read, not a
+          model score. The trained PhishGuard, SmishGuard, and VishGuard classifiers run inside
+          Signal Deck after you sign in, with URL reputation, sender history, and cross-channel
+          campaign linking that a single pasted message can't show.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ channels ============ -->
+    <section id="channels">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <p class="eyebrow">Coverage</p>
+          <h2>Three channels, one campaign view.</h2>
+          <p>Each guard is tuned to how its channel actually gets abused — then the deck correlates them.</p>
+        </div>
+        <div class="cards">
+          <article class="card reveal">
+            <div class="tag">PhishGuard</div>
+            <h3>Email</h3>
+            <p>Display-name spoofing, lookalike domains, credential-harvest pages, and attachment lures — scored against sender history rather than a static block list.</p>
+          </article>
+          <article class="card reveal">
+            <div class="tag">SmishGuard</div>
+            <h3>SMS &amp; RCS</h3>
+            <p>Short links hide their destination by design. Delivery-fee, toll, and bank-alert pretexts get resolved and rated before you decide whether to tap.</p>
+          </article>
+          <article class="card reveal">
+            <div class="tag">VishGuard</div>
+            <h3>Voice</h3>
+            <p>Callback numbers, authority impersonation, and secrecy pressure are the tells in a voice script. Transcripts are read for coercion structure, not keywords alone.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ how ============ -->
+    <section id="how">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <p class="eyebrow">How it works</p>
+          <h2>Connect, correlate, decide.</h2>
+        </div>
+        <ol class="steps reveal">
+          <li>
+            <div>
+              <b>Connect a mailbox</b>
+              <p>Link Gmail or Microsoft with OAuth from the Connectors page. Scopes stay read-only, and you can revoke from your provider at any time.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Messages get scored</b>
+              <p>Each item is rated per channel, with the contributing signals shown next to the verdict — so a decision is reviewable rather than a number you have to trust.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Campaigns surface</b>
+              <p>When the same pretext shows up by email, text, and phone, the deck groups them so you see one coordinated attempt instead of three unrelated alerts.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="shell reveal">
+        <h2>Ready to look at your own inbox?</h2>
+        <p>Signal Deck is the protected workspace for signed-in customers and operators.</p>
+        <a class="btn" href="/app">Sign in to Signal Deck</a>
+      </div>
+    </section>
   </main>
+
+  <footer>
+    <div class="shell foot-in">
+      <small>© <span id="yr">2026</span> NullPoint</small>
+      <div class="links">
+        <a href="/app/terms">Terms</a>
+        <a href="/app/privacy">Privacy</a>
+        <a href="/app">Sign in</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+  (function () {
+    "use strict";
+
+    var SAMPLES = {
+      email:
+        "From: security@paypa1-verify.com\n" +
+        "Subject: Urgent: your account will be suspended\n\n" +
+        "Dear Customer,\n\n" +
+        "We detected unusual sign-in activity on your account. Access will be suspended " +
+        "within 24 hours unless you verify your identity immediately.\n\n" +
+        "Confirm your password and billing details here: http://bit.ly/3xVerify\n\n" +
+        "Failure to act will result in permanent account closure.\n\n" +
+        "PayPal Security Team",
+      sms:
+        "USPS: Your parcel is on hold due to an unpaid customs fee of $2.99. " +
+        "Update your payment details within 24 hours or the package will be returned: " +
+        "https://usps-redelivery.top/pay",
+      voice:
+        "This is Officer Daniel Reyes with the Social Security Administration. Your social " +
+        "security number has been suspended due to suspicious activity linked to a fraud " +
+        "investigation. To avoid an arrest warrant you must call us back immediately at " +
+        "1-888-555-0142 and verify your SSN. Do not discuss this with anyone.",
+      benign:
+        "Hi Elena — thanks for the notes from Tuesday's review. I've attached the updated " +
+        "roadmap and moved our sync to Thursday at 10am. No rush on the feedback, sometime " +
+        "next week is fine.\n\n— Marcus"
+    };
+
+    // Readable rules. Weight is per-rule, not per-match, so one noisy phrase
+    // can't run the score away on its own.
+    var RULES = [
+      { id: "lookalike", w: 20, name: "Lookalike brand name",
+        why: "Digits substituted for letters to imitate a known brand.",
+        re: /\b(paypa1|micros0ft|amaz0n|g00gle|app1e|netf1ix|0utlook|faceb00k|wa1mart)[\w.-]*/gi },
+      { id: "rawip", w: 18, name: "Link to a bare IP address",
+        why: "Legitimate brands use named domains, not raw IPs.",
+        re: /https?:\/\/\d{1,3}(?:\.\d{1,3}){3}\S*/gi },
+      { id: "punycode", w: 18, name: "Punycode domain",
+        why: "An xn-- domain can render as characters that mimic another script.",
+        re: /\bxn--[a-z0-9-]+/gi },
+      { id: "creds", w: 18, name: "Credential or identity request",
+        why: "No real provider asks for these over email, text, or phone.",
+        re: /\b(password|passcode|one[- ]time code|otp|2fa code|verification code|ssn|social security number|security question)\b/gi },
+      { id: "payment", w: 16, name: "Payment or transfer request",
+        why: "Irreversible payment rails are the point of most fraud pretexts.",
+        re: /\b(gift card|wire transfer|bitcoin|crypto|routing number|bank account|billing details|payment details|customs fee|unpaid (?:fee|toll|invoice))\b/gi },
+      { id: "shortlink", w: 15, name: "Shortened link",
+        why: "Hides the real destination until after the tap.",
+        re: /\b(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|buff\.ly|rb\.gy|cutt\.ly)\/\S*/gi },
+      { id: "threat", w: 14, name: "Account threat or legal pressure",
+        why: "Manufactured consequence to stop you from verifying.",
+        re: /\b(suspend(?:ed|ing)?|deactivat(?:e|ed)|account closure|terminated|locked out|restricted|arrest warrant|legal action|returned to sender)\b/gi },
+      { id: "tld", w: 14, name: "High-abuse top-level domain",
+        why: "Cheap, bulk-registered TLDs are heavily used for throwaway landing pages.",
+        re: /https?:\/\/[^\s]*\.(?:zip|top|xyz|tk|gq|cf|ml|mov|click|link|rest|cam)\b\S*/gi },
+      { id: "secrecy", w: 14, name: "Secrecy or isolation pressure",
+        why: "Keeping you from a second opinion is a coercion tactic.",
+        re: /\b(do not (?:tell|discuss|share)|don'?t (?:tell|hang up)|keep this confidential|stay on the line)\b/gi },
+      { id: "urgency", w: 12, name: "Artificial urgency",
+        why: "A deadline exists to prevent you from checking.",
+        re: /\b(urgent(?:ly)?|immediately|right away|within \d+ hours?|act now|final notice|last warning|expires? (?:today|soon))\b/gi },
+      { id: "authority", w: 12, name: "Authority impersonation",
+        why: "Agencies named here do not cold-call or cold-text for payment or identity data.",
+        re: /\b(social security administration|internal revenue|irs|medicare|police department|sheriff'?s office|federal agent|officer \w+)\b/gi },
+      { id: "callback", w: 12, name: "Callback pressure",
+        why: "Routes you to an attacker-controlled line away from official channels.",
+        re: /\b(call (?:us )?back|call this number|call me back|press \d\b|return this call)\b/gi },
+      { id: "delivery", w: 12, name: "Delivery or parcel pretext",
+        why: "A near-universal pretext because most people are expecting something.",
+        re: /\b(?:package|parcel|shipment|delivery)\b[^.!?\n]{0,40}\b(?:on hold|held|pending|could not be delivered|failed|returned)\b/gi },
+      { id: "attach", w: 12, name: "Risky attachment type",
+        why: "Executable and archive formats are common malware carriers.",
+        re: /\b[\w-]+\.(?:zip|exe|scr|iso|rar|js|hta)\b/gi },
+      { id: "http", w: 10, name: "Unencrypted http:// link",
+        why: "Plain http offers no assurance of who is on the other end.",
+        re: /http:\/\/\S+/gi },
+      { id: "greeting", w: 8, name: "Generic greeting",
+        why: "A real provider that holds your account knows your name.",
+        re: /\b(dear (?:customer|user|account holder|sir\/madam)|valued customer)\b/gi }
+    ];
+
+    var HIGH = 50, ELEV = 22;
+
+    var $ = function (id) { return document.getElementById(id); };
+    var msg = $("msg"), signalsEl = $("signals"), emptyEl = $("empty"),
+        readout = $("readout"), verdict = $("verdict"), tally = $("tally"), fill = $("fill");
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function analyze(text) {
+      var hits = [], ranges = [], score = 0;
+      RULES.forEach(function (rule) {
+        var m, found = [];
+        rule.re.lastIndex = 0;
+        while ((m = rule.re.exec(text)) !== null) {
+          if (m[0].length === 0) { rule.re.lastIndex++; continue; }
+          found.push(m[0]);
+          ranges.push([m.index, m.index + m[0].length]);
+          if (found.length >= 50) break;
+        }
+        if (found.length) {
+          // Full weight for the first match, a small increment for corroboration.
+          score += rule.w + Math.min(found.length - 1, 3) * 2;
+          hits.push({ rule: rule, count: found.length });
+        }
+      });
+      return { score: Math.min(score, 100), hits: hits, ranges: ranges };
+    }
+
+    function highlight(text, ranges) {
+      if (!ranges.length) return escapeHtml(text);
+      var sorted = ranges.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+      var merged = [], cur = sorted[0].slice();
+      for (var i = 1; i < sorted.length; i++) {
+        if (sorted[i][0] <= cur[1]) { cur[1] = Math.max(cur[1], sorted[i][1]); }
+        else { merged.push(cur); cur = sorted[i].slice(); }
+      }
+      merged.push(cur);
+
+      var out = "", pos = 0;
+      merged.forEach(function (r) {
+        out += escapeHtml(text.slice(pos, r[0]));
+        out += "<mark>" + escapeHtml(text.slice(r[0], r[1])) + "</mark>";
+        pos = r[1];
+      });
+      return out + escapeHtml(text.slice(pos));
+    }
+
+    function band(score, hitCount) {
+      if (!hitCount) return { label: "No strong signals", cls: "low" };
+      if (score >= HIGH) return { label: "High risk", cls: "high" };
+      if (score >= ELEV) return { label: "Elevated risk", cls: "elev" };
+      return { label: "Low risk", cls: "low" };
+    }
+
+    function render(text) {
+      var res = analyze(text);
+      var b = band(res.score, res.hits.length);
+
+      verdict.textContent = b.label;
+      verdict.className = "label risk-" + b.cls;
+      fill.className = "fill-" + b.cls;
+      fill.style.width = (res.hits.length ? Math.max(res.score, 6) : 0) + "%";
+      tally.textContent = res.hits.length
+        ? res.hits.length + (res.hits.length === 1 ? " signal" : " signals")
+        : "no signals matched";
+
+      signalsEl.innerHTML = "";
+      if (!res.hits.length) {
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = text.trim()
+          ? "None of the heuristic patterns matched. That is not a clearance — a targeted message can be clean on the surface."
+          : "Load a sample or paste a message, then choose <b>Inspect message</b>.";
+      } else {
+        emptyEl.hidden = true;
+        res.hits.sort(function (a, b2) { return b2.rule.w - a.rule.w; });
+        res.hits.forEach(function (h) {
+          var sev = h.rule.w >= 16 ? "high" : h.rule.w >= 12 ? "elev" : "low";
+          var li = document.createElement("li");
+          li.innerHTML =
+            '<div class="sig-top">' +
+              '<span class="dot fill-' + sev + '"></span>' +
+              '<span class="name">' + escapeHtml(h.rule.name) + "</span>" +
+              '<span class="hitct">' + h.count + "×</span>" +
+            "</div>" +
+            '<p class="why">' + escapeHtml(h.rule.why) + "</p>";
+          signalsEl.appendChild(li);
+        });
+      }
+
+      if (text.trim()) {
+        readout.hidden = false;
+        readout.innerHTML = highlight(text, res.ranges);
+      } else {
+        readout.hidden = true;
+        readout.textContent = "";
+      }
+    }
+
+    // ---- sample tabs -------------------------------------------------
+    var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+    function selectTab(tab, runNow) {
+      tabs.forEach(function (t) { t.setAttribute("aria-selected", String(t === tab)); });
+      msg.value = SAMPLES[tab.dataset.sample] || "";
+      if (runNow) render(msg.value);
+    }
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () { selectTab(tab, true); });
+      tab.addEventListener("keydown", function (e) {
+        var i = tabs.indexOf(tab), n = null;
+        if (e.key === "ArrowRight") n = tabs[(i + 1) % tabs.length];
+        if (e.key === "ArrowLeft") n = tabs[(i - 1 + tabs.length) % tabs.length];
+        if (n) { e.preventDefault(); n.focus(); selectTab(n, true); }
+      });
+    });
+
+    $("run").addEventListener("click", function () { render(msg.value); });
+    $("clear").addEventListener("click", function () {
+      msg.value = "";
+      tabs.forEach(function (t) { t.setAttribute("aria-selected", "false"); });
+      render("");
+      msg.focus();
+    });
+
+    // ---- reveal on scroll --------------------------------------------
+    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var reveals = document.querySelectorAll(".reveal");
+    if (reduce || !("IntersectionObserver" in window)) {
+      Array.prototype.forEach.call(reveals, function (el) { el.classList.add("in"); });
+    } else {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+        });
+      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+      Array.prototype.forEach.call(reveals, function (el) { io.observe(el); });
+    }
+
+    $("yr").textContent = new Date().getFullYear();
+    selectTab(tabs[0], true);
+  })();
+  </script>
 </body>
 </html>
