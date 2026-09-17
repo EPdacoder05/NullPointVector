@@ -190,6 +190,10 @@ def _perimeter_client(monkeypatch):
 def test_console_perimeter_is_deny_by_default(monkeypatch):
     client = _perimeter_client(monkeypatch)
 
+    console_home = client.get("/app", headers={"Accept": "text/html"})
+    assert console_home.status_code == 303
+    assert console_home.headers["location"].startswith("/app/login?next=")
+
     redirect = client.get("/app/dashboard", headers={"Accept": "text/html"})
     assert redirect.status_code == 303
     assert redirect.headers["location"].startswith("/app/login?next=")

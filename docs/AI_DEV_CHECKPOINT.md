@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-09-16 (Render image built; boot died: missing PhishGuard `.pkl` + gunicorn `:8000`. Champion pkls allowlisted + SHA256 pins in render.yaml. Needs commit/push for GitHub deploys.)
+_Last updated: 2026-09-17 (Pushed `caeeace` with champion `.pkl`s, `$PORT`, and Render SHA pins. Live `nullpointvector.onrender.com/health` is ready; the earlier missing-SHA worker error was a prior/unsynced deploy. The public `/` now serves the `www/` landing asset; Signal Deck remains deny-by-default at `/app` and redirects unauthenticated visitors to login. For `nullpointvector.com`, add the Render custom domain first, use a DNS-only Cloudflare CNAME `@` to `nullpointvector.onrender.com`, then Verify in Render before optionally turning on Cloudflare proxying; proxying first produced Cloudflare Error 1000.)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |

@@ -16,10 +16,12 @@ import os as _os_sec
 import hashlib
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import (BackgroundTasks, Depends, FastAPI, Header, HTTPException,
                      Request, Response, status)
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
@@ -248,9 +250,13 @@ async def readiness_check():
     return await health_check()
 
 
-@app.get("/")
+_LANDING_PAGE = Path(__file__).resolve().parent.parent / "www" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
 async def root():
-    return {"service": "NullPoint API", "status": "available"}
+    """Public product landing; the authenticated Signal Deck is mounted at /app."""
+    return FileResponse(_LANDING_PAGE, media_type="text/html")
 
 
 @app.get("/metrics")
