@@ -1,15 +1,16 @@
 #!/bin/bash
 # Debug session aa4ecf — capture why sharingd/iCloudHelper ask for login keychain on wake.
 set +e
-LOG="/Users/ep/DevProjects/Yahoo_Phish/.cursor/debug-aa4ecf.log"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG="$REPO_ROOT/.cursor/debug-aa4ecf.log"
 KC="$HOME/Library/Keychains/login.keychain-db"
 
 emit() {
-  python3 - "$1" "$2" "$3" <<'PY'
-import json,sys,time
+  LOG="$LOG" python3 - "$1" "$2" "$3" <<'PY'
+import json,os,sys,time
 hid,msg,data=sys.argv[1],sys.argv[2],sys.argv[3]
 rec={"sessionId":"aa4ecf","timestamp":int(time.time()*1000),"hypothesisId":hid,"location":"scripts/capture_keychain_lock_info.sh","message":msg,"data":json.loads(data),"runId":"repro-wake"}
-open("/Users/ep/DevProjects/Yahoo_Phish/.cursor/debug-aa4ecf.log","a").write(json.dumps(rec)+"\n")
+open(os.environ["LOG"],"a").write(json.dumps(rec)+"\n")
 print(f"[{hid}] {msg}: {data[:200]}")
 PY
 }

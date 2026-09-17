@@ -29,16 +29,18 @@ class AuditLogger:
         logger = logging.getLogger('audit')
         logger.setLevel(logging.INFO)
         
-        # Create logs directory if it doesn't exist
-        log_dir = os.path.dirname(self.config.get('log_file', 'logs/security.log'))
-        os.makedirs(log_dir, exist_ok=True)
-        
-        # Set up rotating file handler
-        handler = RotatingFileHandler(
-            self.config.get('log_file', 'logs/security.log'),
-            maxBytes=self.config.get('max_log_size_mb', 100) * 1024 * 1024,
-            backupCount=self.config.get('backup_count', 5)
-        )
+        # Fall back to stderr when the log path is unwritable (read-only
+        # container filesystem) — audit logging must not stop the process.
+        log_file = self.config.get('log_file', 'logs/security.log')
+        try:
+            os.makedirs(os.path.dirname(log_file), exist_ok=True)
+            handler = RotatingFileHandler(
+                log_file,
+                maxBytes=self.config.get('max_log_size_mb', 100) * 1024 * 1024,
+                backupCount=self.config.get('backup_count', 5)
+            )
+        except OSError:
+            handler = logging.StreamHandler()
         
         # Set up formatter
         formatter = logging.Formatter(

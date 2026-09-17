@@ -7,7 +7,7 @@ Promotion only if golden gate passes — this is the "put the whole puzzle toget
 path that repairs ephemeral drift from daytime partial_fit streams.
 
 Cron example (host):
-  15 3 * * * cd /path/to/Yahoo_Phish && docker compose exec -T app python scripts/nightly_retrain.py
+  15 3 * * * cd /path/to/NullPointVector && docker compose exec -T app python scripts/nightly_retrain.py
 """
 from __future__ import annotations
 

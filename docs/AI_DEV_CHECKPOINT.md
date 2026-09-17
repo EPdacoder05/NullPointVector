@@ -327,7 +327,7 @@ Ship thorough, but sequence so P0s unblock the pilot.
 ## 1. How to resume in one minute
 
 ```bash
-cd /Users/ep/DevProjects/Yahoo_Phish
+cd <repo root>       # the NullPointVector checkout
 docker compose ps        # expect 5 containers healthy: app, db, pgbouncer, redis, proxy
 curl -s localhost:8088/health
 # expect: {"status":"healthy",...,"model_loaded":true,"dlq_pending_threats":0}

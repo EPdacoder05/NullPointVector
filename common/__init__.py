@@ -1,5 +1,5 @@
 """
-Shared production infrastructure for the Yahoo_Phish IDPS API surface
+Shared production infrastructure for the NullPoint IDPS API surface
 (Phish / Smish / Vish all reuse these — single source of truth).
 
     auth          — JWT issue/verify + FastAPI auth dependencies + RBAC

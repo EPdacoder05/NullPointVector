@@ -13,8 +13,14 @@ email-validator>=2.0
 
 # ML and data processing
 pandas>=2.0
-numpy>=1.24
-scikit-learn>=1.3
+# Pinned to the stack the champion pickles were trained under
+# (`models/REPRO_MANIFEST.json`). A floating range lets a Render rebuild resolve
+# a newer sklearn/numpy than the artifacts, which unpickles with
+# InconsistentVersionWarning ("might lead to ... invalid results") and silently
+# changes verdicts. Bump these and the manifest together, via a gated retrain.
+numpy==2.4.6
+scikit-learn==1.9.0
+scipy==1.17.1
 torch>=2.0
 transformers>=4.30
 sentence-transformers>=2.2

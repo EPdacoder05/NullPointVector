@@ -5,7 +5,7 @@ Usage:
   docker compose exec -T app python scripts/weekly_benchmarks.py
 
 Cron (host):
-  30 4 * * 1 cd /path/to/Yahoo_Phish && docker compose exec -T app python scripts/weekly_benchmarks.py
+  30 4 * * 1 cd /path/to/NullPointVector && docker compose exec -T app python scripts/weekly_benchmarks.py
 """
 from __future__ import annotations
 
