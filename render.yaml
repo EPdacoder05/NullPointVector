@@ -12,6 +12,9 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
+    # Deploys are manual: a merge to main must not redeploy the live service on
+    # its own. Trigger from the Render dashboard once gates are green.
+    autoDeploy: false
     dockerCommand: bash -lc "./start.sh migrate && exec ./start.sh web"
     healthCheckPath: /health
     envVars:

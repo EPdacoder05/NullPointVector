@@ -96,7 +96,7 @@ class URLAnalyzer:
         
         # Security headers (block any JS execution)
         self.session.headers.update({
-            'User-Agent': 'Yahoo_Phish-URLAnalyzer/1.0 (Security Scanner)',
+            'User-Agent': 'NullPoint-URLAnalyzer/1.0 (Security Scanner)',
             'Accept': 'text/html,text/plain',
             'Accept-Language': 'en-US',
             'DNT': '1',  # Do Not Track
