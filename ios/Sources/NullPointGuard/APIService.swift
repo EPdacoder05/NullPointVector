@@ -196,10 +196,18 @@ final class APIService {
     private func applyTokenResponse(data: Data, response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw APIError.message("No HTTP response") }
         guard (200..<300).contains(http.statusCode) else {
+            if let payload = try? JSONDecoder().decode(APIErrorPayload.self, from: data),
+               !payload.detail.isEmpty {
+                throw APIError.message(payload.detail)
+            }
             throw APIError.httpStatus(http.statusCode)
         }
         let tok = try JSONDecoder().decode(TokenResponse.self, from: data)
         applySession(access: tok.access_token, refresh: tok.refresh_token)
+    }
+
+    private struct APIErrorPayload: Decodable {
+        let detail: String
     }
 
 #if DEBUG

@@ -217,6 +217,8 @@ private struct LoginView: View {
     @State private var createAccount = false
     @State private var username = ""
     @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var acceptedTerms = false
     @State private var error: String?
     @State private var busy = false
 
@@ -257,6 +259,21 @@ private struct LoginView: View {
                     .background(NP.panel)
                     .overlay(Rectangle().stroke(NP.line, lineWidth: 1))
 
+                if createAccount {
+                    SecureField("Confirm password", text: $confirmPassword)
+                        .textFieldStyle(.plain)
+                        .padding(13)
+                        .background(NP.panel)
+                        .overlay(Rectangle().stroke(NP.line, lineWidth: 1))
+
+                    Toggle(isOn: $acceptedTerms) {
+                        Text("I agree to the Terms and Privacy Policy")
+                            .font(.caption)
+                            .foregroundStyle(NP.muted)
+                    }
+                    .tint(NP.signal)
+                }
+
                 Button {
                     Task { await submit() }
                 } label: {
@@ -271,7 +288,7 @@ private struct LoginView: View {
                     .background(NP.signal)
                     .foregroundStyle(NP.ink)
                 }
-                .disabled(busy || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                .disabled(!canSubmit)
 
                 Button(createAccount ? "Already have an account? Sign in" : "Create an account") {
                     error = nil
@@ -290,6 +307,10 @@ private struct LoginView: View {
     }
 
     private func submit() async {
+        if createAccount && password != confirmPassword {
+            error = "Passwords do not match."
+            return
+        }
         busy = true
         error = nil
         do {
@@ -303,5 +324,11 @@ private struct LoginView: View {
             error = signInError.localizedDescription
         }
         busy = false
+    }
+
+    private var canSubmit: Bool {
+        let hasCredentials = !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !password.isEmpty
+        return !busy && hasCredentials && (!createAccount || (acceptedTerms && !confirmPassword.isEmpty))
     }
 }
