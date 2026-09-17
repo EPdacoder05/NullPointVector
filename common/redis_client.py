@@ -23,6 +23,9 @@ def get_redis():
     url = os.getenv("REDIS_URL", "").strip()
     if not url:
         return None
+    # Upstash redis-cli uses --tls with redis://; redis-py needs rediss://.
+    if url.startswith("redis://") and "upstash.io" in url.lower():
+        url = "rediss://" + url[len("redis://"):]
     try:
         import redis
         client = redis.from_url(url, decode_responses=True, socket_connect_timeout=2)

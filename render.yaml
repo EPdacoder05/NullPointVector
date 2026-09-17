@@ -1,0 +1,60 @@
+# NullPoint Signal Deck on Render (Docker). Secrets are dashboard-only — never
+# put DATABASE_URL / REDIS_URL / JWT / Fernet values in this file.
+#
+# Dashboard: New → Web Service → this repo → Dockerfile → instance Free.
+# Health: /health. Sleeps after 15 min idle on free.
+# PUBLIC_BASE_URL must be one HTTPS origin (custom domain or https://<svc>.onrender.com).
+# SIGNUP_OPEN stays false (production validator).
+
+services:
+  - type: web
+    name: nullpoint-signal
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerCommand: bash -lc "./start.sh migrate && exec ./start.sh web"
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: production
+      - key: PROCESS_ROLE
+        value: web
+      - key: USE_GUNICORN
+        value: "true"
+      - key: API_WORKERS
+        value: "1"
+      - key: ENABLE_MESSAGE_EMBEDDINGS
+        value: "0"
+      - key: FORCE_HSTS
+        value: "true"
+      - key: SIGNUP_OPEN
+        value: "false"
+      - key: BILLING_ENABLED
+        value: "false"
+      - key: BILLING_MOCK
+        value: "true"
+      # Integrity pins for the three champion pickles in the image (not secrets).
+      - key: PHISH_MODEL_SHA256
+        value: "4f9b628c66f4638fbd82d1ba496a22eb833f1751b6f9f4f5ec236bee43703b54"
+      - key: SMISH_MODEL_SHA256
+        value: "82b926ed90302dffbf652f68ca2a7e2f725aa96903d5207c5c75395301d3c773"
+      - key: VISH_MODEL_SHA256
+        value: "19e71cdb7dbf4a3ad085c0893e271c36517efa42fb3b18bcf5e2c28e3845735e"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: ARGON2_PEPPER
+        sync: false
+      - key: API_ADMIN_USER
+        sync: false
+      - key: API_ADMIN_PASSWORD
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: API_ALLOWED_ORIGINS
+        sync: false

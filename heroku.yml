@@ -1,0 +1,33 @@
+# NullPoint Signal Deck on Heroku (container stack).
+# Vercel cannot run this FastAPI + Jinja process. Apex DNS stays here.
+#
+#   heroku login
+#   heroku create nullpoint-signal --stack=container
+#   heroku addons:create heroku-postgresql:essential-0
+#   heroku addons:create heroku-redis:mini
+#   heroku stack:set container
+#   heroku config:set ENV=production FORCE_HSTS=true SIGNUP_OPEN=true BILLING_MOCK=true
+#   heroku config:set API_WORKERS=1 ENABLE_MESSAGE_EMBEDDINGS=0
+#   heroku config:set PUBLIC_BASE_URL=https://nullpointvector.com
+#   heroku config:set JWT_SECRET_KEY=… ENCRYPTION_KEY=… ARGON2_PEPPER=…
+#   git push heroku HEAD:main
+#   heroku ps:scale web=1:standard-2x
+#
+# Dyno RAM: torch is in the image. Eco (512MB) will OOM. standard-2x (1GB) is
+# the floor; performance-m if migrate/web still dies.
+#
+# DNS at the registrar (apex on Heroku, www on Vercel):
+#   nullpointvector.com     ALIAS/ANAME  <app>.herokudns.com   (or Heroku domain UI)
+#   www.nullpointvector.com CNAME        cname.vercel-dns.com
+
+build:
+  docker:
+    web: Dockerfile
+
+run:
+  web: ./start.sh web
+
+release:
+  image: web
+  command:
+    - ./start.sh migrate

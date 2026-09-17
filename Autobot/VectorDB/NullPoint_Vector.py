@@ -1,7 +1,6 @@
 import psycopg2
 from psycopg2.extensions import AsIs, parse_dsn, register_adapter
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import os
 from cryptography.fernet import Fernet
 import logging
@@ -27,6 +26,7 @@ _model = None
 def _get_model():
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer('all-MiniLM-L6-v2')
     return _model
 
@@ -436,6 +436,18 @@ def create_tables(conn):
                   ON messages (account_sub, id DESC);
                 CREATE INDEX IF NOT EXISTS idx_messages_tenant_sender
                   ON messages (account_sub, sender, id DESC);
+                -- Triage is label IS NULL + confidence band. Without these,
+                -- reclaiming a large mailbox turns every Inbox/Quarantine hit
+                -- into an O(n) sort/scan of the whole tenant.
+                CREATE INDEX IF NOT EXISTS idx_messages_tenant_ungraded_id
+                  ON messages (account_sub, id DESC)
+                  WHERE label IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_messages_tenant_quarantine
+                  ON messages (account_sub, confidence DESC, id DESC)
+                  WHERE label IS NULL AND confidence >= 0.85;
+                CREATE INDEX IF NOT EXISTS idx_messages_tenant_inbox
+                  ON messages (account_sub, id DESC)
+                  WHERE label IS NULL AND confidence < 0.85;
 
                 DO $$ BEGIN
                   ALTER TABLE messages ADD CONSTRAINT messages_new_rows_need_tenant
@@ -1083,11 +1095,82 @@ def get_threats_page(threat_type: str = None, after_id: int = None, limit: int =
         release_conn(conn)
 
 
-def get_review_queue(limit: int = 100, *, account_sub: str):
+def count_ungraded(
+    *,
+    account_sub: str,
+    min_confidence: float | None = None,
+    max_confidence: float | None = None,
+    cap: int = 1000,
+) -> int:
+    """Bounded COUNT for KPI badges — never full-table.
+
+    Uses partial triage indexes. Cap keeps the badge O(cap) even when the
+    tenant has tens of thousands of ungraded rows (post-reclaim). Redis caches
+    the result for 30s so dashboard refreshes stay O(1).
+    """
+    from common.tenant_rls import require_account_sub, set_tenant
+    sub = require_account_sub(account_sub)
+    cap = max(1, min(int(cap), 5000))
+    cache_key = (
+        f"kpi:ungraded:{sub}:{min_confidence}:{max_confidence}:{cap}"
+    )
+    try:
+        from common.redis_client import get_redis
+        r = get_redis()
+        if r is not None:
+            hit = r.get(cache_key)
+            if hit is not None:
+                return int(hit)
+    except Exception:
+        r = None
+
+    conn = get_conn()
+    if not conn:
+        return 0
+    try:
+        set_tenant(conn, sub)
+        clauses = ["account_sub = %s", "label IS NULL"]
+        params: list = [sub]
+        if min_confidence is not None:
+            clauses.append("confidence >= %s")
+            params.append(float(min_confidence))
+        if max_confidence is not None:
+            clauses.append("confidence < %s")
+            params.append(float(max_confidence))
+        params.append(cap)
+        where = " AND ".join(clauses)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT COUNT(*) FROM (
+                  SELECT 1 FROM messages
+                  WHERE {where}
+                  LIMIT %s
+                ) capped
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+            n = int(row[0] if row else 0)
+        try:
+            if r is not None:
+                r.setex(cache_key, 30, str(n))
+        except Exception:
+            pass
+        return n
+    except Exception as e:
+        logger.error("count_ungraded failed: %s", e)
+        return 0
+    finally:
+        release_conn(conn)
+
+
+def get_review_queue(limit: int = 100, *, account_sub: str, include_body: bool = False):
     """Ungraded hard holds for Quarantine (confidence >= 0.85).
 
     Inbox/Dashboard use max_confidence=0.85 so rows never duplicate.
     Returns (rows, counts). Fail-safe → ([], zeroed counts).
+    Body decrypt is opt-in — dashboard KPIs must not pay Fernet cost.
     """
     counts = {"total": 0, "quarantined": 0, "potential": 0, "unsure": 0}
     conn = get_conn()
@@ -1097,35 +1180,59 @@ def get_review_queue(limit: int = 100, *, account_sub: str):
         from common.tenant_rls import require_account_sub, set_tenant
         sub = require_account_sub(account_sub)
         set_tenant(conn, sub)
+        page = max(1, min(int(limit), 500))
         with conn.cursor() as cur:
-            cur.execute('''
-                SELECT id, message_type, sender, timestamp, subject, confidence, metadata,
-                       preprocessed_text
+            # Bounded KPI count on the same connection (no nested pool checkout).
+            cur.execute(
+                """
+                SELECT COUNT(*) FROM (
+                  SELECT 1 FROM messages
+                  WHERE account_sub = %s AND label IS NULL AND confidence >= 0.85
+                  LIMIT 1000
+                ) capped
+                """,
+                (sub,),
+            )
+            counts["total"] = int((cur.fetchone() or [0])[0] or 0)
+            counts["quarantined"] = counts["total"]
+            cols = (
+                "id, message_type, sender, timestamp, subject, confidence, metadata"
+            )
+            if include_body:
+                cols += ", preprocessed_text"
+            cur.execute(
+                f'''
+                SELECT {cols}
                 FROM messages
                 WHERE account_sub = %s AND label IS NULL AND confidence >= 0.85
                 ORDER BY confidence DESC, id DESC
                 LIMIT %s
-            ''', (sub, max(1, min(int(limit), 500))))
+                ''',
+                (sub, page),
+            )
             rows = []
-            for _id, msg_type, sender, ts, enc_subject, conf, meta, enc_body in cur.fetchall():
+            for row in cur.fetchall():
+                if include_body:
+                    (_id, msg_type, sender, ts, enc_subject, conf, meta, enc_body) = row
+                else:
+                    (_id, msg_type, sender, ts, enc_subject, conf, meta) = row
+                    enc_body = None
                 conf = float(conf or 0)
-                band = "quarantined"
-                counts["total"] += 1
-                counts[band] += 1
                 body = ""
-                try:
-                    body = decrypt_data(enc_body) if enc_body else ""
-                except Exception:
-                    body = ""
+                if include_body and enc_body:
+                    try:
+                        body = decrypt_data(enc_body) or ""
+                    except Exception:
+                        body = ""
                 rows.append({
                     "id": _id,
                     "channel": msg_type or "phishing",
                     "sender": sender or "unknown",
                     "timestamp": ts.isoformat() if ts else None,
                     "subject": decrypt_data(enc_subject) if enc_subject else None,
-                    "body": body or "",
+                    "body": body[:220] if body else "",
                     "confidence": conf,
-                    "band": band,
+                    "band": "quarantined",
                     "metadata": meta or {},
                 })
             return rows, counts

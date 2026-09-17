@@ -57,10 +57,13 @@ logs/
 **/feedback.jsonl
 
 # --- training corpus / model artifacts ---
-# Champion binaries are supplied by an approved read-only deploy artifact or
-# volume. Never send pickle files or raw training material in the image context.
+# Champion binaries stay out of the image unless explicitly re-included.
+# Render Free has no persistent disk; production boot requires these three.
 *.pkl
 **/*.pkl
+!PhishGuard/phish_mlm/models/phishing_sgd_model.pkl
+!SmishGuard/smish_mlm/models/smishing_sgd_model.pkl
+!VishGuard/vish_mlm/models/vishing_sgd_model.pkl
 archive/
 Phishy_Bizz/
 

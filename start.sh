@@ -23,18 +23,20 @@ case "${ROLE}" in
     ;;
   web)
     API_WORKERS="${API_WORKERS:-2}"
+    # Heroku injects PORT. Fly / Docker default to 8000.
+    BIND_PORT="${PORT:-8000}"
     if [ "${USE_GUNICORN:-true}" = "true" ] && command -v gunicorn >/dev/null 2>&1; then
-      echo "Starting web process with ${API_WORKERS} worker(s)."
+      echo "Starting web process with ${API_WORKERS} worker(s) on :${BIND_PORT}."
       exec gunicorn api.main:app \
         -k uvicorn.workers.UvicornWorker \
         -w "${API_WORKERS}" \
-        -b 0.0.0.0:8000 \
+        -b "0.0.0.0:${BIND_PORT}" \
         --timeout 120 \
         --graceful-timeout 30 \
         --access-logfile -
     fi
-    echo "Starting single-worker web process."
-    exec uvicorn api.main:app --host 0.0.0.0 --port 8000
+    echo "Starting single-worker web process on :${BIND_PORT}."
+    exec uvicorn api.main:app --host 0.0.0.0 --port "${BIND_PORT}"
     ;;
   monitor)
     echo "Starting mailbox monitor process."

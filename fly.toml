@@ -5,7 +5,7 @@
 #
 #   fly launch --no-deploy   # first time, accept this fly.toml
 #   fly deploy
-#   fly secrets set PUBLIC_BASE_URL=https://<app>.fly.dev
+#   fly secrets set PUBLIC_BASE_URL=https://nullpointvector.com
 #
 # I am not a telecom. This box is nginx-less: Fly's proxy hits uvicorn :8000.
 
@@ -21,8 +21,8 @@ primary_region = "iad"
   strategy = "canary"
 
 [processes]
-  # Mailbox ingest must be deployed as a separately scaled `monitor` process
-  # only after tenant/exact-mailbox integration tests pass.
+  # Mailbox ingest is NOT the default Fly process. After Connectors has a
+  # mailbox, add `monitor = "./start.sh monitor"` and `fly scale count monitor=1`.
   web = "./start.sh web"
 
 [env]

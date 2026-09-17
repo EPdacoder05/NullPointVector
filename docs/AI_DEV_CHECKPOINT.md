@@ -5,7 +5,7 @@
 > verified state, bounded specs for every open item, and exact verify commands with
 > expected outputs. Do not re-litigate locked decisions. Do not invent scope.
 
-_Last updated: 2026-08-14 (P0 closed + verified live. Calls UI tenant-scoped (no bypass); Phish trainer uses passes_release_gate = point gate AND Wilson evidence (current n=40 → evidence insufficient — honest); account delete harvests anonymized verified labels into feedback.jsonl, keeps fleet_threat_keys, fixes pool-deadlock nested get_conn; live two-tenant cross-read + delete-retain PASS in Docker; Funnel+local pilot/admin login/dashboard/calls 200. SMS App Group filled; PilotSecrets untracked. NEXT: curated commits in slices — not one 90-file dump. Secret rotate deferred until hosted.)
+_Last updated: 2026-09-16 (Render image built; boot died: missing PhishGuard `.pkl` + gunicorn `:8000`. Champion pkls allowlisted + SHA256 pins in render.yaml. Needs commit/push for GitHub deploys.)
 
 ### ANSWERED (delta — reports / vishing / known-good)
 | Question | Answer |
@@ -364,7 +364,7 @@ new routes need a process restart).
 | Identity phone enrich | wired, vendors down | `POST /app/identity/enrich` + `/api/v1/identity/enrich`; IPQS returns `unavailable` (credits), credit returns `missing_keys` — **fail-open by design** |
 | OAuth connectors | routes live, no client IDs | `/app/connectors` + callbacks in `common/oauth_email.py`; needs `GOOGLE_OAUTH_*` / `MICROSOFT_OAUTH_*` in `.env` |
 | Call Directory sync | live | `GET /api/v1/vish/directory` returns block/label JSON for iOS |
-| iOS scaffold | code done, unsigned | `ios/` XcodeGen project; 3 targets; needs Apple Team ID + device |
+| iOS scaffold | **HALF** | `ios/` XcodeGen: Guard + Directory + SMS Filter + **Share**; regenerate with `cd ios && xcodegen generate` |
 | Inbox Jinja bug | fixed | `counts.clear` collided with dict method → renamed to `counts.cleared` |
 | DB connection | workaround | app points at `db:5432` DIRECTLY (pgbouncer was refusing conns). See §6. |
 
@@ -479,13 +479,13 @@ feeds. Voicemail share is optional training input only — never a per-call task
 
 Each item states: goal, files, done-when. Do them in order unless the user redirects.
 
-### 4.1 Dev-vet deployment (NEXT — user was preparing to send to developers)
-- Goal: 3 external developers can log in and exercise the console remotely.
-- Blocked on USER inputs (see §5). Agent work once inputs exist:
-  a. Set `PUBLIC_BASE_URL` to the tunnel/VPS URL in `.env`; restart app.
-  b. Create per-vetter credentials via `API_CUSTOMER_USER/PASSWORD` env pairs or DB users.
-  c. Smoke the public URL: `/app/login`, analyze one sample per channel, one call screen.
-- Done when: an outsider can complete login → analyze → call screen → see Call log.
+### 4.1 Public host — `nullpointvector.com` (NEXT)
+- Goal: HTTPS Signal Deck at `https://nullpointvector.com/app`.
+- Split: **Render** Docker web (`render.yaml`) + **Neon** Postgres (pgvector) + **Upstash** Redis (`rediss://`) + **Vercel `www/`** landing. Fly/Heroku stay in-repo but both need a card.
+- Secrets: gitignored `.env.render.local` only. Never commit. Chat-pasted Redis tokens are burned — rotate on Upstash after first successful PING.
+- `SIGNUP_OPEN=false`. `ENABLE_MESSAGE_EMBEDDINGS=0`; SentenceTransformer is lazy-imported so Render 512MB does not load torch at boot.
+- Neon: enable `CREATE EXTENSION vector` (app does this on migrate). Use the **pooled** connection string with TLS.
+- Done when: `curl -fsS https://nullpointvector.com/health` and `/app/login` 200.
 
 ### 4.2 OAuth email connect (needs `GOOGLE_OAUTH_*` / `MICROSOFT_OAUTH_*`)
 - Files: `common/oauth_email.py`, `web/ui.py` (connector routes), `web/templates/connectors.html`.
@@ -523,7 +523,7 @@ Each item states: goal, files, done-when. Do them in order unless the user redir
 
 ## 5. USER-owned inputs (nothing here is agent work)
 
-1. **Hosting** for vetters: ngrok/Cloudflare tunnel to `:8088` OR small VPS. → sets `PUBLIC_BASE_URL`.
+1. **Hosting**: registrar DNS + `heroku login` / Vercel login on this machine (CLIs were missing 2026-09-16). `PUBLIC_BASE_URL=https://nullpointvector.com`.
 2. **IPQS account**: resolve credits/dispute, or accept empty OSINT panels for the vet.
 3. **OAuth apps**: Google Cloud OAuth client (Web) + Azure AD app registration → client IDs/secrets.
 4. **Credit partner**: Array sandbox key OR `CREDIT_PARTNER_*` — or skip for vet.
