@@ -16,6 +16,7 @@ Bundle IDs stay `com.nullpoint.guard*` (customers never see those).
 | `Latch` | `com.nullpoint.guard` | **App Groups** only |
 | `Latch Directory` | `com.nullpoint.guard.directory` | **App Groups** only |
 | `Latch SMS Filter` | `com.nullpoint.guard.smsfilter` | **App Groups** only |
+| `Latch Share` | `com.nullpoint.guard.share` | **App Groups** only |
 
 Then Identifiers → **App Groups** → `group.com.nullpoint.guard`, and tick that group on all three App IDs.
 
@@ -165,7 +166,7 @@ account (signup / Sign in with Apple is a later product slice — not paste-JWT)
 2. Bake it: `API_BASE_URL` in `project.yml` + Info.plist → `https://YOUR_HOST`. `xcodegen generate`.
 3. Archive → App Store Connect → **Internal Testing** (your Apple ID + two testers). External review can wait.
 4. Each friend creates a Signal Deck account at `https://YOUR_HOST/app/signup` (`SIGNUP_OPEN=true`). Same email/password in Guard → Sign in. Directory sync is **customer+**.
-5. Settings → Phone → Call Blocking & Identification → Directory. Messages → Unknown & Spam → SMS Filter. Force-quit both apps.
+5. Settings → Phone → Call Blocking & Identification → Directory. Messages → Unknown & Spam → SMS Filter. Voicemail share sheet → **NullPoint Guard**. Force-quit Phone + Messages.
 
 I cannot upload the binary without your Apple ID. Team stays `KX3P7M3B6L` until you change it.
 
@@ -174,8 +175,9 @@ I cannot upload the binary without your Apple ID. Team stays `KX3P7M3B6L` until 
 1. Open Guard → **Sign in** (once) → wait for “Synced N blocks…”
 2. Settings → Phone → Call Blocking & Identification → enable Directory extension.
 3. Settings → Messages → Unknown & Spam → enable SMS Filter.
-4. Force-quit Phone + Messages after toggling (iOS caches extensions).
-5. API base must be public HTTPS (ngrok static or your domain → `:8088`).
+4. Phone Voicemail → Share → **NullPoint Guard** (sends transcript to `/api/v1/vish/screen`). Sign in to Guard once first.
+5. Force-quit Phone + Messages after toggling (iOS caches extensions).
+6. API base must be public HTTPS (Fly or your domain → the proxy). Not Tailscale Funnel as production.
 
 ## Inbox vs Quarantine (console)
 

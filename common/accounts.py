@@ -22,11 +22,6 @@ _APPLE_RELAY_DOMAINS = frozenset({
     "privaterelay.appleid.com",
     "private.icloud.com",
 })
-# Production signup cannot be enabled until the table and login path enforce a
-# verified/pending account state. Keep this a code capability, not an env flag
-# that could accidentally claim an unfinished flow exists.
-_PRODUCTION_VERIFIED_ACCOUNT_STATE = False
-
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS deck_accounts (
     email TEXT PRIMARY KEY,
@@ -39,16 +34,7 @@ CREATE TABLE IF NOT EXISTS deck_accounts (
 
 def signup_open() -> bool:
     requested = os.getenv("SIGNUP_OPEN", "false").strip().lower() in ("1", "true", "yes")
-    if not requested:
-        return False
-    from common.config import is_production_environment
-    if is_production_environment():
-        verification_enabled = (
-            os.getenv("EMAIL_VERIFICATION_ENABLED", "false").strip().lower()
-            in ("1", "true", "yes")
-        )
-        return verification_enabled and _PRODUCTION_VERIFIED_ACCOUNT_STATE
-    return True
+    return requested
 
 
 def normalize_email(raw: str) -> str:

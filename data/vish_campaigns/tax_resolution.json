@@ -1,0 +1,43 @@
+{
+  "campaign_id": "tax_resolution_robocall",
+  "label": "Tax resolution scam",
+  "notes": "Shared script, rotating origin CIDs, stable toll-free callbacks. Block origin + TFN.",
+  "phrases": [
+    "tax resolution department",
+    "tax resolution review department",
+    "taxpayer resolution",
+    "national tax resolution",
+    "press 2 or call me",
+    "press one or call me",
+    "press 9 to opt out",
+    "based on your file",
+    "information associated with your",
+    "outstanding tax balance",
+    "resolution programs may apply"
+  ],
+  "block": [
+    "+15792483046",
+    "+15023342271",
+    "+15028795491",
+    "+18575779260",
+    "+18452694749",
+    "+18046675355",
+    "+18574072547",
+    "+19046788702",
+    "+19419441925",
+    "+14437552286",
+    "+18456304255",
+    "+18779610327",
+    "+18779610090",
+    "+18773720831",
+    "+18775783695",
+    "+18445151725",
+    "+18889050279",
+    "+18336845481",
+    "+18667715387",
+    "+18663983809",
+    "+18667714591",
+    "+18882691541",
+    "+18666661438"
+  ]
+}

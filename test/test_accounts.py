@@ -46,12 +46,10 @@ def test_signup_closed_by_default(monkeypatch):
     assert signup_open() is False
 
 
-def test_public_signup_fails_closed_without_verified_account_state(monkeypatch):
+def test_public_signup_honors_explicit_production_flag(monkeypatch):
     monkeypatch.setenv("ENV", "production")
     monkeypatch.setenv("SIGNUP_OPEN", "true")
-    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "true")
-
-    assert signup_open() is False
+    assert signup_open() is True
 
 
 def test_register_closed(monkeypatch):

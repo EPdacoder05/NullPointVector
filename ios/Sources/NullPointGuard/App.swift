@@ -2,7 +2,7 @@ import SwiftUI
 import CallKit
 
 // Brand tokens — Signal Deck forest + brass (no purple, no emoji).
-private enum NP {
+enum NP {
     static let ink = Color(red: 0.043, green: 0.063, blue: 0.055)
     static let panel = Color(red: 0.078, green: 0.110, blue: 0.090)
     static let panel2 = Color(red: 0.102, green: 0.141, blue: 0.118)
@@ -42,13 +42,13 @@ struct NullPointGuardApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .preferredColorScheme(.dark)
+            RootShell()
         }
     }
 }
 
-struct ContentView: View {
+struct GuardHomeView: View {
+    var focusRecon: Bool = false
     @AppStorage(GuardPrefs.autoModeKey) private var autoMode = true
     @State private var callDirectoryStatus: CXCallDirectoryManager.EnabledStatus = .unknown
     @State private var lastDirectoryReloadSucceeded = false
@@ -69,13 +69,14 @@ struct ContentView: View {
     @State private var autoTick: Timer?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
+            ScrollViewReader { proxy in
                 VStack(alignment: .leading, spacing: 16) {
                     brand
                     autoModeRow
                     scanButton
                     activeRecon
+                        .id("recon")
                     proRow(
                         title: "Credit reporting · SSN alerts",
                         body: "Pro · Array / Plaid soft signals. Consent-gated, fail-open. Vendor keys unlock live checks — no DIY bureau.",
@@ -89,41 +90,40 @@ struct ContentView: View {
                     setupFooter
                 }
                 .padding(20)
-            }
-            .background(NP.ink.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Guard")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(NP.brass)
+                .onAppear {
+                    if focusRecon {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation { proxy.scrollTo("recon", anchor: .top) }
+                        }
+                    }
                 }
             }
-            .task {
-                await refreshCallDirectoryStatus()
-                if autoMode {
-                    await scanThreats()
-                }
+        }
+        .background(NP.ink.ignoresSafeArea())
+        .task {
+            await refreshCallDirectoryStatus()
+            if autoMode {
+                await scanThreats()
+            }
+            startAutoTimerIfNeeded()
+        }
+        .onChange(of: autoMode) { on in
+            if on {
                 startAutoTimerIfNeeded()
-            }
-            .onChange(of: autoMode) { on in
-                if on {
-                    startAutoTimerIfNeeded()
-                    Task { await scanThreats() }
-                } else {
-                    autoTick?.invalidate()
-                    autoTick = nil
-                }
-            }
-            .onDisappear {
+                Task { await scanThreats() }
+            } else {
                 autoTick?.invalidate()
                 autoTick = nil
             }
-            .alert("Auto-mode", isPresented: $showAutoInfo) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("While Guard is open, auto-mode periodically syncs and reloads the Call Directory list. iOS applies that exact-number list before the ring. Guard does not stream carrier calls or guarantee background refresh.")
-            }
+        }
+        .onDisappear {
+            autoTick?.invalidate()
+            autoTick = nil
+        }
+        .alert("Auto-mode", isPresented: $showAutoInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("While Guard is open, auto-mode periodically syncs and reloads the Call Directory list. iOS applies that exact-number list before the ring. Guard does not stream carrier calls or guarantee background refresh.")
         }
     }
 
@@ -417,6 +417,9 @@ struct ContentView: View {
             try await APIService.shared.ensureAuthenticatedSession()
             let file = try await APIService.shared.fetchDirectory()
             try BlocklistFile.save(file)
+            if let phrases = file.phrases, let url = AppGroup.campaignPhrasesURL {
+                try? JSONEncoder().encode(phrases).write(to: url, options: .atomic)
+            }
             try await reloadCallDirectory()
             lastDirectoryReloadSucceeded = true
             await refreshCallDirectoryStatus()
@@ -450,7 +453,7 @@ struct ContentView: View {
                 contactKnown: false
             )
             let reason = result.reasons?.first ?? result.verdict ?? ""
-            checkResult = "\(result.action.uppercased()) · risk \(Int(result.risk * 100))%\n\(reason)"
+            checkResult = "\(result.action.uppercased()) · risk \(Int((result.risk) * 100))%\n\(reason)"
             await scanThreats()
         } catch {
             checkResult = "Screen failed: \(error.localizedDescription)"

@@ -51,6 +51,7 @@ def _label_for(verdict: str, categories: list[str]) -> str:
     """Short caller-id string CallKit can display in place of an unknown number."""
     cat = next((c for c in categories if c not in ("prior_offender",)), None)
     pretty = {
+        "tax_resolution": "Tax scam",
         "irs_scam": "Likely IRS scam", "scam": "Likely scam", "fraud": "Likely fraud",
         "robocall": "Robocall", "telemarketer": "Telemarketer", "spam": "Spam likely",
         "tech_support": "Tech-support scam", "phishing": "Phishing call",
@@ -96,10 +97,28 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
     paths: list[str] = []
     reasons: list[str] = []
 
+    # --- campaign pack (known CID/TFN or shared script) ---
+    campaign_risk = 0.0
+    campaign = None
+    try:
+        from common.vish.campaigns import campaign_hit
+        campaign = campaign_hit(event.caller_id, event.transcript or "")
+    except Exception as e:
+        logger.debug("campaign pack lookup skipped: %s", e)
+        campaign = None
+    if campaign:
+        paths.append("campaign")
+        campaign_risk = float(campaign.get("risk") or 0.92)
+        how = "script fingerprint" if campaign.get("match") == "script" else "known campaign number"
+        reasons.append(
+            f"{campaign.get('label') or 'Known scam campaign'} ({how})."
+        )
+
     # --- reputation path (always) ---
     rep = score_number(event.caller_id)
     rep_dict = rep.to_dict()
     rep_risk = rep.risk
+    vendor_unscored = not rep.sources and not (rep.raw or {}).get("provider_error")
     if rep.sources:
         paths.append("reputation")
         if rep.risk >= _LABEL_AT:
@@ -107,9 +126,10 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
             cat = (rep.categories or ["spam"])[0].replace("_", " ")
             n = f" by {rep.report_count} reports" if rep.report_count else ""
             reasons.append(f"Number flagged as {cat}{n} (sources: {src}).")
-    elif rep.raw.get("provider_error"):
+    elif (rep.raw or {}).get("provider_error"):
         paths.append("reputation")
         reasons.append(f"Provider error (ipqs): {rep.raw['provider_error']}")
+        vendor_unscored = True
 
     # --- transcription path (deep, optional) ---
     content = _content_verdict(event)
@@ -144,7 +164,7 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
                 reasons.append("Voicemail spectrum is unusually flat for a phone recording.")
 
     # --- fuse ---
-    risk = max(rep_risk, content_risk, voice_risk)
+    risk = max(rep_risk, content_risk, voice_risk, campaign_risk)
     # agreement bump: both independent paths see danger → more certain
     if rep_risk >= _LABEL_AT and content_risk >= _LABEL_AT:
         risk = min(1.0, risk + 0.08)
@@ -158,17 +178,38 @@ def screen_call(event: CallEvent | dict) -> ScreenResult:
 
     verdict = rep.verdict.value if rep.verdict != Verdict.UNKNOWN else (
         "fraud" if risk >= _BLOCK_AT else "spam" if risk >= _LABEL_AT else "unknown")
+    if campaign and campaign_risk >= _BLOCK_AT:
+        verdict = "fraud"
     action = _action_for(risk, contact_known=event.contact_known)
     is_threat = action in (CallKitAction.BLOCK, CallKitAction.SILENCE)
+    if (
+        not is_threat
+        and action == CallKitAction.ALLOW
+        and not event.contact_known
+        and vendor_unscored
+        and not campaign
+        and content is None
+        and voice_risk <= 0
+    ):
+        action = CallKitAction.UNSCORED
+        verdict = "unscored"
 
     if not reasons:
-        reasons.append("No reputation hits and no transcript to analyze — "
-                       "caller is unknown but not flagged." if not paths
-                       else "Caller is known to feeds but below the risk threshold.")
+        if action == CallKitAction.UNSCORED:
+            reasons.append(
+                "UNSCORED — no campaign pack, no transcript, vendor had no opinion. "
+                "Not CLEARED."
+            )
+        else:
+            reasons.append("No reputation hits and no transcript to analyze — "
+                           "caller is unknown but not flagged." if not paths
+                           else "Caller is known to feeds but below the risk threshold.")
     if event.contact_known and action != CallKitAction.BLOCK:
         reasons.append("Number is in your contacts — not blocked.")
 
     label = _label_for(verdict, rep.categories) if is_threat or action == CallKitAction.LABEL else ""
+    if campaign and (is_threat or action == CallKitAction.LABEL):
+        label = str(campaign.get("label") or label or "Tax scam")
     if voice and voice.get("ok") and "SYNTHETIC_VOICE_SUSPECTED" in (voice.get("codes") or []):
         if not label:
             label = "Possible cloned voice"
