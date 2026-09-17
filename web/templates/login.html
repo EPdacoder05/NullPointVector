@@ -35,9 +35,11 @@
           </div>
           <button type="submit" class="btn">Continue</button>
         </form>
-        {% if signup_open %}
-        <a class="btn secondary" href="/app/signup?next={{ next_path|urlencode }}">Create account</a>
-        {% endif %}
+
+        <div class="auth-signup" aria-label="Create a new account">
+          <span class="auth-signup-label">Need an account?</span>
+          <a class="btn secondary auth-signup-btn" href="/app/signup?next={{ next_path|urlencode }}">Sign up</a>
+        </div>
       </div>
     </div>
   </div>
